@@ -1,11 +1,28 @@
+import { ArrowLeft, Download, Trash2, Undo2 } from "lucide-react";
+import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
+import { assignJob, deleteJob, removeEarning, reopenJob, updateDuration } from "@/app/actions";
+import { ActionForm, ConfirmAction } from "@/components/client";
 import MediaPlayer from "@/components/MediaPlayer";
 import StatusBadge from "@/components/StatusBadge";
-import { assignJob, deleteJob, removeEarning, reopenJob, updateDuration } from "@/app/actions";
+import TranscriptDiff from "@/components/TranscriptDiff";
+import { PageHeader, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDate, formatDuration, formatUGX } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
+
+export const metadata: Metadata = { title: "Job" };
+
+function Row({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-2.5 text-sm">
+      <dt className="text-slate-500">{label}</dt>
+      <dd className="num text-right text-slate-900">{children}</dd>
+    </div>
+  );
+}
 
 export default async function AdminJobPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
@@ -18,98 +35,125 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
     db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   if (!job) notFound();
-  const changed = job.originalTranscript !== job.editedTranscript;
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">{job.title}</h1>
-        <StatusBadge status={job.status} />
-      </div>
+    <>
+      <PageHeader
+        back={<Link href="/admin" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
+        title={job.title}
+        description={<span className="flex items-center gap-3"><StatusBadge status={job.status} /><span className="num">{formatDuration(job.durationSeconds)} · pays {formatUGX(earningsFor(job.durationSeconds))}</span></span>}
+        actions={
+          <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary"><Download className="size-4" /> Download .txt</a>
+        }
+      />
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="card space-y-3 lg:col-span-2">
-          <MediaPlayer jobId={job.id} mediaType={job.mediaType} />
-          <dl className="grid grid-cols-2 gap-2 text-sm sm:grid-cols-4">
-            <div><dt className="text-slate-500">Length</dt><dd>{formatDuration(job.durationSeconds)}</dd></div>
-            <div><dt className="text-slate-500">Pays</dt><dd>{formatUGX(earningsFor(job.durationSeconds))}</dd></div>
-            <div><dt className="text-slate-500">Assigned</dt><dd>{formatDate(job.assignedAt)}</dd></div>
-            <div><dt className="text-slate-500">Submitted</dt><dd>{formatDate(job.submittedAt)}</dd></div>
-          </dl>
+      <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
+        <div className="min-w-0 space-y-6">
+          <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>
+          <section className="card overflow-hidden">
+            <div className="card-header"><h2 className="card-title">Transcript review</h2></div>
+            <TranscriptDiff original={job.originalTranscript} edited={job.editedTranscript} finalLabel={job.status === "SUBMITTED" ? "Submitted" : "Current draft"} />
+          </section>
         </div>
 
-        <div className="card space-y-4">
-          {job.status === "SUBMITTED" ? (
-            <div className="space-y-2">
-              <p className="text-sm">Submitted by <strong>{job.assignee?.name ?? "—"}</strong>.</p>
-              <form action={reopenJob}>
-                <input type="hidden" name="jobId" value={job.id} />
-                <button className="btn-secondary">Send back for more corrections</button>
-              </form>
+        <div className="space-y-6">
+          <section className="card">
+            <div className="card-header"><h2 className="card-title">Assignment</h2></div>
+            <div className="card-body space-y-4">
+              {job.assignee && <UserCell name={job.assignee.name} sub={job.assignee.email} />}
+              {job.status === "SUBMITTED" ? (
+                <ConfirmAction
+                  action={reopenJob}
+                  fields={{ jobId: job.id }}
+                  trigger={<><Undo2 className="size-4" /> Send back for corrections</>}
+                  triggerClassName="btn-secondary w-full"
+                  title="Send this job back?"
+                  description={`${job.assignee?.name ?? "The transcriber"} will be able to edit it again. Pay already credited stays, and resubmitting won't pay twice.`}
+                  confirmLabel="Send back"
+                />
+              ) : (
+                <ActionForm action={assignJob} className="space-y-2">
+                  <input type="hidden" name="jobId" value={job.id} />
+                  <label className="label" htmlFor="assigneeId">{job.assignee ? "Reassign to" : "Assign to"}</label>
+                  <div className="flex gap-2">
+                    <select className="input" id="assigneeId" name="assigneeId" defaultValue={job.assigneeId ?? ""}>
+                      <option value="">Nobody</option>
+                      {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                    <button className="btn shrink-0">Save</button>
+                  </div>
+                </ActionForm>
+              )}
+              <dl className="divide-y divide-slate-100 border-t border-slate-100">
+                <Row label="Uploaded">{formatDate(job.createdAt)}</Row>
+                <Row label="Assigned">{formatDate(job.assignedAt)}</Row>
+                <Row label="Submitted">{formatDate(job.submittedAt)}</Row>
+              </dl>
             </div>
-          ) : (
-            <form action={assignJob} className="space-y-2">
-              <input type="hidden" name="jobId" value={job.id} />
-              <label className="label" htmlFor="assigneeId">Assigned to</label>
-              <select className="input" id="assigneeId" name="assigneeId" defaultValue={job.assigneeId ?? ""}>
-                <option value="">Nobody</option>
-                {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-              </select>
-              <button className="btn">Save assignment</button>
-            </form>
-          )}
+          </section>
 
-          <form action={updateDuration} className="space-y-2">
-            <input type="hidden" name="jobId" value={job.id} />
-            <span className="label">Correct the length</span>
-            <div className="flex items-center gap-2">
-              <input className="input w-20" name="minutes" type="number" min="0" defaultValue={Math.floor(job.durationSeconds / 60)} aria-label="Minutes" />
-              <span className="text-sm">min</span>
-              <input className="input w-20" name="seconds" type="number" min="0" max="59" defaultValue={job.durationSeconds % 60} aria-label="Seconds" />
-              <span className="text-sm">sec</span>
-              <button className="btn-secondary">Save</button>
+          <section className="card">
+            <div className="card-header"><h2 className="card-title">Pay</h2></div>
+            <div className="card-body space-y-4">
+              {job.earnings.length === 0 ? (
+                <p className="text-sm text-slate-500">Nothing credited yet. {formatUGX(earningsFor(job.durationSeconds))} is credited when the transcript is submitted.</p>
+              ) : (
+                <ul className="space-y-2">
+                  {job.earnings.map((e) => (
+                    <li key={e.id} className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm">
+                      <span className="flex-1 text-emerald-900">{e.user.name}</span>
+                      <span className="num font-semibold text-emerald-900">{formatUGX(e.amount)}</span>
+                      <ConfirmAction
+                        action={removeEarning}
+                        fields={{ earningId: e.id }}
+                        trigger={<Trash2 className="size-3.5" />}
+                        triggerClassName="btn-ghost size-7 px-0 text-emerald-800 hover:bg-emerald-100"
+                        title="Remove this pay?"
+                        description={`${formatUGX(e.amount)} will be taken off ${e.user.name}'s earnings.`}
+                        confirmLabel="Remove pay"
+                        danger
+                      />
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <details className="group">
+                <summary className="cursor-pointer text-sm font-medium text-brand-600 hover:text-brand-700">Correct the media length</summary>
+                <ActionForm action={updateDuration} className="mt-3 space-y-2">
+                  <input type="hidden" name="jobId" value={job.id} />
+                  <div className="flex items-center gap-2">
+                    <input className="input num w-20" name="minutes" type="number" min="0" defaultValue={Math.floor(job.durationSeconds / 60)} aria-label="Minutes" />
+                    <span className="text-sm text-slate-500">min</span>
+                    <input className="input num w-20" name="seconds" type="number" min="0" max="59" defaultValue={job.durationSeconds % 60} aria-label="Seconds" />
+                    <span className="text-sm text-slate-500">sec</span>
+                    <button className="btn-secondary ml-auto">Save</button>
+                  </div>
+                  <p className="hint">Only affects pay for future submissions.</p>
+                </ActionForm>
+              </details>
             </div>
-            <p className="text-xs text-slate-500">Changes pay for future submissions only.</p>
-          </form>
+          </section>
 
-          {job.earnings.length > 0 && (
-            <div>
-              <span className="label">Pay credited</span>
-              <ul className="space-y-1 text-sm">
-                {job.earnings.map((e) => (
-                  <li key={e.id} className="flex items-center gap-2">
-                    <span>{e.user.name}: {formatUGX(e.amount)}</span>
-                    <form action={removeEarning} className="ml-auto">
-                      <input type="hidden" name="earningId" value={e.id} />
-                      <button className="text-xs text-red-600 hover:underline">Remove</button>
-                    </form>
-                  </li>
-                ))}
-              </ul>
+          <section className="card border-red-200">
+            <div className="card-body flex items-center gap-3">
+              <div className="flex-1">
+                <h2 className="text-sm font-semibold text-slate-900">Delete job</h2>
+                <p className="text-xs text-slate-500">Removes the media, transcript and any pay credited for it.</p>
+              </div>
+              <ConfirmAction
+                action={deleteJob}
+                fields={{ jobId: job.id }}
+                trigger={<><Trash2 className="size-4" /> Delete</>}
+                triggerClassName="btn-secondary text-red-700 hover:bg-red-50 hover:text-red-800"
+                title="Delete this job?"
+                description="This permanently removes the media file, both transcripts and any pay credited for it. It can't be undone."
+                confirmLabel="Delete job"
+                danger
+              />
             </div>
-          )}
-
-          <form action={deleteJob}>
-            <input type="hidden" name="jobId" value={job.id} />
-            <button className="btn-danger">Delete job</button>
-          </form>
+          </section>
         </div>
       </div>
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <section className="card">
-          <h2 className="mb-2 font-semibold">Original transcript</h2>
-          <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap text-sm">{job.originalTranscript}</pre>
-        </section>
-        <section className="card">
-          <h2 className="mb-2 font-semibold">
-            {job.status === "SUBMITTED" ? "Submitted transcript" : "Current draft"}
-            {!changed && <span className="ml-2 text-xs font-normal text-slate-500">(no changes yet)</span>}
-          </h2>
-          <pre className="max-h-[32rem] overflow-auto whitespace-pre-wrap text-sm">{job.editedTranscript}</pre>
-          <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary mt-3">Download .txt</a>
-        </section>
-      </div>
-    </div>
+    </>
   );
 }

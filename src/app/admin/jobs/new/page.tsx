@@ -1,14 +1,24 @@
+import { ArrowLeft } from "lucide-react";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { PageHeader } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import UploadForm from "./UploadForm";
+
+export const metadata: Metadata = { title: "Upload job" };
 
 export default async function NewJobPage() {
   await requireAdmin();
   const users = await db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } });
   return (
-    <div className="card max-w-2xl">
-      <h1 className="mb-4 text-xl font-semibold">Upload media and transcript</h1>
+    <>
+      <PageHeader
+        back={<Link href="/admin" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
+        title="Upload a job"
+        description="Add the media and its transcript, then choose who will correct it."
+      />
       <UploadForm users={users} />
-    </div>
+    </>
   );
 }

@@ -1,38 +1,57 @@
+import { ArrowLeft, CircleCheck, Clock, Download, Wallet } from "lucide-react";
+import type { Metadata } from "next";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import MediaPlayer from "@/components/MediaPlayer";
 import StatusBadge from "@/components/StatusBadge";
+import { PageHeader } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { formatDuration, formatUGX } from "@/lib/format";
+import { formatDate, formatDuration, formatUGX } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
 import Editor from "./Editor";
+
+export const metadata: Metadata = { title: "Edit transcript" };
 
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireUser();
   const { id } = await params;
   const job = await db.job.findUnique({ where: { id } });
   if (!job || job.assigneeId !== user.id) notFound();
+  const pay = earningsFor(job.durationSeconds);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">{job.title}</h1>
-        <StatusBadge status={job.status} />
-        <span className="text-sm text-slate-500">
-          {formatDuration(job.durationSeconds)} · pays {formatUGX(earningsFor(job.durationSeconds))}
-        </span>
-      </div>
-      <div className="card sticky top-0 z-10">
-        <MediaPlayer jobId={job.id} mediaType={job.mediaType} />
-      </div>
+    <>
+      <PageHeader
+        back={
+          <Link href="/jobs" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
+            <ArrowLeft className="size-4" /> My jobs
+          </Link>
+        }
+        title={job.title}
+        description={
+          <span className="num flex flex-wrap items-center gap-x-4 gap-y-1">
+            <StatusBadge status={job.status} />
+            <span className="inline-flex items-center gap-1.5"><Clock className="size-3.5" /> {formatDuration(job.durationSeconds)}</span>
+            <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> {formatUGX(pay)}</span>
+          </span>
+        }
+      />
       {job.status === "ASSIGNED" ? (
-        <Editor jobId={job.id} initial={job.editedTranscript} original={job.originalTranscript} />
+        <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} pay={pay} />
       ) : (
-        <div className="card">
-          <p className="mb-2 text-sm text-slate-500">You submitted this transcript. It&apos;s read-only unless an admin sends it back.</p>
-          <pre className="whitespace-pre-wrap text-sm">{job.editedTranscript}</pre>
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-800 ring-1 ring-emerald-600/15">
+            <CircleCheck className="size-5 shrink-0" />
+            <span>You submitted this on {formatDate(job.submittedAt)}. It&apos;s read-only unless an admin sends it back.</span>
+            <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary btn-sm ml-auto"><Download className="size-3.5" /> .txt</a>
+          </div>
+          <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>
+          <div className="card px-5 py-4">
+            <pre className="font-mono text-[15px] leading-7 whitespace-pre-wrap text-slate-800">{job.editedTranscript}</pre>
+          </div>
         </div>
       )}
-    </div>
+    </>
   );
 }

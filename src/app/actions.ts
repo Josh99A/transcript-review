@@ -9,7 +9,7 @@ import { db } from "@/lib/db";
 import { earningsFor } from "@/lib/pay";
 import { deleteMedia } from "@/lib/media";
 
-export type FormState = { error?: string; ok?: string } | undefined;
+export type FormState = { error?: string; ok?: string; email?: string } | undefined;
 
 // ---------- Auth ----------
 
@@ -18,7 +18,7 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
   const password = String(formData.get("password") ?? "");
   const user = await db.user.findUnique({ where: { email } });
   if (!user || !(await bcrypt.compare(password, user.passwordHash))) {
-    return { error: "Wrong email or password." };
+    return { error: "Wrong email or password.", email };
   }
   await createSession(user.id);
   redirect(user.role === "ADMIN" ? "/admin" : "/jobs");
@@ -38,7 +38,7 @@ const newUserSchema = z.object({
   role: z.enum(["ADMIN", "USER"]),
 });
 
-export async function createUser(_prev: FormState, formData: FormData): Promise<FormState> {
+export async function createUser(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const parsed = newUserSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
@@ -49,7 +49,7 @@ export async function createUser(_prev: FormState, formData: FormData): Promise<
   return { ok: `Created ${name}.` };
 }
 
-export async function resetPassword(_prev: FormState, formData: FormData): Promise<FormState> {
+export async function resetPassword(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const userId = String(formData.get("userId"));
   const password = String(formData.get("password") ?? "");
@@ -60,12 +60,12 @@ export async function resetPassword(_prev: FormState, formData: FormData): Promi
 
 // ---------- Admin: jobs ----------
 
-export async function assignJob(formData: FormData) {
+export async function assignJob(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const jobId = String(formData.get("jobId"));
   const assigneeId = String(formData.get("assigneeId") ?? "");
   const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
-  if (job.status === "SUBMITTED") throw new Error("Reopen the job before reassigning it.");
+  if (job.status === "SUBMITTED") return { error: "Send the job back before reassigning it." };
   await db.job.update({
     where: { id: jobId },
     data: assigneeId
@@ -74,10 +74,11 @@ export async function assignJob(formData: FormData) {
   });
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
+  return { ok: assigneeId ? "Assignment saved." : "Job unassigned." };
 }
 
 /** Send a submitted job back to its assignee for more corrections. Pay already credited stays. */
-export async function reopenJob(formData: FormData) {
+export async function reopenJob(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const jobId = String(formData.get("jobId"));
   const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
@@ -87,29 +88,33 @@ export async function reopenJob(formData: FormData) {
   });
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
+  return { ok: "Sent back for more corrections." };
 }
 
-export async function updateDuration(formData: FormData) {
+export async function updateDuration(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const jobId = String(formData.get("jobId"));
   const minutes = Number(formData.get("minutes"));
   const seconds = Number(formData.get("seconds") ?? 0);
   const total = Math.round(minutes * 60 + seconds);
-  if (!Number.isFinite(total) || total <= 0) throw new Error("Duration must be greater than zero.");
+  if (!Number.isFinite(total) || total <= 0) return { error: "Length must be greater than zero." };
   await db.job.update({ where: { id: jobId }, data: { durationSeconds: total } });
   revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/admin");
+  return { ok: "Length updated." };
 }
 
-export async function removeEarning(formData: FormData) {
+export async function removeEarning(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const earningId = String(formData.get("earningId"));
   const e = await db.earning.delete({ where: { id: earningId } });
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${e.jobId}`);
   revalidatePath("/admin/users");
+  return { ok: "Pay removed." };
 }
 
-export async function deleteJob(formData: FormData) {
+export async function deleteJob(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const jobId = String(formData.get("jobId"));
   const job = await db.job.delete({ where: { id: jobId } });
@@ -120,7 +125,7 @@ export async function deleteJob(formData: FormData) {
 
 // ---------- Admin: payouts ----------
 
-export async function recordPayout(_prev: FormState, formData: FormData): Promise<FormState> {
+export async function recordPayout(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const userId = String(formData.get("userId"));
   const amount = Math.round(Number(formData.get("amount")));

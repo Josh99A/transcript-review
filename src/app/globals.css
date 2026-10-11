@@ -1,34 +1,86 @@
 @import "tailwindcss";
 
-body {
-  @apply bg-slate-50 text-slate-900;
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+@theme {
+  --font-sans: var(--font-inter), "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: var(--font-jetbrains), "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+
+  --color-brand-50: #eef2ff;
+  --color-brand-100: #e0e7ff;
+  --color-brand-200: #c7d2fe;
+  --color-brand-500: #6366f1;
+  --color-brand-600: #4f46e5;
+  --color-brand-700: #4338ca;
+  --color-brand-900: #312e81;
 }
 
-.btn {
-  @apply inline-flex items-center justify-center rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50;
+@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+  }
+  body {
+    @apply bg-slate-50 text-slate-900;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
 }
-.btn-secondary {
-  @apply inline-flex items-center justify-center rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50;
-}
-.btn-danger {
-  @apply inline-flex items-center justify-center rounded-md border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-50;
-}
-.input {
-  @apply block w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500;
-}
-.label {
-  @apply mb-1 block text-sm font-medium text-slate-700;
-}
-.card {
-  @apply rounded-lg border border-slate-200 bg-white p-5 shadow-sm;
-}
-.table {
-  @apply w-full text-left text-sm;
-}
-.table th {
-  @apply border-b border-slate-200 px-3 py-2 font-medium text-slate-500;
-}
-.table td {
-  @apply border-b border-slate-100 px-3 py-2 align-top;
+
+@layer components {
+  .btn {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-brand-600 px-3.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-brand-700 disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-secondary {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-700 shadow-sm transition-colors hover:bg-slate-50 hover:text-slate-900 disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-ghost {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 hover:text-slate-900 disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply inline-flex h-9 items-center justify-center gap-2 rounded-lg bg-red-600 px-3.5 text-sm font-medium text-white shadow-sm transition-colors hover:bg-red-700 disabled:pointer-events-none disabled:opacity-50;
+  }
+  .btn-sm {
+    @apply h-8 px-2.5 text-xs;
+  }
+  .input {
+    @apply block h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm shadow-sm transition-colors placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none;
+  }
+  textarea.input {
+    @apply h-auto py-2;
+  }
+  .label {
+    @apply mb-1.5 block text-sm font-medium text-slate-700;
+  }
+  .hint {
+    @apply mt-1.5 text-xs text-slate-500;
+  }
+  .card {
+    @apply rounded-xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,0.04)];
+  }
+  .card-header {
+    @apply flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4;
+  }
+  .card-title {
+    @apply text-base font-semibold text-slate-900;
+  }
+  .card-body {
+    @apply p-5;
+  }
+  .table {
+    @apply w-full text-left text-sm;
+  }
+  .table thead th {
+    @apply bg-slate-50/80 px-5 py-2.5 text-xs font-medium tracking-wide text-slate-500 uppercase;
+  }
+  .table tbody td {
+    @apply border-t border-slate-100 px-5 py-3 align-middle;
+  }
+  .table tbody tr {
+    @apply transition-colors hover:bg-slate-50/60;
+  }
+  .num {
+    @apply tabular-nums;
+  }
+  kbd {
+    @apply inline-flex min-w-5 items-center justify-center rounded border border-slate-200 bg-slate-50 px-1 font-mono text-[11px] text-slate-600 shadow-[0_1px_0_rgba(15,23,42,0.08)];
+  }
 }

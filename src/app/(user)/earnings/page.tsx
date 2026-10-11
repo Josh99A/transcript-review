@@ -1,7 +1,13 @@
+import { Banknote, CircleCheck, Clock, Wallet } from "lucide-react";
+import type { Metadata } from "next";
+import Link from "next/link";
+import { EmptyState, PageHeader, StatCard } from "@/components/ui";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { formatDate, formatDuration, formatUGX } from "@/lib/format";
+import { formatDate, formatDuration, formatHours, formatUGX } from "@/lib/format";
 import { RATE_PER_HOUR_UGX } from "@/lib/pay";
+
+export const metadata: Metadata = { title: "My earnings" };
 
 export default async function EarningsPage() {
   const user = await requireUser();
@@ -11,52 +17,80 @@ export default async function EarningsPage() {
   ]);
   const earned = earnings.reduce((s, e) => s + e.amount, 0);
   const paid = payouts.reduce((s, p) => s + p.amount, 0);
+  const owed = earned - paid;
   const seconds = earnings.reduce((s, e) => s + e.job.durationSeconds, 0);
+  const paidPct = earned ? Math.min(100, Math.round((paid / earned) * 100)) : 0;
 
   return (
-    <div className="space-y-6">
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="card"><div className="text-sm text-slate-500">Total earned</div><div className="mt-1 text-2xl font-semibold">{formatUGX(earned)}</div></div>
-        <div className="card"><div className="text-sm text-slate-500">Paid to you</div><div className="mt-1 text-2xl font-semibold">{formatUGX(paid)}</div></div>
-        <div className="card border-indigo-200 bg-indigo-50"><div className="text-sm text-indigo-700">Still to be paid</div><div className="mt-1 text-2xl font-semibold text-indigo-900">{formatUGX(earned - paid)}</div></div>
+    <>
+      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, prorated by length.`} />
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-brand-600 to-brand-900 p-6 text-white shadow-lg lg:col-span-1">
+          <div className="absolute -top-10 -right-10 size-40 rounded-full bg-white/10 blur-2xl" aria-hidden />
+          <div className="relative">
+            <div className="flex items-center gap-2 text-sm text-brand-100"><Wallet className="size-4" /> Waiting to be paid</div>
+            <div className="num mt-2 text-4xl font-semibold tracking-tight">{formatUGX(owed)}</div>
+            <div className="mt-6">
+              <div className="flex justify-between text-xs text-brand-100">
+                <span>Paid {formatUGX(paid)}</span>
+                <span>{paidPct}% of earnings</span>
+              </div>
+              <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-white/20">
+                <div className="h-full rounded-full bg-emerald-300" style={{ width: `${paidPct}%` }} />
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2">
+          <StatCard icon={CircleCheck} label="Total earned" value={formatUGX(earned)} tone="emerald" hint={`${earnings.length} transcript${earnings.length === 1 ? "" : "s"} submitted`} />
+          <StatCard icon={Clock} label="Media completed" value={formatHours(seconds)} tone="slate" hint={`${formatDuration(seconds)} in total`} />
+        </div>
       </div>
-      <p className="text-sm text-slate-500">
-        You&apos;re paid {formatUGX(RATE_PER_HOUR_UGX)} per hour of media, prorated by length. You&apos;ve completed {formatDuration(seconds)} so far.
-      </p>
 
-      <section className="card">
-        <h2 className="mb-3 text-lg font-semibold">Completed jobs</h2>
-        {earnings.length === 0 ? (
-          <p className="text-sm text-slate-500">Nothing yet. Pay appears here as soon as you submit a transcript.</p>
-        ) : (
-          <table className="table">
-            <thead><tr><th>Job</th><th>Length</th><th>Credited</th><th>Amount</th></tr></thead>
-            <tbody>
-              {earnings.map((e) => (
-                <tr key={e.id}>
-                  <td>{e.job.title}</td><td>{formatDuration(e.job.durationSeconds)}</td><td>{formatDate(e.createdAt)}</td><td>{formatUGX(e.amount)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-      </section>
+      <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_380px]">
+        <section className="card h-fit overflow-hidden">
+          <div className="card-header"><h2 className="card-title">Earnings history</h2></div>
+          {earnings.length === 0 ? (
+            <EmptyState icon={Wallet} title="Nothing earned yet" description="Pay appears here the moment you submit a transcript." action={<Link href="/jobs" className="btn-secondary">Go to my jobs</Link>} />
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="table">
+                <thead><tr><th>Job</th><th>Length</th><th>Credited</th><th className="text-right">Amount</th></tr></thead>
+                <tbody>
+                  {earnings.map((e) => (
+                    <tr key={e.id}>
+                      <td className="font-medium text-slate-900">{e.job.title}</td>
+                      <td className="num">{formatDuration(e.job.durationSeconds)}</td>
+                      <td className="whitespace-nowrap text-slate-600">{formatDate(e.createdAt)}</td>
+                      <td className="num text-right font-medium text-emerald-700">+{formatUGX(e.amount)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
 
-      <section className="card">
-        <h2 className="mb-3 text-lg font-semibold">Payments received</h2>
-        {payouts.length === 0 ? (
-          <p className="text-sm text-slate-500">No payments recorded yet.</p>
-        ) : (
-          <table className="table">
-            <thead><tr><th>Date</th><th>Amount</th><th>Note</th></tr></thead>
-            <tbody>
+        <section className="card h-fit overflow-hidden">
+          <div className="card-header"><h2 className="card-title">Payments received</h2></div>
+          {payouts.length === 0 ? (
+            <EmptyState icon={Banknote} title="No payments yet" description="When an admin pays you, it shows up here." />
+          ) : (
+            <ul className="divide-y divide-slate-100">
               {payouts.map((p) => (
-                <tr key={p.id}><td>{formatDate(p.createdAt)}</td><td>{formatUGX(p.amount)}</td><td>{p.note ?? ""}</td></tr>
+                <li key={p.id} className="flex items-center gap-3 px-5 py-3">
+                  <span className="flex size-8 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><Banknote className="size-4" /></span>
+                  <div className="min-w-0 flex-1">
+                    <div className="num text-sm font-medium text-slate-900">{formatUGX(p.amount)}</div>
+                    <div className="truncate text-xs text-slate-500">{formatDate(p.createdAt)}{p.note ? ` · ${p.note}` : ""}</div>
+                  </div>
+                </li>
               ))}
-            </tbody>
-          </table>
-        )}
-      </section>
-    </div>
+            </ul>
+          )}
+        </section>
+      </div>
+    </>
   );
 }
