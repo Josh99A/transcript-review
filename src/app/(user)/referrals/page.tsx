@@ -1,6 +1,7 @@
 import { Banknote, Clock, UserPlus, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import PayDateBanner from "@/components/PayDateBanner";
+import PaymentDetails from "@/components/PaymentDetails";
 import { EmptyState, PageHeader, StatCard, UserCell } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -69,7 +70,9 @@ export default async function ReferralsPage() {
           )}
         </section>
 
-        <section className="card h-fit overflow-hidden">
+        <div className="h-fit space-y-6">
+        <PaymentDetails details={user} />
+        <section className="card overflow-hidden">
           <div className="card-header"><h2 className="card-title">Payments received</h2></div>
           {payouts.length === 0 ? (
             <EmptyState icon={Banknote} title="No payments yet" description="Payments show up here after each pay date." />
@@ -87,6 +90,7 @@ export default async function ReferralsPage() {
             </ul>
           )}
         </section>
+        </div>
       </div>
     </>
   );

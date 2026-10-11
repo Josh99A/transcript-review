@@ -53,7 +53,7 @@ export default async function UsersPage() {
           <div className="relative overflow-x-auto">
             <table className="table table-stack">
               <thead>
-                <tr><th>Person</th><th>Jobs</th><th>Referred by</th><th className="text-right">Earned</th><th className="text-right">Paid</th><th className="text-right">Owed</th><th><span className="sr-only">Actions</span></th></tr>
+                <tr><th>Person</th><th>Pay to</th><th>Jobs</th><th>Referred by</th><th className="text-right">Earned</th><th className="text-right">Owed</th><th><span className="sr-only">Actions</span></th></tr>
               </thead>
               <tbody>
                 {transcribers.map((u) => {
@@ -61,16 +61,18 @@ export default async function UsersPage() {
                   return (
                     <tr key={u.id}>
                       <td><UserCell name={u.name} sub={u.email} /></td>
-                      <td data-label="Jobs" className="num whitespace-nowrap text-slate-600">
-                        {jobsFor(u.id, "ASSIGNED")} in progress · {jobsFor(u.id, "SUBMITTED")} done
+                      <td data-label="Pay to"><PayTo user={u} /></td>
+                      <td data-label="Jobs" className="num text-sm whitespace-nowrap text-slate-600">
+                        <span className="sm:block">{jobsFor(u.id, "SUBMITTED")} done</span>
+                        <span className="sm:hidden"> · </span>
+                        <span className="text-slate-500 sm:block sm:text-xs">{jobsFor(u.id, "ASSIGNED")} in progress</span>
                       </td>
                       <td data-label="Referred by"><ReferrerSelect userId={u.id} current={u.referredById} referrers={referrerOptions} /></td>
                       <td data-label="Earned" className="num text-right">{formatUGX(b.earned)}</td>
-                      <td data-label="Paid" className="num text-right text-slate-600">{formatUGX(b.paid)}</td>
                       <td data-label="Owed" className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
                       <td className="td-actions">
                         <div className="flex items-center justify-end gap-1">
-                          <PayoutButton userId={u.id} name={u.name} owed={b.owed} />
+                          <PayoutButton userId={u.id} name={u.name} owed={b.owed} payTo={u.payPhone ? `${u.payPhone} (${u.payNetwork})` : null} />
                           <ResetPasswordButton userId={u.id} name={u.name} />
                         </div>
                       </td>
@@ -91,7 +93,7 @@ export default async function UsersPage() {
           <div className="relative overflow-x-auto">
             <table className="table table-stack">
               <thead>
-                <tr><th>Referrer</th><th>Referred</th><th className="text-right">Earned</th><th className="text-right">Paid</th><th className="text-right">Owed</th><th><span className="sr-only">Actions</span></th></tr>
+                <tr><th>Referrer</th><th>Pay to</th><th>Referred</th><th className="text-right">Earned</th><th className="text-right">Paid</th><th className="text-right">Owed</th><th><span className="sr-only">Actions</span></th></tr>
               </thead>
               <tbody>
                 {referrers.map((u) => {
@@ -100,6 +102,7 @@ export default async function UsersPage() {
                   return (
                     <tr key={u.id}>
                       <td><UserCell name={u.name} sub={u.email} /></td>
+                      <td data-label="Pay to"><PayTo user={u} /></td>
                       <td data-label="Referred" className="text-slate-600">
                         <div className="min-w-0">
                         <div className="num">{u._count.referrals} referred · {formatHours(balances.get(u.id)?.referralSeconds ?? 0)} submitted</div>
@@ -111,7 +114,7 @@ export default async function UsersPage() {
                       <td data-label="Owed" className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
                       <td className="td-actions">
                         <div className="flex items-center justify-end gap-1">
-                          <PayoutButton userId={u.id} name={u.name} owed={b.owed} />
+                          <PayoutButton userId={u.id} name={u.name} owed={b.owed} payTo={u.payPhone ? `${u.payPhone} (${u.payNetwork})` : null} />
                           <ResetPasswordButton userId={u.id} name={u.name} />
                         </div>
                       </td>
@@ -161,5 +164,15 @@ export default async function UsersPage() {
         </section>
       </div>
     </>
+  );
+}
+
+function PayTo({ user }: { user: { payPhone: string | null; payNetwork: string | null; payName: string | null } }) {
+  if (!user.payPhone) return <span className="text-sm text-amber-700">Not added yet</span>;
+  return (
+    <div className="min-w-0">
+      <div className="num text-sm whitespace-nowrap text-slate-900">{user.payPhone}</div>
+      <div className="text-xs text-slate-500">{user.payNetwork}{user.payName ? ` · ${user.payName}` : ""}</div>
+    </div>
   );
 }

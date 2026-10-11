@@ -210,7 +210,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
               {owing.map(({ user, balance }) => (
                 <li key={user.id} className="flex items-center gap-3 px-5 py-3">
                   <div className="min-w-0 flex-1">
-                    <UserCell name={user.name} sub={`${user.role === "REFERRER" ? "Referrer · " : ""}Earned ${formatUGX(balance.earned)}`} />
+                    <UserCell name={user.name} sub={`${user.role === "REFERRER" ? "Referrer · " : ""}${user.payPhone ?? "No pay number yet"}`} />
                   </div>
                   <div className={`num text-sm font-semibold whitespace-nowrap ${balance.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>
                     {formatUGX(balance.owed)}

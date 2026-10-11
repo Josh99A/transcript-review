@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, StatCard } from "@/components/ui";
 import PayDateBanner from "@/components/PayDateBanner";
+import PaymentDetails from "@/components/PaymentDetails";
 import { requireRole } from "@/lib/auth";
 import { balanceFor } from "@/lib/earnings";
 import { getNextPayDate } from "@/lib/settings";
@@ -77,7 +78,9 @@ export default async function EarningsPage() {
           )}
         </section>
 
-        <section className="card h-fit overflow-hidden">
+        <div className="h-fit space-y-6">
+        <PaymentDetails details={user} />
+        <section className="card overflow-hidden">
           <div className="card-header"><h2 className="card-title">Payments received</h2></div>
           {payouts.length === 0 ? (
             <EmptyState icon={Banknote} title="No payments yet" description="When an admin pays you, it shows up here." />
@@ -95,6 +98,7 @@ export default async function EarningsPage() {
             </ul>
           )}
         </section>
+        </div>
       </div>
     </>
   );

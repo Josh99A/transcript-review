@@ -9,6 +9,7 @@ import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatPayDate, parseDeadline } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
+import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { getNextPayDate, setNextPayDate } from "@/lib/settings";
 import { deleteMedia } from "@/lib/media";
 
@@ -84,6 +85,25 @@ export async function setReferrer(formData: FormData): Promise<FormState> {
   revalidatePath("/admin/users");
   revalidatePath("/admin");
   return { ok: referredById ? "Referrer saved." : "Referrer removed." };
+}
+
+/** Saves where someone wants to be paid. People set their own; admins can set anyone's. */
+export async function savePaymentDetails(formData: FormData): Promise<FormState> {
+  const me = await requireUser();
+  const userId = me.role === "ADMIN" && formData.get("userId") ? String(formData.get("userId")) : me.id;
+  const network = String(formData.get("payNetwork") ?? "");
+  const rawPhone = String(formData.get("payPhone") ?? "").trim();
+  const name = String(formData.get("payName") ?? "").trim().slice(0, 100);
+  if (!rawPhone) {
+    await db.user.update({ where: { id: userId }, data: { payNetwork: null, payPhone: null, payName: null } });
+  } else {
+    const phone = normalizePhone(rawPhone);
+    if (!phone) return { error: "Enter a valid phone number, e.g. 0772 123 456." };
+    if (!(PAY_NETWORKS as readonly string[]).includes(network)) return { error: "Pick how you'd like to be paid." };
+    await db.user.update({ where: { id: userId }, data: { payNetwork: network, payPhone: phone, payName: name || null } });
+  }
+  revalidatePath("/", "layout");
+  return { ok: rawPhone ? "Payment details saved." : "Payment details removed." };
 }
 
 // ---------- Admin: pay dates ----------

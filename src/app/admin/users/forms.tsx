@@ -56,14 +56,14 @@ export function NewUserButton({ referrers }: { referrers: Option[] }) {
   );
 }
 
-export function PayoutButton({ userId, name, owed }: { userId: string; name: string; owed: number }) {
+export function PayoutButton({ userId, name, owed, payTo }: { userId: string; name: string; owed: number; payTo: string | null }) {
   const [open, setOpen] = useState(false);
   return (
     <>
       <button className="btn-secondary btn-sm" onClick={() => setOpen(true)} disabled={owed <= 0} title={owed <= 0 ? "Nothing owed" : undefined}>
         <Banknote className="size-3.5" /> Record payment
       </button>
-      <Modal open={open} onClose={() => setOpen(false)} title={`Pay ${name}`} description={<>They&apos;re currently owed <strong className="num text-slate-900">{formatUGX(owed)}</strong>.</>}>
+      <Modal open={open} onClose={() => setOpen(false)} title={`Pay ${name}`} description={<>They&apos;re currently owed <strong className="num text-slate-900">{formatUGX(owed)}</strong>. {payTo ? <>Pay to <strong className="num text-slate-900">{payTo}</strong>.</> : "They haven't added a payment number yet."}</>}>
         <ActionForm action={recordPayout} className="space-y-4" onDone={() => setOpen(false)}>
           <input type="hidden" name="userId" value={userId} />
           <div>
