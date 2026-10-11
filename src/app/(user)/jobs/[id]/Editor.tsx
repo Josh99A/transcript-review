@@ -181,7 +181,7 @@ export default function Editor({
   return (
     <div className={isVideo ? "grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]" : "space-y-4"}>
       <div className={isVideo ? "lg:sticky lg:top-6 lg:self-start" : "sticky top-14 z-20 lg:top-0"}>
-        {isVideo ? player : <div className="bg-slate-50/95 pt-2 pb-2 backdrop-blur lg:pt-4">{player}</div>}
+        {isVideo ? player : <div className="bg-slate-50 pt-2 pb-2 lg:pt-4">{player}</div>}
       </div>
 
       <div className="card flex flex-col overflow-hidden">
