@@ -117,7 +117,7 @@ export function ReferrerSelect({ userId, current, referrers }: { userId: string;
         name="referredById"
         defaultValue={current ?? ""}
         onChange={(e) => e.currentTarget.form?.requestSubmit()}
-        className="input h-8 w-36 text-xs"
+        className="input h-9 w-40 text-base sm:h-8 sm:w-36 sm:text-xs"
         aria-label="Referred by"
       >
         <option value="">Nobody</option>

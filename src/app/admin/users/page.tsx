@@ -39,7 +39,7 @@ export default async function UsersPage() {
     <>
       <PageHeader title="Team & payments" description="Add people, see what each person is owed and record payments." actions={<NewUserButton referrers={referrerOptions} />} />
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 [&>*:last-child]:col-span-2 sm:[&>*:last-child]:col-span-1">
         <StatCard icon={Wallet} label="Owed now" value={formatUGX(totals.owed)} tone="brand" />
         <StatCard icon={Banknote} label="Paid out" value={formatUGX(totals.paid)} tone="emerald" />
         <StatCard icon={Users} label="Transcribers" value={transcribers.length} tone="slate" hint={`${referrers.length} referrer${referrers.length === 1 ? "" : "s"}`} />
@@ -50,8 +50,8 @@ export default async function UsersPage() {
         {transcribers.length === 0 ? (
           <EmptyState icon={Users} title="No transcribers yet" description="Add the people who'll correct transcripts. They'll sign in to see their jobs and earnings." action={<NewUserButton referrers={referrerOptions} />} />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="table">
+          <div className="relative overflow-x-auto">
+            <table className="table table-stack">
               <thead>
                 <tr><th>Person</th><th>Jobs</th><th>Referred by</th><th className="text-right">Earned</th><th className="text-right">Paid</th><th className="text-right">Owed</th><th><span className="sr-only">Actions</span></th></tr>
               </thead>
@@ -61,14 +61,14 @@ export default async function UsersPage() {
                   return (
                     <tr key={u.id}>
                       <td><UserCell name={u.name} sub={u.email} /></td>
-                      <td className="num whitespace-nowrap text-slate-600">
+                      <td data-label="Jobs" className="num whitespace-nowrap text-slate-600">
                         {jobsFor(u.id, "ASSIGNED")} in progress · {jobsFor(u.id, "SUBMITTED")} done
                       </td>
-                      <td><ReferrerSelect userId={u.id} current={u.referredById} referrers={referrerOptions} /></td>
-                      <td className="num text-right">{formatUGX(b.earned)}</td>
-                      <td className="num text-right text-slate-600">{formatUGX(b.paid)}</td>
-                      <td className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
-                      <td>
+                      <td data-label="Referred by"><ReferrerSelect userId={u.id} current={u.referredById} referrers={referrerOptions} /></td>
+                      <td data-label="Earned" className="num text-right">{formatUGX(b.earned)}</td>
+                      <td data-label="Paid" className="num text-right text-slate-600">{formatUGX(b.paid)}</td>
+                      <td data-label="Owed" className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
+                      <td className="td-actions">
                         <div className="flex items-center justify-end gap-1">
                           <PayoutButton userId={u.id} name={u.name} owed={b.owed} />
                           <ResetPasswordButton userId={u.id} name={u.name} />
@@ -88,8 +88,8 @@ export default async function UsersPage() {
         {referrers.length === 0 ? (
           <EmptyState icon={HandCoins} title="No referrers yet" description="Add someone with the Referrer role, then pick them as “Referred by” on the transcribers they brought in." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="table">
+          <div className="relative overflow-x-auto">
+            <table className="table table-stack">
               <thead>
                 <tr><th>Referrer</th><th>Referred</th><th className="text-right">Earned</th><th className="text-right">Paid</th><th className="text-right">Owed</th><th><span className="sr-only">Actions</span></th></tr>
               </thead>
@@ -100,14 +100,16 @@ export default async function UsersPage() {
                   return (
                     <tr key={u.id}>
                       <td><UserCell name={u.name} sub={u.email} /></td>
-                      <td className="text-slate-600">
+                      <td data-label="Referred" className="text-slate-600">
+                        <div className="min-w-0">
                         <div className="num">{u._count.referrals} referred · {formatHours(balances.get(u.id)?.referralSeconds ?? 0)} submitted</div>
                         {names.length > 0 && <div className="max-w-xs truncate text-xs text-slate-500" title={names.join(", ")}>{names.join(", ")}</div>}
+                        </div>
                       </td>
-                      <td className="num text-right">{formatUGX(b.earned)}</td>
-                      <td className="num text-right text-slate-600">{formatUGX(b.paid)}</td>
-                      <td className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
-                      <td>
+                      <td data-label="Earned" className="num text-right">{formatUGX(b.earned)}</td>
+                      <td data-label="Paid" className="num text-right text-slate-600">{formatUGX(b.paid)}</td>
+                      <td data-label="Owed" className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
+                      <td className="td-actions">
                         <div className="flex items-center justify-end gap-1">
                           <PayoutButton userId={u.id} name={u.name} owed={b.owed} />
                           <ResetPasswordButton userId={u.id} name={u.name} />
@@ -128,16 +130,16 @@ export default async function UsersPage() {
           {payouts.length === 0 ? (
             <EmptyState icon={Banknote} title="No payments recorded" description="Use Record payment next to a person once you've paid them." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="table">
+            <div className="relative overflow-x-auto">
+              <table className="table table-stack">
                 <thead><tr><th>Date</th><th>Person</th><th>Note</th><th className="text-right">Amount</th></tr></thead>
                 <tbody>
                   {payouts.map((p) => (
                     <tr key={p.id}>
                       <td className="whitespace-nowrap text-slate-600">{formatDate(p.createdAt)}</td>
-                      <td>{p.user.name}</td>
-                      <td className="text-slate-500">{p.note ?? "—"}</td>
-                      <td className="num text-right font-medium">{formatUGX(p.amount)}</td>
+                      <td data-label="Person">{p.user.name}</td>
+                      <td data-label="Note" className="text-slate-500">{p.note ?? "—"}</td>
+                      <td data-label="Amount" className="num text-right font-medium">{formatUGX(p.amount)}</td>
                     </tr>
                   ))}
                 </tbody>

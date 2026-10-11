@@ -34,7 +34,7 @@ export default async function ReferralsPage() {
         <PayDateBanner payDate={payDate} owed={balance.owed} detail="Everything you've earned from referrals and not yet been paid is paid on this date." />
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatCard icon={UserPlus} label="People referred" value={referrals.length} tone="brand" />
         <StatCard icon={Clock} label="Referral earnings" value={formatUGX(balance.referralPay)} tone="emerald" hint={`${formatHours(balance.referralSeconds)} of transcripts submitted`} />
         <StatCard icon={Banknote} label="Paid to you" value={formatUGX(balance.paid)} tone="slate" />
@@ -47,8 +47,8 @@ export default async function ReferralsPage() {
           {referrals.length === 0 ? (
             <EmptyState icon={UserPlus} title="No referrals yet" description="When an admin adds a transcriber you brought in, they'll appear here." />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="table">
+            <div className="relative overflow-x-auto">
+              <table className="table table-stack">
                 <thead><tr><th>Transcriber</th><th>Joined</th><th>Submitted</th><th className="text-right">You earned</th></tr></thead>
                 <tbody>
                   {referrals.map((r) => {
@@ -57,9 +57,9 @@ export default async function ReferralsPage() {
                     return (
                       <tr key={r.id}>
                         <td><UserCell name={r.name} sub={`${c?._count ?? 0} transcript${c?._count === 1 ? "" : "s"} submitted`} /></td>
-                        <td className="whitespace-nowrap text-slate-600">{formatDate(r.createdAt)}</td>
-                        <td className="num whitespace-nowrap text-slate-600">{seconds ? formatHours(seconds) : <span className="text-slate-400">Nothing yet</span>}</td>
-                        <td className={`num text-right font-medium ${seconds ? "text-emerald-700" : "text-slate-400"}`}>{formatUGX(referralPayFor(seconds))}</td>
+                        <td data-label="Joined" className="whitespace-nowrap text-slate-600">{formatDate(r.createdAt)}</td>
+                        <td data-label="Submitted" className="num whitespace-nowrap text-slate-600">{seconds ? formatHours(seconds) : <span className="text-slate-400">Nothing yet</span>}</td>
+                        <td data-label="You earned" className={`num text-right font-medium ${seconds ? "text-emerald-700" : "text-slate-400"}`}>{formatUGX(referralPayFor(seconds))}</td>
                       </tr>
                     );
                   })}

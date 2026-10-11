@@ -39,9 +39,9 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
   return (
     <>
       <PageHeader
-        back={<Link href="/admin" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
+        back={<Link href="/admin" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
         title={job.title}
-        description={<span className="flex items-center gap-3"><StatusBadge status={job.status} /><span className="num">{formatDuration(job.durationSeconds)} · pays {formatUGX(earningsFor(job.durationSeconds))}</span></span>}
+        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={job.status} /><span className="num">{formatDuration(job.durationSeconds)} · pays {formatUGX(earningsFor(job.durationSeconds))}</span></span>}
         actions={
           <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary"><Download className="size-4" /> Download .txt</a>
         }

@@ -109,7 +109,7 @@ export default function MediaPlayer({ jobId, mediaType, mediaRef, compact }: Pro
         <select
           value={rate}
           onChange={(e) => set((m) => (m.playbackRate = Number(e.target.value)))}
-          className="input num ml-auto h-8 w-[4.5rem] px-2 text-xs sm:ml-0"
+          className="input num ml-auto h-9 w-20 px-2 text-base sm:ml-0 sm:h-8 sm:w-[4.5rem] sm:text-xs"
           aria-label="Playback speed"
         >
           {SPEEDS.map((s) => (

@@ -47,7 +47,7 @@ export default async function EarningsPage() {
             </div>
           </div>
         </div>
-        <div className="grid gap-4 sm:grid-cols-2 lg:col-span-2">
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:col-span-2">
           <StatCard icon={CircleCheck} label="Total earned" value={formatUGX(earned)} tone="emerald" hint={`${earnings.length} transcript${earnings.length === 1 ? "" : "s"} submitted`} />
           <StatCard icon={Clock} label="Media completed" value={formatHours(seconds)} tone="slate" hint={`${formatDuration(seconds)} in total`} />
         </div>
@@ -59,16 +59,16 @@ export default async function EarningsPage() {
           {earnings.length === 0 ? (
             <EmptyState icon={Wallet} title="Nothing earned yet" description="Pay appears here the moment you submit a transcript." action={<Link href="/jobs" className="btn-secondary">Go to my jobs</Link>} />
           ) : (
-            <div className="overflow-x-auto">
-              <table className="table">
+            <div className="relative overflow-x-auto">
+              <table className="table table-stack">
                 <thead><tr><th>Job</th><th>Length</th><th>Credited</th><th className="text-right">Amount</th></tr></thead>
                 <tbody>
                   {earnings.map((e) => (
                     <tr key={e.id}>
                       <td className="font-medium text-slate-900">{e.job.title}</td>
-                      <td className="num">{formatDuration(e.job.durationSeconds)}</td>
-                      <td className="whitespace-nowrap text-slate-600">{formatDate(e.createdAt)}</td>
-                      <td className="num text-right font-medium text-emerald-700">+{formatUGX(e.amount)}</td>
+                      <td data-label="Length" className="num">{formatDuration(e.job.durationSeconds)}</td>
+                      <td data-label="Credited" className="whitespace-nowrap text-slate-600">{formatDate(e.createdAt)}</td>
+                      <td data-label="Amount" className="num text-right font-medium text-emerald-700">+{formatUGX(e.amount)}</td>
                     </tr>
                   ))}
                 </tbody>

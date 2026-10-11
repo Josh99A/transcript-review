@@ -14,7 +14,7 @@ export default async function NewJobPage() {
   return (
     <>
       <PageHeader
-        back={<Link href="/admin" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
+        back={<Link href="/admin" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
         title="Upload a job"
         description="Add the media and its transcript, then choose who will correct it."
       />

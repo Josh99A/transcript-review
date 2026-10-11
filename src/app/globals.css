@@ -42,7 +42,7 @@
     @apply h-8 px-2.5 text-xs;
   }
   .input {
-    @apply block h-9 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm shadow-sm transition-colors placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none;
+    @apply block h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-base shadow-sm sm:h-9 sm:text-sm transition-colors placeholder:text-slate-400 focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20 focus:outline-none;
   }
   textarea.input {
     @apply h-auto py-2;
@@ -82,5 +82,54 @@
   }
   kbd {
     @apply inline-flex min-w-5 items-center justify-center rounded border border-slate-200 bg-slate-50 px-1 font-mono text-[11px] text-slate-600 shadow-[0_1px_0_rgba(15,23,42,0.08)];
+  }
+}
+
+/* On phones, tables with .table-stack turn each row into a small card: the first cell is the
+   heading and the rest show as "label … value" lines, labelled from each cell's data-label. */
+@media (max-width: 639px) {
+  .table.table-stack thead {
+    display: none;
+  }
+  .table.table-stack,
+  .table.table-stack tbody,
+  .table.table-stack tr,
+  .table.table-stack td {
+    display: block;
+    width: 100%;
+  }
+  .table.table-stack tbody tr {
+    border-top: 1px solid var(--color-slate-100);
+    padding: 0.875rem 1.25rem;
+  }
+  .table.table-stack tbody tr:first-child {
+    border-top: 0;
+  }
+  .table.table-stack tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    border: 0;
+    padding: 0.25rem 0;
+    text-align: right;
+    white-space: normal;
+  }
+  .table.table-stack tbody td:first-child {
+    display: block;
+    padding: 0 0 0.375rem;
+    text-align: left;
+  }
+  .table.table-stack tbody td[data-label]::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--color-slate-500);
+    text-align: left;
+  }
+  .table.table-stack tbody td.td-actions {
+    justify-content: flex-end;
+    padding-top: 0.5rem;
   }
 }

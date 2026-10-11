@@ -202,7 +202,7 @@ export default function Editor({
         </div>
         <textarea
           ref={textareaRef}
-          className="min-h-[55vh] w-full flex-1 resize-y border-0 bg-white px-5 py-4 font-mono text-[15px] leading-7 text-slate-800 focus:ring-0 focus:outline-none"
+          className="min-h-[55vh] w-full flex-1 resize-y border-0 bg-white px-5 py-4 font-mono text-base leading-7 sm:text-[15px] text-slate-800 focus:ring-0 focus:outline-none"
           value={text}
           onChange={(e) => setText(e.target.value)}
           spellCheck

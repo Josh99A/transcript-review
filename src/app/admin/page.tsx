@@ -69,7 +69,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
         }
       />
 
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
         <StatCard icon={Inbox} label="Waiting to assign" value={count("UNASSIGNED")} tone="slate" />
         <StatCard icon={Hourglass} label="In progress" value={count("ASSIGNED")} tone="amber" />
         <StatCard icon={CircleCheck} label="Submitted" value={count("SUBMITTED")} tone="emerald" />
@@ -120,8 +120,8 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
               />
             )
           ) : (
-            <div className="overflow-x-auto">
-              <table className="table">
+            <div className="relative overflow-x-auto">
+              <table className="table table-stack">
                 <thead>
                   <tr>
                     <th>Job</th>
@@ -152,7 +152,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                             </div>
                           </div>
                         </td>
-                        <td>
+                        <td data-label="Assigned to">
                           {j.assignee ? (
                             <div className="flex items-center gap-2">
                               <Avatar name={j.assignee.name} size="sm" />
@@ -162,8 +162,8 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                             <span className="text-slate-400">Nobody yet</span>
                           )}
                         </td>
-                        <td><StatusBadge status={j.status} /></td>
-                        <td className="num text-right whitespace-nowrap">
+                        <td data-label="Status"><StatusBadge status={j.status} /></td>
+                        <td data-label="Pay" className="num text-right whitespace-nowrap">
                           {credited ? (
                             <span className="font-medium text-slate-900">{formatUGX(credited)}</span>
                           ) : (

@@ -14,7 +14,7 @@ export function PageHeader({
   return (
     <div className="mb-6">
       {back && <div className="mb-3">{back}</div>}
-      <div className="flex flex-wrap items-end gap-4">
+      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-end">
         <div className="min-w-0 flex-1">
           <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{title}</h1>
           {description && <p className="mt-1 text-sm text-slate-500">{description}</p>}
@@ -46,13 +46,13 @@ export function StatCard({
   tone?: keyof typeof STAT_TONES;
 }) {
   return (
-    <div className="card flex items-start gap-4 p-5">
+    <div className="card flex flex-col items-start gap-3 p-4 sm:flex-row sm:gap-4 sm:p-5">
       <div className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${STAT_TONES[tone]}`}>
         <Icon className="size-5" aria-hidden />
       </div>
-      <div className="min-w-0">
+      <div className="w-full min-w-0">
         <div className="text-sm text-slate-500">{label}</div>
-        <div className="num mt-0.5 truncate text-2xl font-semibold tracking-tight text-slate-900">{value}</div>
+        <div className="num mt-0.5 truncate text-xl font-semibold sm:text-2xl tracking-tight text-slate-900">{value}</div>
         {hint && <div className="mt-0.5 text-xs text-slate-500">{hint}</div>}
       </div>
     </div>

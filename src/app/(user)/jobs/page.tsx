@@ -37,7 +37,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
       <PageHeader title={`Hi ${firstName}`} description="Here's what's waiting for you." />
       <div className="mb-6"><PayDateBanner payDate={payDate} owed={balance.owed} /></div>
 
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 [&>*:last-child]:col-span-2 sm:[&>*:last-child]:col-span-1">
         <StatCard icon={Inbox} label="To do" value={todo.length} tone="amber" hint={todo.length ? `${formatHours(todoSeconds)} of media` : "All caught up"} />
         <StatCard icon={Wallet} label="Up for grabs" value={formatUGX(todoPay)} tone="brand" hint="If you finish everything assigned" />
         <StatCard icon={CircleCheck} label="Waiting to be paid" value={formatUGX(balance.owed)} tone="emerald" hint={<Link href="/earnings" className="font-medium text-brand-600 hover:text-brand-700">View earnings</Link>} />
@@ -55,7 +55,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
               const Icon = j.mediaType.startsWith("video") ? FileVideo : FileAudio;
               const started = j.editedTranscript !== j.originalTranscript;
               return (
-                <li key={j.id}>
+                <li key={j.id} className="min-w-0">
                   <Link href={`/jobs/${j.id}`} className="card group flex items-center gap-4 p-4 transition hover:border-brand-200 hover:shadow-md">
                     <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
                       <Icon className="size-5" />
@@ -82,16 +82,16 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
       {done.length > 0 && (
         <section className="card mt-8 overflow-hidden">
           <div className="card-header"><h2 className="card-title">Submitted</h2></div>
-          <div className="overflow-x-auto">
-            <table className="table">
+          <div className="relative overflow-x-auto">
+            <table className="table table-stack">
               <thead><tr><th>Job</th><th>Length</th><th>Submitted</th><th className="text-right">Earned</th></tr></thead>
               <tbody>
                 {done.map((j) => (
                   <tr key={j.id}>
                     <td><Link href={`/jobs/${j.id}`} className="font-medium text-slate-900 hover:text-brand-700">{j.title}</Link></td>
-                    <td className="num">{formatDuration(j.durationSeconds)}</td>
-                    <td className="whitespace-nowrap text-slate-600">{formatRelative(j.submittedAt)}</td>
-                    <td className="num text-right font-medium">{formatUGX(j.earnings.reduce((s, e) => s + e.amount, 0))}</td>
+                    <td data-label="Length" className="num">{formatDuration(j.durationSeconds)}</td>
+                    <td data-label="Submitted" className="whitespace-nowrap text-slate-600">{formatRelative(j.submittedAt)}</td>
+                    <td data-label="Earned" className="num text-right font-medium">{formatUGX(j.earnings.reduce((s, e) => s + e.amount, 0))}</td>
                   </tr>
                 ))}
               </tbody>

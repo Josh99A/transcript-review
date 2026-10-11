@@ -24,7 +24,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
     <>
       <PageHeader
         back={
-          <Link href="/jobs" className="inline-flex items-center gap-1.5 text-sm font-medium text-slate-500 hover:text-slate-800">
+          <Link href="/jobs" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800">
             <ArrowLeft className="size-4" /> My jobs
           </Link>
         }
