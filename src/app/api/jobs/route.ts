@@ -7,6 +7,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ensureUploadDir, mediaFile } from "@/lib/media";
+import { mediaTypeOf } from "@/lib/mediaTypes";
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -25,7 +26,8 @@ export async function POST(req: Request) {
   if (!title) return NextResponse.json({ error: "Give the job a title." }, { status: 400 });
   if (!(media instanceof File) || media.size === 0)
     return NextResponse.json({ error: "Choose an audio or video file." }, { status: 400 });
-  if (!/^(audio|video)\//.test(media.type))
+  const mediaType = media instanceof File ? mediaTypeOf(media.name, media.type) : null;
+  if (!mediaType)
     return NextResponse.json({ error: "The media must be an audio or video file." }, { status: 400 });
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0)
     return NextResponse.json({ error: "Couldn't read the media length. Enter it manually." }, { status: 400 });
@@ -40,7 +42,7 @@ export async function POST(req: Request) {
     data: {
       title,
       mediaPath: stored,
-      mediaType: media.type,
+      mediaType,
       durationSeconds,
       originalTranscript: transcript,
       editedTranscript: transcript,

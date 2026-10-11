@@ -6,13 +6,32 @@ import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Spinner } from "@/components/client";
 import { formatDuration, formatUGX } from "@/lib/format";
+import { adtsDuration, MEDIA_ACCEPT, mediaTypeOf, mp4Duration } from "@/lib/mediaTypes";
 import { earningsFor, RATE_PER_HOUR_UGX } from "@/lib/pay";
 
 /** Reads the length of an audio/video file in the browser. */
-function readDuration(file: File): Promise<number> {
+async function readDuration(file: File, type: string): Promise<number> {
+  // Raw AAC files often report no length (or a rough guess), so count their frames instead.
+  if (type === "audio/aac") {
+    const d = adtsDuration(new Uint8Array(await file.arrayBuffer()));
+    if (d) return d;
+  }
+  try {
+    return await playerDuration(file, type);
+  } catch (e) {
+    // Browsers without the codec can still give us the length from an MP4/M4A header.
+    if (/mp4|quicktime/.test(type)) {
+      const d = mp4Duration(new Uint8Array(await file.arrayBuffer()));
+      if (d) return d;
+    }
+    throw e;
+  }
+}
+
+function playerDuration(file: File, type: string): Promise<number> {
   return new Promise((resolve, reject) => {
     const url = URL.createObjectURL(file);
-    const el = document.createElement(file.type.startsWith("video") ? "video" : "audio");
+    const el = document.createElement(type.startsWith("video") ? "video" : "audio");
     el.preload = "metadata";
     el.onloadedmetadata = () => {
       URL.revokeObjectURL(url);
@@ -71,8 +90,9 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
   async function pickMedia(file: File | undefined) {
     setError(null);
     if (!file) return;
-    if (!/^(audio|video)\//.test(file.type)) {
-      setError("That file isn't audio or video. Try an MP3, WAV, M4A or MP4.");
+    const type = mediaTypeOf(file.name, file.type);
+    if (!type) {
+      setError("That file isn't audio or video. Try an MP3, AAC, WAV, M4A or MP4.");
       return;
     }
     setMedia(file);
@@ -81,7 +101,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
     if (!title) setTitle(file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "));
     setReadingLength(true);
     try {
-      setDuration(Math.round(await readDuration(file)));
+      setDuration(Math.round(await readDuration(file, type)));
     } catch {
       setManual(true);
     } finally {
@@ -123,7 +143,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
     xhr.send(data);
   }
 
-  const MediaIcon = media?.type.startsWith("video") ? FileVideo : FileAudio;
+  const MediaIcon = media && mediaTypeOf(media.name, media.type)?.startsWith("video") ? FileVideo : FileAudio;
   const assigneeName = users.find((u) => u.id === assigneeId)?.name;
 
   return (
@@ -156,7 +176,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
               <p className="mt-3 text-sm font-medium text-slate-900">
                 Drop an audio or video file here, or <span className="text-brand-600">browse</span>
               </p>
-              <p className="mt-1 text-xs text-slate-500">MP3, WAV, M4A, MP4, MOV and more. We read the length automatically.</p>
+              <p className="mt-1 text-xs text-slate-500">MP3, AAC, WAV, M4A, MP4, MOV and more. We read the length automatically.</p>
             </div>
           ) : (
             <div className="flex items-center gap-4 rounded-xl border border-slate-200 p-4">
@@ -176,7 +196,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
               </button>
             </div>
           )}
-          <input ref={mediaInput} type="file" accept="audio/*,video/*" className="hidden" onChange={(e) => pickMedia(e.target.files?.[0])} />
+          <input ref={mediaInput} type="file" accept={MEDIA_ACCEPT} className="hidden" onChange={(e) => pickMedia(e.target.files?.[0])} />
 
           {media && (manual ? (
             <div className="mt-4">
