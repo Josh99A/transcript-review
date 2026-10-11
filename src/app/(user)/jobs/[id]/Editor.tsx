@@ -210,7 +210,7 @@ export default function Editor({
         />
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
           <p className="text-xs text-slate-500">
-            Submitting credits <span className="num font-semibold text-slate-700">{formatUGX(pay)}</span> to your earnings.
+            Submitting adds <span className="num font-semibold text-slate-700">{formatUGX(pay)}</span> to your earnings, paid on the next pay date.
           </p>
           <button type="button" className="btn ml-auto" onClick={() => setConfirmOpen(true)} disabled={submitting || !text.trim()}>
             <Send className="size-4" /> Submit transcript

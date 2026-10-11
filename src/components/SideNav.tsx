@@ -1,6 +1,6 @@
 "use client";
 
-import { AudioLines, ClipboardList, LayoutDashboard, LogOut, Menu, Upload, Users, Wallet, X } from "lucide-react";
+import { AudioLines, ClipboardList, HandCoins, LayoutDashboard, LogOut, Menu, Upload, Users, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -16,6 +16,9 @@ const USER_LINKS = [
   { href: "/jobs", label: "My jobs", icon: ClipboardList },
   { href: "/earnings", label: "My earnings", icon: Wallet },
 ];
+const REFERRER_LINKS = [{ href: "/referrals", label: "My referrals", icon: HandCoins }];
+const LINKS = { ADMIN: ADMIN_LINKS, USER: USER_LINKS, REFERRER: REFERRER_LINKS };
+const ROLE_LABELS = { ADMIN: "Admin", USER: "Transcriber", REFERRER: "Referrer" };
 
 function Brand() {
   return (
@@ -28,13 +31,13 @@ function Brand() {
   );
 }
 
-export default function SideNav({ user }: { user: { name: string; email: string; role: "ADMIN" | "USER" } }) {
+export default function SideNav({ user }: { user: { name: string; email: string; role: "ADMIN" | "USER" | "REFERRER" } }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const links = user.role === "ADMIN" ? ADMIN_LINKS : USER_LINKS;
+  const links: { href: string; label: string; icon: typeof Wallet; exact?: boolean }[] = LINKS[user.role];
 
   const isActive = (l: (typeof links)[number]) =>
-    "exact" in l && l.exact ? pathname === l.href : pathname === l.href || pathname.startsWith(l.href + "/");
+    l.exact ? pathname === l.href : pathname === l.href || pathname.startsWith(l.href + "/");
 
   const nav = (
     <div className="flex h-full flex-col">
@@ -42,7 +45,7 @@ export default function SideNav({ user }: { user: { name: string; email: string;
         <Brand />
       </div>
       <div className="px-3 pt-2 text-[11px] font-medium tracking-wider text-slate-400 uppercase">
-        {user.role === "ADMIN" ? "Admin" : "Transcriber"}
+        {ROLE_LABELS[user.role]}
       </div>
       <nav className="mt-2 flex-1 space-y-0.5 px-3" aria-label="Main">
         {links.map((l) => {

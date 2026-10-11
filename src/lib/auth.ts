@@ -53,8 +53,22 @@ export async function requireUser() {
   return user;
 }
 
+export type Role = "ADMIN" | "USER" | "REFERRER";
+
+/** Where each role lands after signing in. */
+export function homeFor(role: Role) {
+  return role === "ADMIN" ? "/admin" : role === "REFERRER" ? "/referrals" : "/jobs";
+}
+
 export async function requireAdmin() {
   const user = await requireUser();
-  if (user.role !== "ADMIN") redirect("/jobs");
+  if (user.role !== "ADMIN") redirect(homeFor(user.role));
+  return user;
+}
+
+/** Pages for one role; anyone else is sent to their own home page. */
+export async function requireRole(role: Role) {
+  const user = await requireUser();
+  if (user.role !== role) redirect(homeFor(user.role));
   return user;
 }

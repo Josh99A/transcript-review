@@ -1,7 +1,7 @@
 import SideNav from "./SideNav";
 
 type Props = {
-  user: { name: string; email: string; role: "ADMIN" | "USER" };
+  user: { name: string; email: string; role: "ADMIN" | "USER" | "REFERRER" };
   children: React.ReactNode;
 };
 

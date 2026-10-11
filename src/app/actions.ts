@@ -4,9 +4,12 @@ import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { createSession, destroySession, requireAdmin, requireUser } from "@/lib/auth";
+import { createSession, destroySession, homeFor, requireAdmin, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { balancesByUser, creditReferralIfDue } from "@/lib/earnings";
+import { formatPayDate } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
+import { getNextPayDate, setNextPayDate } from "@/lib/settings";
 import { deleteMedia } from "@/lib/media";
 
 export type FormState = { error?: string; ok?: string; email?: string } | undefined;
@@ -21,7 +24,7 @@ export async function login(_prev: FormState, formData: FormData): Promise<FormS
     return { error: "Wrong email or password.", email };
   }
   await createSession(user.id);
-  redirect(user.role === "ADMIN" ? "/admin" : "/jobs");
+  redirect(homeFor(user.role));
 }
 
 export async function logout() {
@@ -35,7 +38,8 @@ const newUserSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   email: z.string().trim().toLowerCase().email("Enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  role: z.enum(["ADMIN", "USER"]),
+  role: z.enum(["ADMIN", "USER", "REFERRER"]),
+  referredById: z.string().optional(),
 });
 
 export async function createUser(formData: FormData): Promise<FormState> {
@@ -43,8 +47,11 @@ export async function createUser(formData: FormData): Promise<FormState> {
   const parsed = newUserSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const { name, email, password, role } = parsed.data;
+  const referredById = role === "USER" && parsed.data.referredById ? parsed.data.referredById : null;
   if (await db.user.findUnique({ where: { email } })) return { error: "That email is already in use." };
-  await db.user.create({ data: { name, email, role, passwordHash: await bcrypt.hash(password, 10) } });
+  if (referredById && !(await db.user.findFirst({ where: { id: referredById, role: "REFERRER" } })))
+    return { error: "Pick a referrer from the list." };
+  await db.user.create({ data: { name, email, role, referredById, passwordHash: await bcrypt.hash(password, 10) } });
   revalidatePath("/admin/users");
   return { ok: `Created ${name}.` };
 }
@@ -56,6 +63,53 @@ export async function resetPassword(formData: FormData): Promise<FormState> {
   if (password.length < 8) return { error: "Password must be at least 8 characters." };
   await db.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(password, 10) } });
   return { ok: "Password updated." };
+}
+
+/** Sets who referred a transcriber. Locked once the referrer's bonus has been credited. */
+export async function setReferrer(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const userId = String(formData.get("userId"));
+  const referredById = String(formData.get("referredById") ?? "") || null;
+  const t = await db.user.findUnique({ where: { id: userId }, include: { bonusTriggeredBy: true } });
+  if (!t || t.role !== "USER") return { error: "Only transcribers can have a referrer." };
+  if (t.bonusTriggeredBy) return { error: "The referral bonus for this person has already been credited." };
+  if (referredById && !(await db.user.findFirst({ where: { id: referredById, role: "REFERRER" } })))
+    return { error: "Pick a referrer from the list." };
+  await db.user.update({ where: { id: userId }, data: { referredById } });
+  // If they've already submitted work, the bonus is due straight away.
+  await creditReferralIfDue(userId);
+  revalidatePath("/admin/users");
+  return { ok: referredById ? "Referrer saved." : "Referrer removed." };
+}
+
+// ---------- Admin: pay dates ----------
+
+export async function updatePayDate(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const date = String(formData.get("payDate") ?? "").trim();
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Enter a valid date." };
+  await setNextPayDate(date || null);
+  revalidatePath("/", "layout");
+  return { ok: date ? `Next pay date set to ${formatPayDate(date)}.` : "Pay date cleared." };
+}
+
+/** Records a payment for everyone who is owed, in one go, on pay day. */
+export async function payEveryone(): Promise<FormState> {
+  await requireAdmin();
+  const [balances, payDate, people] = await Promise.all([
+    balancesByUser(),
+    getNextPayDate(),
+    db.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, select: { id: true } }),
+  ]);
+  const note = payDate ? `Pay run ${formatPayDate(payDate)}` : "Pay run";
+  const payouts = people
+    .map((p) => ({ userId: p.id, amount: balances.get(p.id)?.owed ?? 0, note }))
+    .filter((p) => p.amount > 0);
+  if (payouts.length === 0) return { error: "Nobody is owed anything right now." };
+  await db.payout.createMany({ data: payouts });
+  revalidatePath("/", "layout");
+  const total = payouts.reduce((s, p) => s + p.amount, 0);
+  return { ok: `Recorded ${payouts.length} payment${payouts.length === 1 ? "" : "s"} totalling UGX ${total.toLocaleString("en-US")}.` };
 }
 
 // ---------- Admin: jobs ----------
@@ -174,10 +228,11 @@ export async function submitJob(jobId: string, text: string): Promise<FormState>
     // Credit pay once per job and user; a resubmission after a reopen doesn't pay again.
     db.earning.upsert({
       where: { jobId_userId: { jobId, userId: user.id } },
-      create: { jobId, userId: user.id, amount: earningsFor(job.durationSeconds) },
+      create: { jobId, userId: user.id, amount: earningsFor(job.durationSeconds), seconds: job.durationSeconds },
       update: {},
     }),
   ]);
+  await creditReferralIfDue(user.id);
   revalidatePath("/jobs");
   revalidatePath("/earnings");
   revalidatePath("/admin");

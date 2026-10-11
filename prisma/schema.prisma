@@ -10,6 +10,7 @@ datasource db {
 enum Role {
   ADMIN
   USER
+  REFERRER
 }
 
 enum JobStatus {
@@ -28,6 +29,13 @@ model User {
   jobs         Job[]
   earnings     Earning[]
   payouts      Payout[]
+
+  // Who brought this transcriber in. The referrer earns a one-off bonus for them.
+  referredById     String?
+  referredBy       User?           @relation("Referrals", fields: [referredById], references: [id])
+  referrals        User[]          @relation("Referrals")
+  bonusesEarned    ReferralBonus[] @relation("BonusReferrer")
+  bonusTriggeredBy ReferralBonus?  @relation("BonusTranscriber")
 }
 
 model Job {
@@ -65,7 +73,27 @@ model Earning {
   userId    String
   user      User     @relation(fields: [userId], references: [id])
   amount    Int
+  // Media length credited. Totals are paid on cumulative time, not the sum of rounded per-job amounts.
+  seconds   Int      @default(0)
   createdAt DateTime @default(now())
 
   @@unique([jobId, userId])
+}
+
+// One-off bonus a referrer earns when a transcriber they referred submits their first transcript.
+model ReferralBonus {
+  id            String   @id @default(cuid())
+  referrerId    String
+  referrer      User     @relation("BonusReferrer", fields: [referrerId], references: [id])
+  transcriberId String   @unique
+  transcriber   User     @relation("BonusTranscriber", fields: [transcriberId], references: [id])
+  amount        Int
+  createdAt     DateTime @default(now())
+}
+
+// Simple key/value settings, e.g. the next pay date admins announce to everyone.
+model Setting {
+  key       String   @id
+  value     String
+  updatedAt DateTime @updatedAt
 }

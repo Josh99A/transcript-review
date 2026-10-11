@@ -2,25 +2,28 @@ import { ArrowRight, CircleCheck, Clock, FileAudio, FileVideo, Inbox, Wallet } f
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, StatCard } from "@/components/ui";
-import { requireUser } from "@/lib/auth";
+import PayDateBanner from "@/components/PayDateBanner";
+import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balanceFor } from "@/lib/earnings";
 import { formatDuration, formatHours, formatRelative, formatUGX } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
+import { getNextPayDate } from "@/lib/settings";
 import SubmittedToast from "./SubmittedToast";
 
 export const metadata: Metadata = { title: "My jobs" };
 
 export default async function MyJobsPage({ searchParams }: { searchParams: Promise<{ submitted?: string }> }) {
-  const user = await requireUser();
+  const user = await requireRole("USER");
   const { submitted } = await searchParams;
-  const [jobs, balance] = await Promise.all([
+  const [jobs, balance, payDate] = await Promise.all([
     db.job.findMany({
       where: { assigneeId: user.id },
       include: { earnings: { where: { userId: user.id } } },
       orderBy: [{ assignedAt: "desc" }],
     }),
     balanceFor(user.id),
+    getNextPayDate(),
   ]);
   const todo = jobs.filter((j) => j.status === "ASSIGNED");
   const done = jobs.filter((j) => j.status === "SUBMITTED").sort((a, b) => +(b.submittedAt ?? 0) - +(a.submittedAt ?? 0));
@@ -32,6 +35,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
     <>
       {submitted && <SubmittedToast />}
       <PageHeader title={`Hi ${firstName}`} description="Here's what's waiting for you." />
+      <div className="mb-6"><PayDateBanner payDate={payDate} owed={balance.owed} /></div>
 
       <div className="grid gap-4 sm:grid-cols-3">
         <StatCard icon={Inbox} label="To do" value={todo.length} tone="amber" hint={todo.length ? `${formatHours(todoSeconds)} of media` : "All caught up"} />

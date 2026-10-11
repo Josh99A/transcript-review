@@ -8,7 +8,7 @@ export const metadata: Metadata = { title: "Sign in" };
 
 const POINTS = [
   "Listen and correct transcripts side by side",
-  "Pay credited the moment you submit",
+  "Pay tracked by the minute, paid on set pay dates",
   "See exactly what you've earned and been paid",
 ];
 

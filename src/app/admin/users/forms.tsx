@@ -2,12 +2,15 @@
 
 import { Banknote, KeyRound, UserPlus } from "lucide-react";
 import { useState } from "react";
-import { createUser, recordPayout, resetPassword } from "@/app/actions";
+import { createUser, recordPayout, resetPassword, setReferrer } from "@/app/actions";
 import { ActionForm, Modal } from "@/components/client";
 import { formatUGX } from "@/lib/format";
 
-export function NewUserButton() {
+type Option = { id: string; name: string };
+
+export function NewUserButton({ referrers }: { referrers: Option[] }) {
   const [open, setOpen] = useState(false);
+  const [role, setRole] = useState("USER");
   return (
     <>
       <button className="btn" onClick={() => setOpen(true)}><UserPlus className="size-4" /> Add person</button>
@@ -22,17 +25,27 @@ export function NewUserButton() {
           </div>
           <fieldset>
             <legend className="label">Role</legend>
-            <div className="grid grid-cols-2 gap-2">
-              {[["USER", "Transcriber", "Corrects transcripts and earns pay"], ["ADMIN", "Admin", "Uploads, assigns and pays"]].map(([v, t, d]) => (
+            <div className="grid gap-2 sm:grid-cols-3">
+              {[["USER", "Transcriber", "Corrects transcripts"], ["REFERRER", "Referrer", "Earns for bringing in transcribers"], ["ADMIN", "Admin", "Uploads, assigns and pays"]].map(([v, t, d]) => (
                 <label key={v} className="flex cursor-pointer flex-col rounded-lg border border-slate-200 p-3 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50">
                   <span className="flex items-center gap-2 text-sm font-medium">
-                    <input type="radio" name="role" value={v} defaultChecked={v === "USER"} className="accent-brand-600" /> {t}
+                    <input type="radio" name="role" value={v} checked={role === v} onChange={() => setRole(v)} className="accent-brand-600" /> {t}
                   </span>
                   <span className="mt-1 text-xs text-slate-500">{d}</span>
                 </label>
               ))}
             </div>
           </fieldset>
+          {role === "USER" && (
+            <div>
+              <label className="label" htmlFor="nu-ref">Referred by <span className="font-normal text-slate-400">(optional)</span></label>
+              <select className="input" id="nu-ref" name="referredById" defaultValue="">
+                <option value="">Nobody</option>
+                {referrers.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+              </select>
+              {referrers.length === 0 && <p className="hint">Add a referrer first to link them here.</p>}
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>Cancel</button>
             <button className="btn">Add person</button>
@@ -92,5 +105,27 @@ export function ResetPasswordButton({ userId, name }: { userId: string; name: st
         </ActionForm>
       </Modal>
     </>
+  );
+}
+
+/** Inline picker for who referred a transcriber. Locked once the bonus is credited. */
+export function ReferrerSelect({ userId, current, referrers, locked }: { userId: string; current: string | null; referrers: Option[]; locked: boolean }) {
+  if (locked) {
+    return <span className="text-sm text-slate-700" title="Bonus already credited">{referrers.find((r) => r.id === current)?.name ?? "—"}</span>;
+  }
+  return (
+    <ActionForm action={setReferrer}>
+      <input type="hidden" name="userId" value={userId} />
+      <select
+        name="referredById"
+        defaultValue={current ?? ""}
+        onChange={(e) => e.currentTarget.form?.requestSubmit()}
+        className="input h-8 w-36 text-xs"
+        aria-label="Referred by"
+      >
+        <option value="">Nobody</option>
+        {referrers.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
+      </select>
+    </ActionForm>
   );
 }

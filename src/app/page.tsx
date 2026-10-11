@@ -1,7 +1,7 @@
 import { redirect } from "next/navigation";
-import { getCurrentUser } from "@/lib/auth";
+import { getCurrentUser, homeFor } from "@/lib/auth";
 
 export default async function Home() {
   const user = await getCurrentUser();
-  redirect(!user ? "/login" : user.role === "ADMIN" ? "/admin" : "/jobs");
+  redirect(user ? homeFor(user.role) : "/login");
 }

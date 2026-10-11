@@ -2,7 +2,10 @@ import { Banknote, CircleCheck, Clock, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, StatCard } from "@/components/ui";
-import { requireUser } from "@/lib/auth";
+import PayDateBanner from "@/components/PayDateBanner";
+import { requireRole } from "@/lib/auth";
+import { balanceFor } from "@/lib/earnings";
+import { getNextPayDate } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { formatDate, formatDuration, formatHours, formatUGX } from "@/lib/format";
 import { RATE_PER_HOUR_UGX } from "@/lib/pay";
@@ -10,20 +13,22 @@ import { RATE_PER_HOUR_UGX } from "@/lib/pay";
 export const metadata: Metadata = { title: "My earnings" };
 
 export default async function EarningsPage() {
-  const user = await requireUser();
+  const user = await requireRole("USER");
   const [earnings, payouts] = await Promise.all([
     db.earning.findMany({ where: { userId: user.id }, include: { job: true }, orderBy: { createdAt: "desc" } }),
     db.payout.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
   ]);
-  const earned = earnings.reduce((s, e) => s + e.amount, 0);
+  const [balance, payDate] = await Promise.all([balanceFor(user.id), getNextPayDate()]);
+  const { earned, owed, seconds } = balance;
   const paid = payouts.reduce((s, p) => s + p.amount, 0);
-  const owed = earned - paid;
-  const seconds = earnings.reduce((s, e) => s + e.job.durationSeconds, 0);
   const paidPct = earned ? Math.min(100, Math.round((paid / earned) * 100)) : 0;
 
   return (
     <>
-      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, prorated by length.`} />
+      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of all your submitted transcripts.`} />
+      <div className="mb-6">
+        <PayDateBanner payDate={payDate} owed={owed} detail={`Paid on your total of ${formatHours(seconds)} of transcribed media, minus what you've already been paid.`} />
+      </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-brand-600 to-brand-900 p-6 text-white shadow-lg lg:col-span-1">

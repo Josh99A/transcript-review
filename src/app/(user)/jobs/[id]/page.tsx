@@ -5,7 +5,7 @@ import { notFound } from "next/navigation";
 import MediaPlayer from "@/components/MediaPlayer";
 import StatusBadge from "@/components/StatusBadge";
 import { PageHeader } from "@/components/ui";
-import { requireUser } from "@/lib/auth";
+import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDate, formatDuration, formatUGX } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
@@ -14,7 +14,7 @@ import Editor from "./Editor";
 export const metadata: Metadata = { title: "Edit transcript" };
 
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
-  const user = await requireUser();
+  const user = await requireRole("USER");
   const { id } = await params;
   const job = await db.job.findUnique({ where: { id } });
   if (!job || job.assigneeId !== user.id) notFound();

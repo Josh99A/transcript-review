@@ -40,3 +40,21 @@ export function formatHours(totalSeconds: number): string {
   const m = Math.round((totalSeconds % 3600) / 60);
   return m ? `${h} hr ${m} min` : `${h} hr`;
 }
+
+/** Formats a YYYY-MM-DD pay date, e.g. "Fri 31 Oct 2026". */
+export function formatPayDate(ymd: string): string {
+  const [y, m, d] = ymd.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString("en-GB", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** Whole days from today (in East Africa Time) until a YYYY-MM-DD date; negative if it has passed. */
+export function daysUntil(ymd: string, now = new Date()): number {
+  const today = new Date(now.toLocaleDateString("en-CA", { timeZone: "Africa/Kampala" }) + "T00:00:00Z");
+  return Math.round((Date.parse(ymd + "T00:00:00Z") - today.getTime()) / 86_400_000);
+}

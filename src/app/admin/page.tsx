@@ -1,6 +1,7 @@
 import { CircleCheck, FileAudio, FileVideo, Hourglass, Inbox, Search, Upload, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import PayDayCard from "@/components/PayDayCard";
 import StatusBadge from "@/components/StatusBadge";
 import { Avatar, EmptyState, PageHeader, StatCard, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
@@ -8,6 +9,7 @@ import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatDuration, formatRelative, formatUGX } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
+import { getNextPayDate } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -26,7 +28,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const filter: Filter = FILTERS.includes(status as Filter) ? (status as Filter) : "ALL";
   const query = q.trim();
 
-  const [jobs, users, balances, counts] = await Promise.all([
+  const [jobs, users, balances, counts, payDate] = await Promise.all([
     db.job.findMany({
       where: {
         ...(filter === "ALL" ? {} : { status: filter }),
@@ -35,16 +37,18 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
       include: { assignee: { select: { name: true } }, earnings: true },
       orderBy: [{ updatedAt: "desc" }],
     }),
-    db.user.findMany({ where: { role: "USER" }, orderBy: { name: "asc" } }),
+    db.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, orderBy: { name: "asc" } }),
     balancesByUser(),
     db.job.groupBy({ by: ["status"], _count: true }),
+    getNextPayDate(),
   ]);
   const count = (s: Filter) =>
     s === "ALL" ? counts.reduce((n, c) => n + c._count, 0) : (counts.find((c) => c.status === s)?._count ?? 0);
-  const totalOwed = [...balances.values()].reduce((sum, b) => sum + b.owed, 0);
   const owing = users
     .map((u) => ({ user: u, balance: balances.get(u.id) ?? { earned: 0, paid: 0, owed: 0 } }))
     .sort((a, b) => b.balance.owed - a.balance.owed);
+  const totalOwed = owing.reduce((sum, o) => sum + Math.max(o.balance.owed, 0), 0);
+  const peopleOwed = owing.filter((o) => o.balance.owed > 0).length;
   const href = (f: Filter) => {
     const p = new URLSearchParams();
     if (f !== "ALL") p.set("status", f);
@@ -178,6 +182,8 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
           )}
         </section>
 
+        <div className="space-y-6">
+        <PayDayCard payDate={payDate} totalOwed={totalOwed} peopleOwed={peopleOwed} />
         <section className="card h-fit">
           <div className="card-header">
             <h2 className="card-title">Owed to team</h2>
@@ -190,7 +196,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
               {owing.map(({ user, balance }) => (
                 <li key={user.id} className="flex items-center gap-3 px-5 py-3">
                   <div className="min-w-0 flex-1">
-                    <UserCell name={user.name} sub={`Earned ${formatUGX(balance.earned)}`} />
+                    <UserCell name={user.name} sub={`${user.role === "REFERRER" ? "Referrer · " : ""}Earned ${formatUGX(balance.earned)}`} />
                   </div>
                   <div className={`num text-sm font-semibold whitespace-nowrap ${balance.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>
                     {formatUGX(balance.owed)}
@@ -200,6 +206,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
             </ul>
           )}
         </section>
+        </div>
       </div>
     </>
   );
