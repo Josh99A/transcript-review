@@ -140,6 +140,7 @@ export async function reopenJob(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const jobId = String(formData.get("jobId"));
   const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
+  if (job.mediaRemovedAt) return { error: "The media file was removed, so this job can't be sent back." };
   await db.job.update({
     where: { id: jobId },
     data: { status: job.assigneeId ? "ASSIGNED" : "UNASSIGNED", submittedAt: null },
@@ -179,6 +180,32 @@ export async function deleteJob(formData: FormData): Promise<FormState> {
   await deleteMedia(job.mediaPath);
   revalidatePath("/admin");
   redirect("/admin");
+}
+
+/** Deletes the media file of a submitted job to save space. The job, transcripts and pay stay. */
+export async function removeJobMedia(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const jobId = String(formData.get("jobId"));
+  const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
+  if (job.status !== "SUBMITTED") return { error: "Only submitted jobs can have their media removed." };
+  if (!job.mediaRemovedAt) {
+    await deleteMedia(job.mediaPath);
+    await db.job.update({ where: { id: jobId }, data: { mediaRemovedAt: new Date() } });
+  }
+  revalidatePath("/admin");
+  revalidatePath(`/admin/jobs/${jobId}`);
+  return { ok: "Media file removed. The transcript and pay records are kept." };
+}
+
+/** Removes the media files of every submitted job in one go. */
+export async function removeAllSubmittedMedia(): Promise<FormState> {
+  await requireAdmin();
+  const jobs = await db.job.findMany({ where: { status: "SUBMITTED", mediaRemovedAt: null } });
+  if (jobs.length === 0) return { error: "No submitted jobs have media left to remove." };
+  for (const j of jobs) await deleteMedia(j.mediaPath);
+  await db.job.updateMany({ where: { id: { in: jobs.map((j) => j.id) } }, data: { mediaRemovedAt: new Date() } });
+  revalidatePath("/", "layout");
+  return { ok: `Removed ${jobs.length} media file${jobs.length === 1 ? "" : "s"}. Transcripts and pay records are kept.` };
 }
 
 // ---------- Admin: payouts ----------

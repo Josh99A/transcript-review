@@ -1,4 +1,4 @@
-import type { LucideIcon } from "lucide-react";
+import { FileX2, type LucideIcon } from "lucide-react";
 
 export function PageHeader({
   title,
@@ -120,6 +120,20 @@ export function UserCell({ name, sub }: { name: string; sub?: React.ReactNode })
         <div className="truncate font-medium text-slate-900">{name}</div>
         {sub && <div className="truncate text-xs text-slate-500">{sub}</div>}
       </div>
+    </div>
+  );
+}
+
+/** Shown in place of the player once an admin has removed a job's media file. */
+export function MediaRemoved({ at }: { at: Date }) {
+  return (
+    <div className="card flex items-center gap-3 p-4 text-sm text-slate-600">
+      <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
+        <FileX2 className="size-4.5" aria-hidden />
+      </span>
+      <span>
+        The media file was removed on {at.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })} to save space. The transcript and pay records are kept.
+      </span>
     </div>
   );
 }

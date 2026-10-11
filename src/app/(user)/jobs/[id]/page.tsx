@@ -4,7 +4,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import MediaPlayer from "@/components/MediaPlayer";
 import StatusBadge from "@/components/StatusBadge";
-import { PageHeader } from "@/components/ui";
+import { MediaRemoved, PageHeader } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDate, formatDuration, formatUGX } from "@/lib/format";
@@ -46,7 +46,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             <span>You submitted this on {formatDate(job.submittedAt)}. It&apos;s read-only unless an admin sends it back.</span>
             <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary btn-sm ml-auto"><Download className="size-3.5" /> .txt</a>
           </div>
-          <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>
+          {job.mediaRemovedAt ? <MediaRemoved at={job.mediaRemovedAt} /> : <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>}
           <div className="card px-5 py-4">
             <pre className="font-mono text-[15px] leading-7 whitespace-pre-wrap text-slate-800">{job.editedTranscript}</pre>
           </div>

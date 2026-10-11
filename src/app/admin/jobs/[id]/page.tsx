@@ -1,16 +1,17 @@
-import { ArrowLeft, Download, Trash2, Undo2 } from "lucide-react";
+import { ArrowLeft, Download, FileX2, Trash2, Undo2 } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { assignJob, deleteJob, removeEarning, reopenJob, updateDuration } from "@/app/actions";
+import { assignJob, deleteJob, removeEarning, removeJobMedia, reopenJob, updateDuration } from "@/app/actions";
 import { ActionForm, ConfirmAction } from "@/components/client";
 import MediaPlayer from "@/components/MediaPlayer";
 import StatusBadge from "@/components/StatusBadge";
 import TranscriptDiff from "@/components/TranscriptDiff";
-import { PageHeader, UserCell } from "@/components/ui";
+import { MediaRemoved, PageHeader, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { formatDate, formatDuration, formatUGX } from "@/lib/format";
+import { formatBytes, formatDate, formatDuration, formatUGX } from "@/lib/format";
+import { mediaSize } from "@/lib/media";
 import { earningsFor } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "Job" };
@@ -49,7 +50,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
 
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <div className="min-w-0 space-y-6">
-          <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>
+          {job.mediaRemovedAt ? <MediaRemoved at={job.mediaRemovedAt} /> : <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>}
           <section className="card overflow-hidden">
             <div className="card-header"><h2 className="card-title">Transcript review</h2></div>
             <TranscriptDiff original={job.originalTranscript} edited={job.editedTranscript} finalLabel={job.status === "SUBMITTED" ? "Submitted" : "Current draft"} />
@@ -61,7 +62,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
             <div className="card-header"><h2 className="card-title">Assignment</h2></div>
             <div className="card-body space-y-4">
               {job.assignee && <UserCell name={job.assignee.name} sub={job.assignee.email} />}
-              {job.status === "SUBMITTED" ? (
+              {job.status === "SUBMITTED" && job.mediaRemovedAt ? null : job.status === "SUBMITTED" ? (
                 <ConfirmAction
                   action={reopenJob}
                   fields={{ jobId: job.id }}
@@ -133,6 +134,27 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
               </details>
             </div>
           </section>
+
+          {job.status === "SUBMITTED" && !job.mediaRemovedAt && (
+            <section className="card">
+              <div className="card-body flex items-center gap-3">
+                <div className="flex-1">
+                  <h2 className="text-sm font-semibold text-slate-900">Free up space</h2>
+                  <p className="text-xs text-slate-500">Remove the media file ({formatBytes(await mediaSize(job.mediaPath))}). The job, transcripts and pay stay.</p>
+                </div>
+                <ConfirmAction
+                  action={removeJobMedia}
+                  fields={{ jobId: job.id }}
+                  trigger={<><FileX2 className="size-4" /> Remove media</>}
+                  triggerClassName="btn-secondary shrink-0"
+                  title="Remove the media file?"
+                  description="The audio or video file is deleted for good to free up space. The job, both transcripts and the pay records are kept, but nobody can play it again and the job can't be sent back for corrections."
+                  confirmLabel="Remove media"
+                  danger
+                />
+              </div>
+            </section>
+          )}
 
           <section className="card border-red-200">
             <div className="card-body flex items-center gap-3">

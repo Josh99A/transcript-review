@@ -50,6 +50,8 @@ model Job {
   assignee           User?     @relation(fields: [assigneeId], references: [id])
   assignedAt         DateTime?
   submittedAt        DateTime?
+  // Set when an admin deletes the media file to save space; the job and its records stay.
+  mediaRemovedAt     DateTime?
   earnings           Earning[]
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt

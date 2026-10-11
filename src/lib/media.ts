@@ -1,6 +1,6 @@
 import "server-only";
 import path from "node:path";
-import { mkdir, unlink } from "node:fs/promises";
+import { mkdir, stat, unlink } from "node:fs/promises";
 
 export const UPLOAD_DIR = path.resolve(/*turbopackIgnore: true*/ process.env.UPLOAD_DIR ?? "./uploads");
 
@@ -20,5 +20,14 @@ export async function deleteMedia(name: string) {
     await unlink(mediaFile(name));
   } catch {
     // Already gone; nothing to do.
+  }
+}
+
+/** Size of a stored media file in bytes, or 0 if it's missing. */
+export async function mediaSize(name: string) {
+  try {
+    return (await stat(mediaFile(name))).size;
+  } catch {
+    return 0;
   }
 }

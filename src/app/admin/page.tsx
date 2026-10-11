@@ -3,12 +3,14 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import PayDayCard from "@/components/PayDayCard";
 import StatusBadge from "@/components/StatusBadge";
+import StorageCard from "@/components/StorageCard";
 import { Avatar, EmptyState, PageHeader, StatCard, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatDuration, formatRelative, formatUGX } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
+import { mediaSize } from "@/lib/media";
 import { getNextPayDate } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -28,7 +30,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const filter: Filter = FILTERS.includes(status as Filter) ? (status as Filter) : "ALL";
   const query = q.trim();
 
-  const [jobs, users, balances, counts, payDate] = await Promise.all([
+  const [jobs, users, balances, counts, payDate, stored] = await Promise.all([
     db.job.findMany({
       where: {
         ...(filter === "ALL" ? {} : { status: filter }),
@@ -41,7 +43,11 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     balancesByUser(),
     db.job.groupBy({ by: ["status"], _count: true }),
     getNextPayDate(),
+    db.job.findMany({ where: { mediaRemovedAt: null }, select: { mediaPath: true, status: true } }),
   ]);
+  const sizes = await Promise.all(stored.map(async (j) => ({ status: j.status, bytes: await mediaSize(j.mediaPath) })));
+  const usedBytes = sizes.reduce((s, j) => s + j.bytes, 0);
+  const removable = sizes.filter((j) => j.status === "SUBMITTED");
   const count = (s: Filter) =>
     s === "ALL" ? counts.reduce((n, c) => n + c._count, 0) : (counts.find((c) => c.status === s)?._count ?? 0);
   const owing = users
@@ -184,6 +190,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
 
         <div className="space-y-6">
         <PayDayCard payDate={payDate} totalOwed={totalOwed} peopleOwed={peopleOwed} />
+        <StorageCard usedBytes={usedBytes} removableBytes={removable.reduce((s, j) => s + j.bytes, 0)} removableCount={removable.length} />
         <section className="card h-fit">
           <div className="card-header">
             <h2 className="card-title">Owed to team</h2>

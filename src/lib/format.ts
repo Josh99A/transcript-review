@@ -58,3 +58,10 @@ export function daysUntil(ymd: string, now = new Date()): number {
   const today = new Date(now.toLocaleDateString("en-CA", { timeZone: "Africa/Kampala" }) + "T00:00:00Z");
   return Math.round((Date.parse(ymd + "T00:00:00Z") - today.getTime()) / 86_400_000);
 }
+
+export function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 MB";
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
