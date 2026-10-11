@@ -32,8 +32,25 @@ Next.js 16 (App Router, TypeScript, Tailwind), Prisma with SQLite, signed-cookie
 bcrypt-hashed passwords. Media files are stored on disk in `UPLOAD_DIR` and streamed only to
 admins and the assigned user.
 
-## Hosting notes
+## Hosting on Railway
 
-Uploaded media is saved to local disk, so host it on a server or VM with a persistent disk
-(for example a small VPS, Railway or Render with a volume). Serverless hosts like Vercel would
-need the uploads moved to object storage (S3, Vercel Blob, R2) and the database moved to Postgres.
+The repo includes `railway.json`. Database migrations run when the app starts (not during the
+build), and the first admin is created automatically from environment variables.
+
+1. Create a service from this GitHub repo.
+2. Add a **volume** to the service mounted at `/data`.
+3. Set these variables on the service:
+   - `DATABASE_URL` = `file:/data/app.db`
+   - `UPLOAD_DIR` = `/data/uploads`
+   - `SESSION_SECRET` = a long random string (e.g. `${{secret(64)}}` in Railway)
+   - `ADMIN_EMAIL`, `ADMIN_PASSWORD` (8+ chars) and optionally `ADMIN_NAME` for the first admin
+4. Generate a public domain under the service's Networking settings.
+
+Free and Trial plans cap volumes at 0.5 GB, which fits only a few hours of compressed audio.
+Upgrade to Hobby for more space, or move uploads to object storage.
+
+## Other hosts
+
+Uploaded media is saved to local disk, so the app needs a persistent disk (a VPS, Railway or
+Render with a volume). Serverless hosts like Vercel would need the uploads moved to object
+storage (S3, R2) and the database moved to Postgres.
