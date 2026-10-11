@@ -10,7 +10,6 @@ import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatDuration, formatRelative, formatUGX } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
-import { mediaSize } from "@/lib/media";
 import { getNextPayDate } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -34,7 +33,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     db.job.findMany({
       where: {
         ...(filter === "ALL" ? {} : { status: filter }),
-        ...(query ? { OR: [{ title: { contains: query } }, { assignee: { name: { contains: query } } }] } : {}),
+        ...(query ? { OR: [{ title: { contains: query, mode: "insensitive" } }, { assignee: { name: { contains: query, mode: "insensitive" } } }] } : {}),
       },
       include: { assignee: { select: { name: true } }, earnings: true, _count: { select: { requests: { where: { status: "PENDING" } } } } },
       orderBy: [{ updatedAt: "desc" }],
@@ -43,10 +42,10 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     balancesByUser(),
     db.job.groupBy({ by: ["status"], _count: true }),
     getNextPayDate(),
-    db.job.findMany({ where: { mediaRemovedAt: null }, select: { mediaPath: true, status: true } }),
+    db.job.findMany({ where: { mediaRemovedAt: null }, select: { mediaBytes: true, status: true } }),
     db.jobRequest.count({ where: { status: "PENDING", job: { status: "UNASSIGNED" } } }),
   ]);
-  const sizes = await Promise.all(stored.map(async (j) => ({ status: j.status, bytes: await mediaSize(j.mediaPath) })));
+  const sizes = stored.map((j) => ({ status: j.status, bytes: j.mediaBytes }));
   const usedBytes = sizes.reduce((s, j) => s + j.bytes, 0);
   const removable = sizes.filter((j) => j.status === "SUBMITTED");
   const count = (s: Filter) =>

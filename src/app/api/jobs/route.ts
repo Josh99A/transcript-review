@@ -1,13 +1,8 @@
-import { randomUUID } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import path from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseDeadline } from "@/lib/format";
-import { ensureUploadDir, mediaFile } from "@/lib/media";
+import { uploadMedia } from "@/lib/media";
 import { mediaTypeOf } from "@/lib/mediaTypes";
 import { docxToText } from "@/lib/docx";
 
@@ -48,15 +43,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Couldn't read the media length. Enter it manually." }, { status: 400 });
   if (!transcript.trim()) return NextResponse.json({ error: "Add a transcript." }, { status: 400 });
 
-  await ensureUploadDir();
-  const ext = path.extname(media.name).toLowerCase().replace(/[^.a-z0-9]/g, "").slice(0, 10);
-  const stored = `${randomUUID()}${ext}`;
-  await pipeline(Readable.fromWeb(media.stream() as never), createWriteStream(mediaFile(stored)));
+  let stored: Awaited<ReturnType<typeof uploadMedia>>;
+  try {
+    stored = await uploadMedia(media);
+  } catch (err) {
+    console.error("Media upload failed", err);
+    return NextResponse.json({ error: "Couldn't store the media file. Try again, or use a smaller file." }, { status: 502 });
+  }
 
   const job = await db.job.create({
     data: {
       title,
-      mediaPath: stored,
+      mediaPath: stored.name,
+      mediaBytes: stored.bytes,
       mediaType,
       durationSeconds,
       originalTranscript: transcript,

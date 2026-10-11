@@ -11,7 +11,6 @@ import { MediaRemoved, PageHeader, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { deadlineInput, formatBytes, formatDate, formatDeadline, formatDuration, formatRelative, formatUGX } from "@/lib/format";
-import { mediaSize } from "@/lib/media";
 import { earningsFor } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "Job" };
@@ -219,7 +218,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
               <div className="card-body flex items-center gap-3">
                 <div className="flex-1">
                   <h2 className="text-sm font-semibold text-slate-900">Free up space</h2>
-                  <p className="text-xs text-slate-500">Remove the media file ({formatBytes(await mediaSize(job.mediaPath))}). The job, transcripts and pay stay.</p>
+                  <p className="text-xs text-slate-500">Remove the media file ({formatBytes(job.mediaBytes)}). The job, transcripts and pay stay.</p>
                 </div>
                 <ConfirmAction
                   action={removeJobMedia}

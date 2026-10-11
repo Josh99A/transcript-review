@@ -1,31 +1,38 @@
-# Render Blueprint. On render.com: New > Blueprint, pick this repo, fill in the ADMIN_* values.
-# The disk keeps the database and uploaded media across deploys. Render only offers disks
-# on paid instances, so the plan is "starter"; on "free" everything is wiped on every deploy.
+# Render Blueprint. On render.com: New > Blueprint, pick this repo, then fill in CLOUDINARY_URL
+# (Cloudinary dashboard > API Keys > API environment variable) and the ADMIN_* values.
+# The database is Render Postgres; uploaded media is stored in Cloudinary.
+# Render deletes a free Postgres database 30 days after it is created unless it is upgraded.
 services:
   - type: web
     name: transcript-review
     runtime: node
-    plan: starter
+    plan: free
     region: frankfurt
+    branch: claude/project-thread-8jv8d6
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /login
-    disk:
-      name: data
-      mountPath: /data
-      sizeGB: 5
     envVars:
       - key: NODE_VERSION
         value: "22"
       - key: DATABASE_URL
-        value: file:/data/app.db
-      - key: UPLOAD_DIR
-        value: /data/uploads
+        fromDatabase:
+          name: transcript-review-db
+          property: connectionString
       - key: SESSION_SECRET
         generateValue: true
+      - key: CLOUDINARY_URL
+        sync: false
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD
         sync: false
       - key: ADMIN_NAME
         sync: false
+
+databases:
+  - name: transcript-review-db
+    plan: free
+    region: frankfurt
+    databaseName: transcript_review
+    user: transcript_review

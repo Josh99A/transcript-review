@@ -14,12 +14,12 @@ Resubmitting after a job is sent back never pays twice. The pay rate lives in `s
 
 ## Run it locally
 
-Requires Node.js 20 or newer.
+Requires Node.js 20 or newer, a Postgres database and a Cloudinary account (free plan is fine).
 
 ```bash
-cp .env.example .env          # then set SESSION_SECRET to a long random string
+cp .env.example .env          # then set DATABASE_URL, SESSION_SECRET and CLOUDINARY_URL
 npm install
-npx prisma migrate deploy     # creates the SQLite database
+npx prisma migrate deploy     # creates the tables
 npm run create-admin -- "Your Name" you@example.com "a-strong-password"
 npm run dev                   # http://localhost:3000
 ```
@@ -28,29 +28,18 @@ Sign in as the admin, add transcribers under **Users & pay**, then upload a job.
 
 ## Stack
 
-Next.js 16 (App Router, TypeScript, Tailwind), Prisma with SQLite, signed-cookie sessions with
-bcrypt-hashed passwords. Media files are stored on disk in `UPLOAD_DIR` and streamed only to
-admins and the assigned user.
+Next.js 16 (App Router, TypeScript, Tailwind), Prisma with Postgres, signed-cookie sessions with
+bcrypt-hashed passwords. Media files are stored in Cloudinary as authenticated (private) assets and
+streamed through the app only to admins and the assigned user. Cloudinary's free plan caps a single
+video or audio file at 100 MB.
 
-## Hosting on Railway
+## Hosting on Render
 
-The repo includes `railway.json`. Database migrations run when the app starts (not during the
-build), and the first admin is created automatically from environment variables.
+The repo includes `render.yaml`. On render.com choose **New > Blueprint**, pick this repo, and fill in
+`CLOUDINARY_URL` (Cloudinary dashboard > API Keys > API environment variable) plus `ADMIN_EMAIL`,
+`ADMIN_PASSWORD` (8+ chars) and optionally `ADMIN_NAME` for the first admin. It creates a free web
+service and a free Postgres database. Migrations run when the app starts, and the first admin is
+created automatically.
 
-1. Create a service from this GitHub repo.
-2. Add a **volume** to the service mounted at `/data`.
-3. Set these variables on the service:
-   - `DATABASE_URL` = `file:/data/app.db`
-   - `UPLOAD_DIR` = `/data/uploads`
-   - `SESSION_SECRET` = a long random string (e.g. `${{secret(64)}}` in Railway)
-   - `ADMIN_EMAIL`, `ADMIN_PASSWORD` (8+ chars) and optionally `ADMIN_NAME` for the first admin
-4. Generate a public domain under the service's Networking settings.
-
-Free and Trial plans cap volumes at 0.5 GB, which fits only a few hours of compressed audio.
-Upgrade to Hobby for more space, or move uploads to object storage.
-
-## Other hosts
-
-Uploaded media is saved to local disk, so the app needs a persistent disk (a VPS, Railway or
-Render with a volume). Serverless hosts like Vercel would need the uploads moved to object
-storage (S3, R2) and the database moved to Postgres.
+Render deletes a free Postgres database 30 days after it is created unless it is upgraded, and a
+free web service sleeps after 15 minutes without visitors, so the next visit takes about a minute.
