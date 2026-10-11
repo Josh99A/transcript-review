@@ -137,3 +137,22 @@
     padding-top: 0.5rem;
   }
 }
+
+/* Some budget Android phones (e.g. Samsung A14 on Chrome) leave stale, doubled copies of content on
+   screen. Keep painting simple on touch screens: no transitions, shadows or backdrop effects. */
+@media (hover: none) {
+  *,
+  ::before,
+  ::after {
+    transition: none !important;
+  }
+  .card,
+  .btn,
+  .btn-secondary,
+  .btn-danger {
+    box-shadow: none;
+  }
+  dialog::backdrop {
+    backdrop-filter: none;
+  }
+}
