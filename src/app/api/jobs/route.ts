@@ -8,6 +8,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { ensureUploadDir, mediaFile } from "@/lib/media";
 import { mediaTypeOf } from "@/lib/mediaTypes";
+import { docxToText } from "@/lib/docx";
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -21,7 +22,15 @@ export async function POST(req: Request) {
 
   let transcript = String(form.get("transcriptText") ?? "");
   const transcriptFile = form.get("transcriptFile");
-  if (transcriptFile instanceof File && transcriptFile.size > 0) transcript = await transcriptFile.text();
+  if (transcriptFile instanceof File && transcriptFile.size > 0) {
+    if (/\.docx$/i.test(transcriptFile.name)) {
+      try {
+        transcript = await docxToText(Buffer.from(await transcriptFile.arrayBuffer()));
+      } catch {
+        return NextResponse.json({ error: "Couldn't read that Word file. Save it as .docx and try again." }, { status: 400 });
+      }
+    } else transcript = await transcriptFile.text();
+  }
 
   if (!title) return NextResponse.json({ error: "Give the job a title." }, { status: 400 });
   if (!(media instanceof File) || media.size === 0)

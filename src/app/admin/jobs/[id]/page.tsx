@@ -44,7 +44,10 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
         title={job.title}
         description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={job.status} /><span className="num">{formatDuration(job.durationSeconds)} · pays {formatUGX(earningsFor(job.durationSeconds))}</span></span>}
         actions={
-          <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary"><Download className="size-4" /> Download .txt</a>
+          <>
+            <a href={`/api/jobs/${job.id}/transcript?format=docx`} className="btn-secondary"><Download className="size-4" /> Word .docx</a>
+            <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary"><Download className="size-4" /> .txt</a>
+          </>
         }
       />
 

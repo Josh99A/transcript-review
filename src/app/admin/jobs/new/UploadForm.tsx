@@ -248,8 +248,8 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
             ) : (
               <label className="flex cursor-pointer items-center gap-3 rounded-xl border-2 border-dashed border-slate-200 px-4 py-5 text-sm text-slate-600 transition hover:border-brand-300 hover:bg-slate-50">
                 <FileText className="size-5 text-slate-400" />
-                <span>Choose a <strong>.txt</strong>, <strong>.srt</strong> or <strong>.vtt</strong> file</span>
-                <input type="file" accept=".txt,.srt,.vtt,text/plain" className="hidden" onChange={(e) => setTranscriptFile(e.target.files?.[0] ?? null)} />
+                <span>Choose a Word <strong>.docx</strong>, <strong>.txt</strong>, <strong>.srt</strong> or <strong>.vtt</strong> file</span>
+                <input type="file" accept=".txt,.docx,.srt,.vtt,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={(e) => setTranscriptFile(e.target.files?.[0] ?? null)} />
               </label>
             )
           ) : (
