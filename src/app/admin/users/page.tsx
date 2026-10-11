@@ -4,7 +4,8 @@ import { EmptyState, PageHeader, StatCard, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
-import { formatDate, formatUGX } from "@/lib/format";
+import { formatDate, formatHours, formatUGX } from "@/lib/format";
+import { REFERRAL_RATE_PER_HOUR_UGX } from "@/lib/pay";
 import { NewUserButton, PayoutButton, ReferrerSelect, ResetPasswordButton } from "./forms";
 
 export const metadata: Metadata = { title: "Team & payments" };
@@ -14,7 +15,7 @@ export default async function UsersPage() {
   const [users, balances, payouts, jobCounts] = await Promise.all([
     db.user.findMany({
       orderBy: [{ role: "desc" }, { name: "asc" }],
-      include: { bonusTriggeredBy: true, _count: { select: { referrals: true, bonusesEarned: true } } },
+      include: { _count: { select: { referrals: true } } },
     }),
     balancesByUser(),
     db.payout.findMany({ orderBy: { createdAt: "desc" }, take: 50, include: { user: { select: { name: true } } } }),
@@ -63,7 +64,7 @@ export default async function UsersPage() {
                       <td className="num whitespace-nowrap text-slate-600">
                         {jobsFor(u.id, "ASSIGNED")} in progress · {jobsFor(u.id, "SUBMITTED")} done
                       </td>
-                      <td><ReferrerSelect userId={u.id} current={u.referredById} referrers={referrerOptions} locked={!!u.bonusTriggeredBy} /></td>
+                      <td><ReferrerSelect userId={u.id} current={u.referredById} referrers={referrerOptions} /></td>
                       <td className="num text-right">{formatUGX(b.earned)}</td>
                       <td className="num text-right text-slate-600">{formatUGX(b.paid)}</td>
                       <td className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
@@ -83,7 +84,7 @@ export default async function UsersPage() {
       </section>
 
       <section className="card mt-6 overflow-hidden">
-        <div className="card-header"><h2 className="card-title">Referrers</h2><span className="text-xs text-slate-500">Earn UGX 10,000 per transcriber, once they submit their first transcript</span></div>
+        <div className="card-header"><h2 className="card-title">Referrers</h2><span className="text-xs text-slate-500">Earn {formatUGX(REFERRAL_RATE_PER_HOUR_UGX)} per hour of transcript submitted by the people they referred</span></div>
         {referrers.length === 0 ? (
           <EmptyState icon={HandCoins} title="No referrers yet" description="Add someone with the Referrer role, then pick them as “Referred by” on the transcribers they brought in." />
         ) : (
@@ -100,7 +101,7 @@ export default async function UsersPage() {
                     <tr key={u.id}>
                       <td><UserCell name={u.name} sub={u.email} /></td>
                       <td className="text-slate-600">
-                        <div className="num">{u._count.referrals} referred · {u._count.bonusesEarned} qualified</div>
+                        <div className="num">{u._count.referrals} referred · {formatHours(balances.get(u.id)?.referralSeconds ?? 0)} submitted</div>
                         {names.length > 0 && <div className="max-w-xs truncate text-xs text-slate-500" title={names.join(", ")}>{names.join(", ")}</div>}
                       </td>
                       <td className="num text-right">{formatUGX(b.earned)}</td>

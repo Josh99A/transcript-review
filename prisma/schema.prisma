@@ -20,22 +20,21 @@ enum JobStatus {
 }
 
 model User {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   name         String
-  email        String   @unique
+  email        String    @unique
   passwordHash String
-  role         Role     @default(USER)
-  createdAt    DateTime @default(now())
+  role         Role      @default(USER)
+  createdAt    DateTime  @default(now())
   jobs         Job[]
-  earnings     Earning[]
+  earnings     Earning[] @relation("Earnings")
   payouts      Payout[]
 
-  // Who brought this transcriber in. The referrer earns a one-off bonus for them.
+  // Who brought this transcriber in. The referrer earns per hour of transcript this person submits.
   referredById     String?
-  referredBy       User?           @relation("Referrals", fields: [referredById], references: [id])
-  referrals        User[]          @relation("Referrals")
-  bonusesEarned    ReferralBonus[] @relation("BonusReferrer")
-  bonusTriggeredBy ReferralBonus?  @relation("BonusTranscriber")
+  referredBy       User?     @relation("Referrals", fields: [referredById], references: [id])
+  referrals        User[]    @relation("Referrals")
+  referralEarnings Earning[] @relation("ReferralEarnings")
 }
 
 model Job {
@@ -67,28 +66,20 @@ model Payout {
 
 // Credited to a user when they submit a job. One per job and user, so resubmitting never pays twice.
 model Earning {
-  id        String   @id @default(cuid())
-  jobId     String
-  job       Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  amount    Int
+  id         String   @id @default(cuid())
+  jobId      String
+  job        Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User     @relation("Earnings", fields: [userId], references: [id])
+  amount     Int
+  // Referrer at the time of submission; they earn the referral rate on these seconds.
+  referrerId String?
+  referrer   User?    @relation("ReferralEarnings", fields: [referrerId], references: [id])
   // Media length credited. Totals are paid on cumulative time, not the sum of rounded per-job amounts.
-  seconds   Int      @default(0)
-  createdAt DateTime @default(now())
+  seconds    Int      @default(0)
+  createdAt  DateTime @default(now())
 
   @@unique([jobId, userId])
-}
-
-// One-off bonus a referrer earns when a transcriber they referred submits their first transcript.
-model ReferralBonus {
-  id            String   @id @default(cuid())
-  referrerId    String
-  referrer      User     @relation("BonusReferrer", fields: [referrerId], references: [id])
-  transcriberId String   @unique
-  transcriber   User     @relation("BonusTranscriber", fields: [transcriberId], references: [id])
-  amount        Int
-  createdAt     DateTime @default(now())
 }
 
 // Simple key/value settings, e.g. the next pay date admins announce to everyone.

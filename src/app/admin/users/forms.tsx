@@ -108,11 +108,8 @@ export function ResetPasswordButton({ userId, name }: { userId: string; name: st
   );
 }
 
-/** Inline picker for who referred a transcriber. Locked once the bonus is credited. */
-export function ReferrerSelect({ userId, current, referrers, locked }: { userId: string; current: string | null; referrers: Option[]; locked: boolean }) {
-  if (locked) {
-    return <span className="text-sm text-slate-700" title="Bonus already credited">{referrers.find((r) => r.id === current)?.name ?? "—"}</span>;
-  }
+/** Inline picker for who referred a transcriber. */
+export function ReferrerSelect({ userId, current, referrers }: { userId: string; current: string | null; referrers: Option[] }) {
   return (
     <ActionForm action={setReferrer}>
       <input type="hidden" name="userId" value={userId} />

@@ -1,44 +1,42 @@
-import { Banknote, CircleCheck, Hourglass, UserPlus, Wallet } from "lucide-react";
+import { Banknote, Clock, UserPlus, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import PayDateBanner from "@/components/PayDateBanner";
 import { EmptyState, PageHeader, StatCard, UserCell } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balanceFor } from "@/lib/earnings";
-import { formatDate, formatUGX } from "@/lib/format";
-import { REFERRAL_BONUS_UGX } from "@/lib/pay";
+import { formatDate, formatHours, formatUGX } from "@/lib/format";
+import { REFERRAL_RATE_PER_HOUR_UGX, referralPayFor } from "@/lib/pay";
 import { getNextPayDate } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "My referrals" };
 
 export default async function ReferralsPage() {
   const user = await requireRole("REFERRER");
-  const [referrals, payouts, balance, payDate] = await Promise.all([
-    db.user.findMany({
-      where: { referredById: user.id },
-      include: { bonusTriggeredBy: true, _count: { select: { earnings: true } } },
-      orderBy: { createdAt: "desc" },
-    }),
+  const [referrals, credited, payouts, balance, payDate] = await Promise.all([
+    db.user.findMany({ where: { referredById: user.id }, orderBy: { createdAt: "desc" } }),
+    // Work credited to this referrer, per transcriber.
+    db.earning.groupBy({ by: ["userId"], where: { referrerId: user.id }, _sum: { seconds: true }, _count: true }),
     db.payout.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
     balanceFor(user.id),
     getNextPayDate(),
   ]);
-  const credited = referrals.filter((r) => r.bonusTriggeredBy).length;
+  const creditFor = (id: string) => credited.find((c) => c.userId === id);
   const firstName = user.name.split(" ")[0];
 
   return (
     <>
       <PageHeader
         title={`Hi ${firstName}`}
-        description={`You earn ${formatUGX(REFERRAL_BONUS_UGX)} for each transcriber you bring in, once they submit their first transcript.`}
+        description={`You earn ${formatUGX(REFERRAL_RATE_PER_HOUR_UGX)} for every hour of transcript submitted by the people you referred.`}
       />
       <div className="mb-6">
-        <PayDateBanner payDate={payDate} owed={balance.owed} detail="All referral bonuses you've earned and not yet been paid are paid on this date." />
+        <PayDateBanner payDate={payDate} owed={balance.owed} detail="Everything you've earned from referrals and not yet been paid is paid on this date." />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard icon={UserPlus} label="People referred" value={referrals.length} tone="brand" />
-        <StatCard icon={CircleCheck} label="Bonuses earned" value={formatUGX(balance.referralPay)} tone="emerald" hint={`${credited} of ${referrals.length} qualified`} />
+        <StatCard icon={Clock} label="Referral earnings" value={formatUGX(balance.referralPay)} tone="emerald" hint={`${formatHours(balance.referralSeconds)} of transcripts submitted`} />
         <StatCard icon={Banknote} label="Paid to you" value={formatUGX(balance.paid)} tone="slate" />
         <StatCard icon={Wallet} label="Waiting to be paid" value={formatUGX(balance.owed)} tone="amber" />
       </div>
@@ -51,28 +49,20 @@ export default async function ReferralsPage() {
           ) : (
             <div className="overflow-x-auto">
               <table className="table">
-                <thead><tr><th>Transcriber</th><th>Joined</th><th>Status</th><th className="text-right">Bonus</th></tr></thead>
+                <thead><tr><th>Transcriber</th><th>Joined</th><th>Submitted</th><th className="text-right">You earned</th></tr></thead>
                 <tbody>
-                  {referrals.map((r) => (
-                    <tr key={r.id}>
-                      <td><UserCell name={r.name} sub={`${r._count.earnings} transcript${r._count.earnings === 1 ? "" : "s"} submitted`} /></td>
-                      <td className="whitespace-nowrap text-slate-600">{formatDate(r.createdAt)}</td>
-                      <td>
-                        {r.bonusTriggeredBy ? (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700 ring-1 ring-emerald-600/20 ring-inset">
-                            <CircleCheck className="size-3" /> Earned {formatDate(r.bonusTriggeredBy.createdAt)}
-                          </span>
-                        ) : (
-                          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-800 ring-1 ring-amber-600/20 ring-inset">
-                            <Hourglass className="size-3" /> Waiting for first transcript
-                          </span>
-                        )}
-                      </td>
-                      <td className={`num text-right font-medium ${r.bonusTriggeredBy ? "text-emerald-700" : "text-slate-400"}`}>
-                        {formatUGX(r.bonusTriggeredBy?.amount ?? REFERRAL_BONUS_UGX)}
-                      </td>
-                    </tr>
-                  ))}
+                  {referrals.map((r) => {
+                    const c = creditFor(r.id);
+                    const seconds = c?._sum.seconds ?? 0;
+                    return (
+                      <tr key={r.id}>
+                        <td><UserCell name={r.name} sub={`${c?._count ?? 0} transcript${c?._count === 1 ? "" : "s"} submitted`} /></td>
+                        <td className="whitespace-nowrap text-slate-600">{formatDate(r.createdAt)}</td>
+                        <td className="num whitespace-nowrap text-slate-600">{seconds ? formatHours(seconds) : <span className="text-slate-400">Nothing yet</span>}</td>
+                        <td className={`num text-right font-medium ${seconds ? "text-emerald-700" : "text-slate-400"}`}>{formatUGX(referralPayFor(seconds))}</td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

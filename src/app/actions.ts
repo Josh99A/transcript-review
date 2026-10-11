@@ -6,7 +6,7 @@ import { redirect } from "next/navigation";
 import { z } from "zod";
 import { createSession, destroySession, homeFor, requireAdmin, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { balancesByUser, creditReferralIfDue } from "@/lib/earnings";
+import { balancesByUser } from "@/lib/earnings";
 import { formatPayDate } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
 import { getNextPayDate, setNextPayDate } from "@/lib/settings";
@@ -65,20 +65,24 @@ export async function resetPassword(formData: FormData): Promise<FormState> {
   return { ok: "Password updated." };
 }
 
-/** Sets who referred a transcriber. Locked once the referrer's bonus has been credited. */
+/**
+ * Sets who referred a transcriber. Work they've already submitted with no referrer is credited to
+ * the new one; work already credited to a referrer stays with them.
+ */
 export async function setReferrer(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const userId = String(formData.get("userId"));
   const referredById = String(formData.get("referredById") ?? "") || null;
-  const t = await db.user.findUnique({ where: { id: userId }, include: { bonusTriggeredBy: true } });
+  const t = await db.user.findUnique({ where: { id: userId } });
   if (!t || t.role !== "USER") return { error: "Only transcribers can have a referrer." };
-  if (t.bonusTriggeredBy) return { error: "The referral bonus for this person has already been credited." };
   if (referredById && !(await db.user.findFirst({ where: { id: referredById, role: "REFERRER" } })))
     return { error: "Pick a referrer from the list." };
-  await db.user.update({ where: { id: userId }, data: { referredById } });
-  // If they've already submitted work, the bonus is due straight away.
-  await creditReferralIfDue(userId);
+  await db.$transaction([
+    db.user.update({ where: { id: userId }, data: { referredById } }),
+    ...(referredById ? [db.earning.updateMany({ where: { userId, referrerId: null }, data: { referrerId: referredById } })] : []),
+  ]);
   revalidatePath("/admin/users");
+  revalidatePath("/admin");
   return { ok: referredById ? "Referrer saved." : "Referrer removed." };
 }
 
@@ -228,11 +232,16 @@ export async function submitJob(jobId: string, text: string): Promise<FormState>
     // Credit pay once per job and user; a resubmission after a reopen doesn't pay again.
     db.earning.upsert({
       where: { jobId_userId: { jobId, userId: user.id } },
-      create: { jobId, userId: user.id, amount: earningsFor(job.durationSeconds), seconds: job.durationSeconds },
+      create: {
+        jobId,
+        userId: user.id,
+        amount: earningsFor(job.durationSeconds),
+        seconds: job.durationSeconds,
+        referrerId: user.referredById,
+      },
       update: {},
     }),
   ]);
-  await creditReferralIfDue(user.id);
   revalidatePath("/jobs");
   revalidatePath("/earnings");
   revalidatePath("/admin");
