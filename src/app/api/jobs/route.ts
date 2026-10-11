@@ -1,0 +1,51 @@
+import { randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import path from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { NextResponse } from "next/server";
+import { getCurrentUser } from "@/lib/auth";
+import { db } from "@/lib/db";
+import { ensureUploadDir, mediaFile } from "@/lib/media";
+
+export async function POST(req: Request) {
+  const user = await getCurrentUser();
+  if (!user || user.role !== "ADMIN") return NextResponse.json({ error: "Not allowed" }, { status: 403 });
+
+  const form = await req.formData();
+  const title = String(form.get("title") ?? "").trim();
+  const media = form.get("media");
+  const durationSeconds = Math.round(Number(form.get("durationSeconds")));
+  const assigneeId = String(form.get("assigneeId") ?? "") || null;
+
+  let transcript = String(form.get("transcriptText") ?? "");
+  const transcriptFile = form.get("transcriptFile");
+  if (transcriptFile instanceof File && transcriptFile.size > 0) transcript = await transcriptFile.text();
+
+  if (!title) return NextResponse.json({ error: "Give the job a title." }, { status: 400 });
+  if (!(media instanceof File) || media.size === 0)
+    return NextResponse.json({ error: "Choose an audio or video file." }, { status: 400 });
+  if (!/^(audio|video)\//.test(media.type))
+    return NextResponse.json({ error: "The media must be an audio or video file." }, { status: 400 });
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0)
+    return NextResponse.json({ error: "Couldn't read the media length. Enter it manually." }, { status: 400 });
+  if (!transcript.trim()) return NextResponse.json({ error: "Add a transcript." }, { status: 400 });
+
+  await ensureUploadDir();
+  const ext = path.extname(media.name).toLowerCase().replace(/[^.a-z0-9]/g, "").slice(0, 10);
+  const stored = `${randomUUID()}${ext}`;
+  await pipeline(Readable.fromWeb(media.stream() as never), createWriteStream(mediaFile(stored)));
+
+  const job = await db.job.create({
+    data: {
+      title,
+      mediaPath: stored,
+      mediaType: media.type,
+      durationSeconds,
+      originalTranscript: transcript,
+      editedTranscript: transcript,
+      ...(assigneeId ? { assigneeId, status: "ASSIGNED", assignedAt: new Date() } : {}),
+    },
+  });
+  return NextResponse.json({ id: job.id });
+}
