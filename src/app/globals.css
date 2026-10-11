@@ -75,7 +75,7 @@
     @apply border-t border-slate-100 px-5 py-3 align-middle;
   }
   .table tbody tr {
-    @apply transition-colors hover:bg-slate-50/60;
+    @apply hover:bg-slate-50/60;
   }
   .num {
     @apply tabular-nums;

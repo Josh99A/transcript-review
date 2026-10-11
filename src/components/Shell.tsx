@@ -7,7 +7,7 @@ type Props = {
 
 export default function Shell({ user, children }: Props) {
   return (
-    <div className="min-h-screen lg:pl-64">
+    <div className="min-h-screen pt-14 lg:pt-0 lg:pl-64">
       <SideNav user={user} />
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
     </div>
