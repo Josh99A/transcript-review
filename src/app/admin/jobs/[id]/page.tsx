@@ -1,8 +1,8 @@
-import { ArrowLeft, Download, FileX2, Trash2, Undo2 } from "lucide-react";
+import { ArrowLeft, Check, Download, FileX2, Megaphone, Trash2, Undo2, X } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { assignJob, deleteJob, removeEarning, removeJobMedia, reopenJob, updateDuration } from "@/app/actions";
+import { approveRequest, assignJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, updateDuration, updateJobDetails } from "@/app/actions";
 import { ActionForm, ConfirmAction } from "@/components/client";
 import MediaPlayer from "@/components/MediaPlayer";
 import StatusBadge from "@/components/StatusBadge";
@@ -10,7 +10,7 @@ import TranscriptDiff from "@/components/TranscriptDiff";
 import { MediaRemoved, PageHeader, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { formatBytes, formatDate, formatDuration, formatUGX } from "@/lib/format";
+import { deadlineInput, formatBytes, formatDate, formatDeadline, formatDuration, formatRelative, formatUGX } from "@/lib/format";
 import { mediaSize } from "@/lib/media";
 import { earningsFor } from "@/lib/pay";
 
@@ -31,11 +31,17 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
   const [job, users] = await Promise.all([
     db.job.findUnique({
       where: { id },
-      include: { assignee: true, earnings: { include: { user: { select: { name: true } } } } },
+      include: {
+        assignee: true,
+        earnings: { include: { user: { select: { name: true } } } },
+        requests: { include: { user: { select: { name: true, email: true } } }, orderBy: { createdAt: "asc" } },
+      },
     }),
     db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
   ]);
   if (!job) notFound();
+  const due = job.deadline ? formatDeadline(job.deadline) : null;
+  const pending = job.requests.filter((r) => r.status === "PENDING");
 
   return (
     <>
@@ -53,6 +59,29 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
 
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <div className="min-w-0 space-y-6">
+          <section className="card">
+            <div className="card-header"><h2 className="card-title">Details</h2></div>
+            <div className="card-body space-y-3 text-sm">
+              {job.description ? <p className="whitespace-pre-line text-slate-700">{job.description}</p> : <p className="text-slate-400">No details for transcribers yet.</p>}
+              <div className="flex flex-wrap gap-x-6 gap-y-1 text-slate-600">
+                <span>Language: <span className="text-slate-900">{job.language ?? "Not set"}</span></span>
+                <span>Deadline: <span className={due?.overdue ? "text-red-700" : "text-slate-900"}>{due?.text ?? "None"}</span></span>
+              </div>
+              <details>
+                <summary className="cursor-pointer font-medium text-brand-600 hover:text-brand-700">Edit details</summary>
+                <ActionForm action={updateJobDetails} className="mt-3 space-y-3">
+                  <input type="hidden" name="jobId" value={job.id} />
+                  <div><label className="label" htmlFor="d-title">Title</label><input className="input" id="d-title" name="title" defaultValue={job.title} required /></div>
+                  <div><label className="label" htmlFor="d-desc">Details for transcribers</label><textarea className="input h-24" id="d-desc" name="description" defaultValue={job.description} /></div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div><label className="label" htmlFor="d-lang">Language</label><input className="input" id="d-lang" name="language" defaultValue={job.language ?? ""} /></div>
+                    <div><label className="label" htmlFor="d-due">Deadline</label><input className="input" id="d-due" name="deadline" type="date" defaultValue={deadlineInput(job.deadline)} /></div>
+                  </div>
+                  <button className="btn">Save details</button>
+                </ActionForm>
+              </details>
+            </div>
+          </section>
           {job.mediaRemovedAt ? <MediaRemoved at={job.mediaRemovedAt} /> : <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>}
           <section className="card overflow-hidden">
             <div className="card-header"><h2 className="card-title">Transcript review</h2></div>
@@ -61,6 +90,53 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
         </div>
 
         <div className="space-y-6">
+          {job.status === "UNASSIGNED" && (
+            <section className="card">
+              <div className="card-header">
+                <Megaphone className="size-4.5 text-brand-600" />
+                <h2 className="card-title">Job board</h2>
+                <span className={`ml-auto rounded-full px-2 py-0.5 text-xs font-medium ${job.posted ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"}`}>{job.posted ? "Posted" : "Not posted"}</span>
+              </div>
+              <div className="card-body space-y-4">
+                <ActionForm action={setPosted}>
+                  <input type="hidden" name="jobId" value={job.id} />
+                  <input type="hidden" name="posted" value={job.posted ? "false" : "true"} />
+                  <button className="btn-secondary w-full">{job.posted ? "Take off the job board" : "Post on the job board"}</button>
+                </ActionForm>
+                {job.requests.length === 0 ? (
+                  <p className="text-sm text-slate-500">{job.posted ? "No requests yet. Transcribers see it under Find work." : "Post it so transcribers can request it."}</p>
+                ) : (
+                  <div>
+                    <h3 className="mb-2 text-sm font-medium text-slate-700">Requests ({pending.length} waiting)</h3>
+                    <ul className="divide-y divide-slate-100">
+                      {job.requests.map((r) => (
+                        <li key={r.id} className="space-y-2 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="min-w-0 flex-1"><UserCell name={r.user.name} sub={`Asked ${formatRelative(r.createdAt)}`} /></div>
+                            {r.status === "DECLINED" && <span className="text-xs text-slate-400">Declined</span>}
+                          </div>
+                          {r.note && <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">“{r.note}”</p>}
+                          {r.status === "PENDING" && (
+                            <div className="flex gap-2">
+                              <ActionForm action={approveRequest} className="flex-1">
+                                <input type="hidden" name="requestId" value={r.id} />
+                                <button className="btn w-full"><Check className="size-4" /> Give it to {r.user.name.split(" ")[0]}</button>
+                              </ActionForm>
+                              <ActionForm action={declineRequest}>
+                                <input type="hidden" name="requestId" value={r.id} />
+                                <button className="btn-secondary" aria-label={`Decline ${r.user.name}`}><X className="size-4" /> Decline</button>
+                              </ActionForm>
+                            </div>
+                          )}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            </section>
+          )}
+
           <section className="card">
             <div className="card-header"><h2 className="card-title">Assignment</h2></div>
             <div className="card-body space-y-4">

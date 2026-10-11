@@ -20,15 +20,16 @@ enum JobStatus {
 }
 
 model User {
-  id           String    @id @default(cuid())
+  id           String       @id @default(cuid())
   name         String
-  email        String    @unique
+  email        String       @unique
   passwordHash String
-  role         Role      @default(USER)
-  createdAt    DateTime  @default(now())
+  role         Role         @default(USER)
+  createdAt    DateTime     @default(now())
   jobs         Job[]
-  earnings     Earning[] @relation("Earnings")
+  earnings     Earning[]    @relation("Earnings")
   payouts      Payout[]
+  jobRequests  JobRequest[]
 
   // Who brought this transcriber in. The referrer earns per hour of transcript this person submits.
   referredById     String?
@@ -38,23 +39,30 @@ model User {
 }
 
 model Job {
-  id                 String    @id @default(cuid())
+  id                 String       @id @default(cuid())
   title              String
+  // Details shown on the job board and to the transcriber.
+  description        String       @default("")
+  language           String?
+  deadline           DateTime?
+  // Unassigned jobs on the board can be requested by transcribers.
+  posted             Boolean      @default(false)
+  requests           JobRequest[]
   mediaPath          String
   mediaType          String
   durationSeconds    Int
   originalTranscript String
   editedTranscript   String
-  status             JobStatus @default(UNASSIGNED)
+  status             JobStatus    @default(UNASSIGNED)
   assigneeId         String?
-  assignee           User?     @relation(fields: [assigneeId], references: [id])
+  assignee           User?        @relation(fields: [assigneeId], references: [id])
   assignedAt         DateTime?
   submittedAt        DateTime?
   // Set when an admin deletes the media file to save space; the job and its records stay.
   mediaRemovedAt     DateTime?
   earnings           Earning[]
-  createdAt          DateTime  @default(now())
-  updatedAt          DateTime  @updatedAt
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
 }
 
 model Payout {
@@ -89,4 +97,24 @@ model Setting {
   key       String   @id
   value     String
   updatedAt DateTime @updatedAt
+}
+
+enum RequestStatus {
+  PENDING
+  APPROVED
+  DECLINED
+}
+
+// A transcriber asking to take a job from the board. The admin approves one, which assigns the job.
+model JobRequest {
+  id        String        @id @default(cuid())
+  jobId     String
+  job       Job           @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  note      String?
+  status    RequestStatus @default(PENDING)
+  createdAt DateTime      @default(now())
+
+  @@unique([jobId, userId])
 }

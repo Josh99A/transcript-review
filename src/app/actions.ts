@@ -4,10 +4,10 @@ import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
-import { createSession, destroySession, homeFor, requireAdmin, requireUser } from "@/lib/auth";
+import { createSession, destroySession, homeFor, requireAdmin, requireRole, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
-import { formatPayDate } from "@/lib/format";
+import { formatPayDate, parseDeadline } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
 import { getNextPayDate, setNextPayDate } from "@/lib/settings";
 import { deleteMedia } from "@/lib/media";
@@ -127,12 +127,82 @@ export async function assignJob(formData: FormData): Promise<FormState> {
   await db.job.update({
     where: { id: jobId },
     data: assigneeId
-      ? { assigneeId, status: "ASSIGNED", assignedAt: new Date() }
+      ? { assigneeId, status: "ASSIGNED", assignedAt: new Date(), posted: false }
       : { assigneeId: null, status: "UNASSIGNED", assignedAt: null },
   });
+  if (assigneeId) await settleRequests(jobId, assigneeId);
   revalidatePath("/admin");
+  revalidatePath("/board");
   revalidatePath(`/admin/jobs/${jobId}`);
   return { ok: assigneeId ? "Assignment saved." : "Job unassigned." };
+}
+
+/** Once a job is assigned, the assignee's request (if any) is approved and the rest declined. */
+async function settleRequests(jobId: string, assigneeId: string) {
+  await db.$transaction([
+    db.jobRequest.updateMany({ where: { jobId, userId: assigneeId }, data: { status: "APPROVED" } }),
+    db.jobRequest.updateMany({ where: { jobId, userId: { not: assigneeId }, status: "PENDING" }, data: { status: "DECLINED" } }),
+  ]);
+}
+
+const detailsSchema = z.object({
+  title: z.string().trim().min(1, "Give the job a title"),
+  description: z.string().trim().max(5000).default(""),
+  language: z.string().trim().max(60).default(""),
+  deadline: z.string().trim().regex(/^(\d{4}-\d{2}-\d{2})?$/, "Enter a valid deadline").default(""),
+});
+
+export async function updateJobDetails(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const jobId = String(formData.get("jobId"));
+  const parsed = detailsSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const { title, description, language, deadline } = parsed.data;
+  await db.job.update({
+    where: { id: jobId },
+    data: { title, description, language: language || null, deadline: parseDeadline(deadline) },
+  });
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/admin");
+  revalidatePath("/board");
+  return { ok: "Details saved." };
+}
+
+/** Puts an unassigned job on the job board, or takes it off. */
+export async function setPosted(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const jobId = String(formData.get("jobId"));
+  const posted = formData.get("posted") === "true";
+  const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
+  if (posted && job.status !== "UNASSIGNED") return { error: "Only unassigned jobs can go on the job board." };
+  await db.job.update({ where: { id: jobId }, data: { posted } });
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/admin");
+  revalidatePath("/board");
+  return { ok: posted ? "Posted on the job board." : "Taken off the job board." };
+}
+
+export async function approveRequest(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const request = await db.jobRequest.findUniqueOrThrow({ where: { id: String(formData.get("requestId")) }, include: { job: true, user: true } });
+  if (request.job.status !== "UNASSIGNED") return { error: "This job has already been assigned." };
+  await db.job.update({
+    where: { id: request.jobId },
+    data: { assigneeId: request.userId, status: "ASSIGNED", assignedAt: new Date(), posted: false },
+  });
+  await settleRequests(request.jobId, request.userId);
+  revalidatePath(`/admin/jobs/${request.jobId}`);
+  revalidatePath("/admin");
+  revalidatePath("/board");
+  return { ok: `Assigned to ${request.user.name}.` };
+}
+
+export async function declineRequest(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const request = await db.jobRequest.update({ where: { id: String(formData.get("requestId")) }, data: { status: "DECLINED" } });
+  revalidatePath(`/admin/jobs/${request.jobId}`);
+  revalidatePath("/admin");
+  return { ok: "Request declined." };
 }
 
 /** Send a submitted job back to its assignee for more corrections. Pay already credited stays. */
@@ -223,6 +293,34 @@ export async function recordPayout(formData: FormData): Promise<FormState> {
 }
 
 // ---------- Transcriber ----------
+
+/** A transcriber asks to take a job from the board. */
+export async function requestJob(formData: FormData): Promise<FormState> {
+  const user = await requireRole("USER");
+  const jobId = String(formData.get("jobId"));
+  const note = String(formData.get("note") ?? "").trim().slice(0, 500) || null;
+  const job = await db.job.findUnique({ where: { id: jobId } });
+  if (!job || !job.posted || job.status !== "UNASSIGNED") return { error: "This job is no longer available." };
+  await db.jobRequest.upsert({
+    where: { jobId_userId: { jobId, userId: user.id } },
+    create: { jobId, userId: user.id, note },
+    update: { note, status: "PENDING" },
+  });
+  revalidatePath("/board");
+  revalidatePath("/admin");
+  revalidatePath(`/admin/jobs/${jobId}`);
+  return { ok: "Request sent. You'll find the job in My jobs once an admin approves it." };
+}
+
+export async function cancelRequest(formData: FormData): Promise<FormState> {
+  const user = await requireRole("USER");
+  const jobId = String(formData.get("jobId"));
+  await db.jobRequest.deleteMany({ where: { jobId, userId: user.id, status: "PENDING" } });
+  revalidatePath("/board");
+  revalidatePath("/admin");
+  revalidatePath(`/admin/jobs/${jobId}`);
+  return { ok: "Request withdrawn." };
+}
 
 async function loadOwnJob(jobId: string) {
   const user = await requireUser();

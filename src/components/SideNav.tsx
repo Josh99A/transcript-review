@@ -1,6 +1,6 @@
 "use client";
 
-import { AudioLines, ClipboardList, HandCoins, LayoutDashboard, LogOut, Menu, Upload, Users, Wallet, X } from "lucide-react";
+import { AudioLines, ClipboardList, HandCoins, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -14,6 +14,7 @@ const ADMIN_LINKS = [
 ];
 const USER_LINKS = [
   { href: "/jobs", label: "My jobs", icon: ClipboardList },
+  { href: "/board", label: "Find work", icon: Search },
   { href: "/earnings", label: "My earnings", icon: Wallet },
 ];
 const REFERRER_LINKS = [{ href: "/referrals", label: "My referrals", icon: HandCoins }];

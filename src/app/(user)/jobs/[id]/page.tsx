@@ -1,4 +1,4 @@
-import { ArrowLeft, CircleCheck, Clock, Download, Wallet } from "lucide-react";
+import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Languages, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,7 +7,7 @@ import StatusBadge from "@/components/StatusBadge";
 import { MediaRemoved, PageHeader } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { formatDate, formatDuration, formatUGX } from "@/lib/format";
+import { formatDate, formatDeadline, formatDuration, formatUGX } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
 import Editor from "./Editor";
 
@@ -19,6 +19,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const job = await db.job.findUnique({ where: { id } });
   if (!job || job.assigneeId !== user.id) notFound();
   const pay = earningsFor(job.durationSeconds);
+  const due = job.deadline && job.status === "ASSIGNED" ? formatDeadline(job.deadline) : null;
 
   return (
     <>
@@ -34,9 +35,16 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             <StatusBadge status={job.status} />
             <span className="inline-flex items-center gap-1.5"><Clock className="size-3.5" /> {formatDuration(job.durationSeconds)}</span>
             <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> {formatUGX(pay)}</span>
+            {job.language && <span className="inline-flex items-center gap-1.5"><Languages className="size-3.5" /> {job.language}</span>}
+            {due && <span className={`inline-flex items-center gap-1.5 ${due.overdue ? "text-red-700" : due.soon ? "text-amber-700" : ""}`}><CalendarClock className="size-3.5" /> {due.text}</span>}
           </span>
         }
       />
+      {job.description && (
+        <div className="mb-4 rounded-xl bg-brand-50/60 px-4 py-3 text-sm whitespace-pre-line text-slate-700 ring-1 ring-brand-600/10">
+          <span className="font-medium text-slate-900">Notes from the admin: </span>{job.description}
+        </div>
+      )}
       {job.status === "ASSIGNED" ? (
         <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} pay={pay} />
       ) : (

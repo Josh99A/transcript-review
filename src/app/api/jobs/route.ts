@@ -6,6 +6,7 @@ import { pipeline } from "node:stream/promises";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { parseDeadline } from "@/lib/format";
 import { ensureUploadDir, mediaFile } from "@/lib/media";
 import { mediaTypeOf } from "@/lib/mediaTypes";
 import { docxToText } from "@/lib/docx";
@@ -18,7 +19,12 @@ export async function POST(req: Request) {
   const title = String(form.get("title") ?? "").trim();
   const media = form.get("media");
   const durationSeconds = Math.round(Number(form.get("durationSeconds")));
-  const assigneeId = String(form.get("assigneeId") ?? "") || null;
+  // "" posts the job on the board, "__hold" keeps it unassigned and off the board.
+  const assignTo = String(form.get("assigneeId") ?? "");
+  const assigneeId = assignTo && assignTo !== "__hold" ? assignTo : null;
+  const description = String(form.get("description") ?? "").trim().slice(0, 5000);
+  const language = String(form.get("language") ?? "").trim().slice(0, 60) || null;
+  const deadline = parseDeadline(String(form.get("deadline") ?? ""));
 
   let transcript = String(form.get("transcriptText") ?? "");
   const transcriptFile = form.get("transcriptFile");
@@ -55,6 +61,10 @@ export async function POST(req: Request) {
       durationSeconds,
       originalTranscript: transcript,
       editedTranscript: transcript,
+      description,
+      language,
+      deadline,
+      posted: assignTo === "",
       ...(assigneeId ? { assigneeId, status: "ASSIGNED", assignedAt: new Date() } : {}),
     },
   });

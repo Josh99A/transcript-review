@@ -6,7 +6,7 @@ import PayDateBanner from "@/components/PayDateBanner";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balanceFor } from "@/lib/earnings";
-import { formatDuration, formatHours, formatRelative, formatUGX } from "@/lib/format";
+import { formatDeadline, formatDuration, formatHours, formatRelative, formatUGX } from "@/lib/format";
 import { earningsFor } from "@/lib/pay";
 import { getNextPayDate } from "@/lib/settings";
 import SubmittedToast from "./SubmittedToast";
@@ -16,7 +16,7 @@ export const metadata: Metadata = { title: "My jobs" };
 export default async function MyJobsPage({ searchParams }: { searchParams: Promise<{ submitted?: string }> }) {
   const user = await requireRole("USER");
   const { submitted } = await searchParams;
-  const [jobs, balance, payDate] = await Promise.all([
+  const [jobs, balance, payDate, openJobs] = await Promise.all([
     db.job.findMany({
       where: { assigneeId: user.id },
       include: { earnings: { where: { userId: user.id } } },
@@ -24,6 +24,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
     }),
     balanceFor(user.id),
     getNextPayDate(),
+    db.job.count({ where: { posted: true, status: "UNASSIGNED" } }),
   ]);
   const todo = jobs.filter((j) => j.status === "ASSIGNED");
   const done = jobs.filter((j) => j.status === "SUBMITTED").sort((a, b) => +(b.submittedAt ?? 0) - +(a.submittedAt ?? 0));
@@ -44,10 +45,20 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
       </div>
 
       <section className="mt-6">
-        <h2 className="mb-3 text-sm font-semibold text-slate-900">To do</h2>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-slate-900">To do</h2>
+          {openJobs > 0 && todo.length > 0 && (
+            <Link href="/board" className="text-sm font-medium text-brand-600 hover:text-brand-700">{openJobs} open job{openJobs === 1 ? "" : "s"} to request</Link>
+          )}
+        </div>
         {todo.length === 0 ? (
           <div className="card">
-            <EmptyState icon={CircleCheck} title="You're all caught up" description="New jobs will show up here as soon as an admin assigns them to you." />
+            <EmptyState
+              icon={CircleCheck}
+              title="You're all caught up"
+              description={openJobs ? `There ${openJobs === 1 ? "is 1 open job" : `are ${openJobs} open jobs`} you can request.` : "New jobs show up here when an admin assigns one to you or approves your request."}
+              action={openJobs ? <Link href="/board" className="btn">Find work</Link> : undefined}
+            />
           </div>
         ) : (
           <ul className="grid gap-3 md:grid-cols-2">
@@ -65,7 +76,11 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
                       <div className="num mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
                         <span className="inline-flex items-center gap-1"><Clock className="size-3" /> {formatDuration(j.durationSeconds)}</span>
                         <span className="font-medium text-slate-700">{formatUGX(earningsFor(j.durationSeconds))}</span>
-                        <span>Assigned {formatRelative(j.assignedAt)}</span>
+                        {j.deadline ? (
+                          <span className={formatDeadline(j.deadline).overdue ? "text-red-700" : formatDeadline(j.deadline).soon ? "text-amber-700" : ""}>Due {formatDeadline(j.deadline).text}</span>
+                        ) : (
+                          <span>Assigned {formatRelative(j.assignedAt)}</span>
+                        )}
                       </div>
                     </div>
                     <span className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 group-hover:text-brand-700">

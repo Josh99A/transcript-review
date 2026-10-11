@@ -79,6 +79,9 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [pasted, setPasted] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
+  const [description, setDescription] = useState("");
+  const [language, setLanguage] = useState("");
+  const [deadline, setDeadline] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
@@ -118,6 +121,9 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
     data.set("media", media);
     data.set("durationSeconds", String(Math.round(effectiveDuration)));
     data.set("assigneeId", assigneeId);
+    data.set("description", description);
+    data.set("language", language);
+    data.set("deadline", deadline);
     if (mode === "file" && transcriptFile) data.set("transcriptFile", transcriptFile);
     else data.set("transcriptText", pasted);
     setProgress(0);
@@ -132,7 +138,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
         body = JSON.parse(xhr.responseText || "{}");
       } catch {}
       if (xhr.status >= 200 && xhr.status < 300 && body.id) {
-        toast.success("Job uploaded", { description: assigneeId ? "It's now in their to-do list." : "Assign it when you're ready." });
+        toast.success("Job uploaded", { description: assigneeId === "" ? "It's on the job board for transcribers to request." : assigneeId === "__hold" ? "Assign or post it when you're ready." : "It's now in their to-do list." });
         router.push(`/admin/jobs/${body.id}`);
       } else setError(body.error ?? "Upload failed. Please try again.");
     };
@@ -227,6 +233,20 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
             <label className="label" htmlFor="title">Job title</label>
             <input className="input" id="title" value={title} onChange={(e) => setTitle(e.target.value)} required placeholder="e.g. Interview with district officer" />
           </div>
+          <div className="mt-4">
+            <label className="label" htmlFor="description">Details for transcribers <span className="font-normal text-slate-400">(optional)</span></label>
+            <textarea className="input h-24" id="description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Two speakers, some Luganda. Label speakers and keep timestamps." />
+          </div>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="language">Language <span className="font-normal text-slate-400">(optional)</span></label>
+              <input className="input" id="language" value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="e.g. English, Luganda" />
+            </div>
+            <div>
+              <label className="label" htmlFor="deadline">Deadline <span className="font-normal text-slate-400">(optional)</span></label>
+              <input className="input" id="deadline" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
+            </div>
+          </div>
         </Step>
 
         <Step n={2} title="Transcript">
@@ -260,10 +280,15 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
         <Step n={3} title="Assign">
           <label className="label" htmlFor="assigneeId">Who should correct it?</label>
           <select className="input" id="assigneeId" value={assigneeId} onChange={(e) => setAssigneeId(e.target.value)}>
-            <option value="">Leave unassigned for now</option>
-            {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            <option value="">Post on the job board for transcribers to request</option>
+            <option value="__hold">Keep it to myself for now</option>
+            <optgroup label="Assign directly">
+              {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+            </optgroup>
           </select>
-          {users.length === 0 && <p className="hint">You haven&apos;t added any transcribers yet. You can assign this later.</p>}
+          <p className="hint">
+            {assigneeId === "" ? "Transcribers see it under Find work and can ask for it. You pick who gets it." : assigneeId === "__hold" ? "It stays unassigned and hidden until you assign or post it." : "It goes straight into their to-do list."}
+          </p>
         </Step>
       </div>
 
@@ -273,7 +298,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
           <dl className="card-body space-y-3 text-sm">
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Length</dt><dd className="num font-medium">{effectiveDuration > 0 ? formatDuration(effectiveDuration) : "—"}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Rate</dt><dd className="num">{formatUGX(RATE_PER_HOUR_UGX)}/hr</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">Assigned to</dt><dd className="truncate">{assigneeName ?? "Nobody yet"}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-slate-500">Assigned to</dt><dd className="truncate">{assigneeName ?? (assigneeId === "" ? "Job board" : "Nobody yet")}</dd></div>
             <div className="flex items-baseline justify-between gap-3 border-t border-slate-100 pt-3">
               <dt className="font-medium text-slate-700">Pays</dt>
               <dd className="num text-xl font-semibold text-slate-900">{formatUGX(earningsFor(effectiveDuration))}</dd>
@@ -293,7 +318,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
             )}
             <button className="btn w-full" disabled={!ready || busy}>
               {busy ? <Spinner /> : <CloudUpload className="size-4" />}
-              {busy ? "Uploading…" : assigneeId ? "Upload and assign" : "Upload job"}
+              {busy ? "Uploading…" : assigneeName ? "Upload and assign" : assigneeId === "" ? "Upload and post" : "Upload job"}
             </button>
             {!ready && !busy && <p className="hint text-center">Add a media file, title and transcript to continue.</p>}
           </div>

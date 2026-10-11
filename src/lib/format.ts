@@ -65,3 +65,22 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
   return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
 }
+
+/** Turns a YYYY-MM-DD deadline into the end of that day in Kampala (UTC+3). */
+export function parseDeadline(value: string): Date | null {
+  return /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(`${value}T23:59:59+03:00`) : null;
+}
+
+/** The YYYY-MM-DD (Kampala) of a deadline, for date inputs. */
+export function deadlineInput(d: Date | null): string {
+  return d ? new Date(d.getTime() + 3 * 3600_000).toISOString().slice(0, 10) : "";
+}
+
+/** e.g. "Fri, 17 Oct · 6 days left", "Due today", "2 days overdue". */
+export function formatDeadline(d: Date): { text: string; overdue: boolean; soon: boolean } {
+  const ymd = deadlineInput(d);
+  const days = daysUntil(ymd);
+  const date = new Date(`${ymd}T12:00:00Z`).toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" });
+  const left = days > 1 ? `${days} days left` : days === 1 ? "due tomorrow" : days === 0 ? "due today" : `${-days} day${days === -1 ? "" : "s"} overdue`;
+  return { text: `${date} · ${left}`, overdue: days < 0, soon: days >= 0 && days <= 2 };
+}

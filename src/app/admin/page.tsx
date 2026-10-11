@@ -30,13 +30,13 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const filter: Filter = FILTERS.includes(status as Filter) ? (status as Filter) : "ALL";
   const query = q.trim();
 
-  const [jobs, users, balances, counts, payDate, stored] = await Promise.all([
+  const [jobs, users, balances, counts, payDate, stored, pendingRequests] = await Promise.all([
     db.job.findMany({
       where: {
         ...(filter === "ALL" ? {} : { status: filter }),
         ...(query ? { OR: [{ title: { contains: query } }, { assignee: { name: { contains: query } } }] } : {}),
       },
-      include: { assignee: { select: { name: true } }, earnings: true },
+      include: { assignee: { select: { name: true } }, earnings: true, _count: { select: { requests: { where: { status: "PENDING" } } } } },
       orderBy: [{ updatedAt: "desc" }],
     }),
     db.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, orderBy: { name: "asc" } }),
@@ -44,6 +44,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     db.job.groupBy({ by: ["status"], _count: true }),
     getNextPayDate(),
     db.job.findMany({ where: { mediaRemovedAt: null }, select: { mediaPath: true, status: true } }),
+    db.jobRequest.count({ where: { status: "PENDING", job: { status: "UNASSIGNED" } } }),
   ]);
   const sizes = await Promise.all(stored.map(async (j) => ({ status: j.status, bytes: await mediaSize(j.mediaPath) })));
   const usedBytes = sizes.reduce((s, j) => s + j.bytes, 0);
@@ -76,7 +77,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
       />
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-        <StatCard icon={Inbox} label="Waiting to assign" value={count("UNASSIGNED")} tone="slate" />
+        <StatCard icon={Inbox} label="Waiting to assign" value={count("UNASSIGNED")} tone="slate" hint={pendingRequests ? `${pendingRequests} request${pendingRequests === 1 ? "" : "s"} to review` : undefined} />
         <StatCard icon={Hourglass} label="In progress" value={count("ASSIGNED")} tone="amber" />
         <StatCard icon={CircleCheck} label="Submitted" value={count("SUBMITTED")} tone="emerald" />
         <StatCard icon={Wallet} label="Owed to team" value={formatUGX(totalOwed)} tone="brand" hint={waitingHint(owing.filter((o) => o.balance.owed > 0).length)} />
@@ -159,7 +160,13 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                           </div>
                         </td>
                         <td data-label="Assigned to">
-                          {j.assignee ? (
+                          {!j.assignee && j._count.requests > 0 ? (
+                            <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-amber-800 ring-1 ring-amber-600/20 ring-inset">
+                              {j._count.requests} request{j._count.requests === 1 ? "" : "s"} to review
+                            </span>
+                          ) : !j.assignee && j.posted ? (
+                            <span className="text-slate-500">On the job board</span>
+                          ) : j.assignee ? (
                             <div className="flex items-center gap-2">
                               <Avatar name={j.assignee.name} size="sm" />
                               <span className="whitespace-nowrap">{j.assignee.name}</span>
