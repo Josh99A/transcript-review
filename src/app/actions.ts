@@ -147,7 +147,14 @@ export async function assignJob(formData: FormData): Promise<FormState> {
   await db.job.update({
     where: { id: jobId },
     data: assigneeId
-      ? { assigneeId, status: "ASSIGNED", assignedAt: new Date(), posted: false }
+      ? {
+          assigneeId,
+          status: "ASSIGNED",
+          assignedAt: new Date(),
+          posted: false,
+          // Instructions were for the previous transcriber.
+          ...(assigneeId !== job.assigneeId ? { reviewNote: null, reviewedAt: null, revisions: 0 } : {}),
+        }
       : { assigneeId: null, status: "UNASSIGNED", assignedAt: null },
   });
   if (assigneeId) await settleRequests(jobId, assigneeId);
@@ -225,19 +232,43 @@ export async function declineRequest(formData: FormData): Promise<FormState> {
   return { ok: "Request declined." };
 }
 
-/** Send a submitted job back to its assignee for more corrections. Pay already credited stays. */
+/** Send a submitted job back to its assignee with instructions for what to change. Pay already credited stays. */
 export async function reopenJob(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const jobId = String(formData.get("jobId"));
+  const note = String(formData.get("note") ?? "").trim().slice(0, 5000);
+  if (!note) return { error: "Write what needs to change so the transcriber knows what to fix." };
   const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
+  if (job.status !== "SUBMITTED") return { error: "Only submitted jobs can be sent back." };
   if (job.mediaRemovedAt) return { error: "The media file was removed, so this job can't be sent back." };
   await db.job.update({
     where: { id: jobId },
-    data: { status: job.assigneeId ? "ASSIGNED" : "UNASSIGNED", submittedAt: null },
+    data: {
+      status: job.assigneeId ? "ASSIGNED" : "UNASSIGNED",
+      submittedAt: null,
+      approvedAt: null,
+      reviewNote: note,
+      reviewedAt: new Date(),
+      revisions: { increment: 1 },
+    },
   });
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
-  return { ok: "Sent back for more corrections." };
+  revalidatePath("/jobs");
+  return { ok: "Sent back with your instructions." };
+}
+
+/** Marks a submitted job as reviewed and accepted. */
+export async function approveJob(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const jobId = String(formData.get("jobId"));
+  const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
+  if (job.status !== "SUBMITTED") return { error: "Only submitted jobs can be approved." };
+  await db.job.update({ where: { id: jobId }, data: { approvedAt: new Date(), reviewedAt: new Date() } });
+  revalidatePath("/admin");
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/jobs");
+  return { ok: "Marked as approved." };
 }
 
 export async function updateDuration(formData: FormData): Promise<FormState> {

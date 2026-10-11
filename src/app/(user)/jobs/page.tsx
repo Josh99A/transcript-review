@@ -1,6 +1,7 @@
 import { ArrowRight, CircleCheck, Clock, FileAudio, FileVideo, Inbox, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
+import StatusBadge, { jobBadge } from "@/components/StatusBadge";
 import { EmptyState, PageHeader, StatCard } from "@/components/ui";
 import PayDateBanner from "@/components/PayDateBanner";
 import { requireRole } from "@/lib/auth";
@@ -72,7 +73,10 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
                       <Icon className="size-5" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="truncate font-medium text-slate-900">{j.title}</div>
+                      <div className="flex min-w-0 items-center gap-2">
+                        <span className="truncate font-medium text-slate-900">{j.title}</span>
+                        {j.reviewNote && <StatusBadge status="CHANGES" />}
+                      </div>
                       <div className="num mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
                         <span className="inline-flex items-center gap-1"><Clock className="size-3" /> {formatDuration(j.durationSeconds)}</span>
                         <span className="font-medium text-slate-700">{formatUGX(earningsFor(j.durationSeconds))}</span>
@@ -84,7 +88,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
                       </div>
                     </div>
                     <span className="inline-flex items-center gap-1 text-sm font-medium text-brand-600 group-hover:text-brand-700">
-                      {started ? "Continue" : "Start"} <ArrowRight className="size-4 transition group-hover:translate-x-0.5" />
+                      {j.reviewNote ? "Fix" : started ? "Continue" : "Start"} <ArrowRight className="size-4 transition group-hover:translate-x-0.5" />
                     </span>
                   </Link>
                 </li>
@@ -99,11 +103,12 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
           <div className="card-header"><h2 className="card-title">Submitted</h2></div>
           <div className="relative overflow-x-auto">
             <table className="table table-stack">
-              <thead><tr><th>Job</th><th>Length</th><th>Submitted</th><th className="text-right">Earned</th></tr></thead>
+              <thead><tr><th>Job</th><th>Status</th><th>Length</th><th>Submitted</th><th className="text-right">Earned</th></tr></thead>
               <tbody>
                 {done.map((j) => (
                   <tr key={j.id}>
                     <td><Link href={`/jobs/${j.id}`} className="font-medium text-slate-900 hover:text-brand-700">{j.title}</Link></td>
+                    <td data-label="Status"><StatusBadge status={jobBadge(j)} /></td>
                     <td data-label="Length" className="num">{formatDuration(j.durationSeconds)}</td>
                     <td data-label="Submitted" className="whitespace-nowrap text-slate-600">{formatRelative(j.submittedAt)}</td>
                     <td data-label="Earned" className="num text-right font-medium">{formatUGX(j.earnings.reduce((s, e) => s + e.amount, 0))}</td>

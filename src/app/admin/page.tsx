@@ -2,7 +2,7 @@ import { CircleCheck, FileAudio, FileVideo, Hourglass, Inbox, Search, Upload, Wa
 import type { Metadata } from "next";
 import Link from "next/link";
 import PayDayCard from "@/components/PayDayCard";
-import StatusBadge from "@/components/StatusBadge";
+import StatusBadge, { jobBadge } from "@/components/StatusBadge";
 import StorageCard from "@/components/StorageCard";
 import { Avatar, EmptyState, PageHeader, StatCard, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
@@ -174,7 +174,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                             <span className="text-slate-400">Nobody yet</span>
                           )}
                         </td>
-                        <td data-label="Status"><StatusBadge status={j.status} /></td>
+                        <td data-label="Status"><StatusBadge status={jobBadge(j)} /></td>
                         <td data-label="Pay" className="num text-right whitespace-nowrap">
                           {credited ? (
                             <span className="font-medium text-slate-900">{formatUGX(credited)}</span>

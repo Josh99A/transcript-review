@@ -67,6 +67,11 @@ model Job {
   submittedAt        DateTime?
   // Set when an admin deletes the media file to save space; the job and its records stay.
   mediaRemovedAt     DateTime?
+  // Admin review of a submission. A send-back stores the instructions; approval marks it done.
+  reviewNote         String?
+  reviewedAt         DateTime?
+  approvedAt         DateTime?
+  revisions          Int          @default(0)
   earnings           Earning[]
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt

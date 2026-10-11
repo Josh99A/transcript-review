@@ -1,11 +1,11 @@
-import { ArrowLeft, Check, Download, FileX2, Megaphone, Trash2, Undo2, X } from "lucide-react";
+import { ArrowLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, X } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { approveRequest, assignJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, updateDuration, updateJobDetails } from "@/app/actions";
+import { approveJob, approveRequest, assignJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, updateDuration, updateJobDetails } from "@/app/actions";
 import { ActionForm, ConfirmAction } from "@/components/client";
 import MediaPlayer from "@/components/MediaPlayer";
-import StatusBadge from "@/components/StatusBadge";
+import StatusBadge, { jobBadge } from "@/components/StatusBadge";
 import TranscriptDiff from "@/components/TranscriptDiff";
 import { MediaRemoved, PageHeader, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
@@ -47,7 +47,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
       <PageHeader
         back={<Link href="/admin" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
         title={job.title}
-        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={job.status} /><span className="num">{formatDuration(job.durationSeconds)} · pays {formatUGX(earningsFor(job.durationSeconds))}</span></span>}
+        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={jobBadge(job)} /><span className="num">{formatDuration(job.durationSeconds)} · pays {formatUGX(earningsFor(job.durationSeconds))}</span></span>}
         actions={
           <>
             <a href={`/api/jobs/${job.id}/transcript?format=docx`} className="btn-secondary"><Download className="size-4" /> Word .docx</a>
@@ -89,6 +89,39 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
         </div>
 
         <div className="space-y-6">
+          {job.status === "SUBMITTED" && (
+            <section className="card">
+              <div className="card-header"><h2 className="card-title">Review</h2></div>
+              <div className="card-body space-y-4">
+                {job.approvedAt ? (
+                  <p className="flex items-center gap-2 text-sm text-emerald-700"><CircleCheck className="size-4 shrink-0" /> Approved {formatRelative(job.approvedAt)}.</p>
+                ) : (
+                  <>
+                    <p className="text-sm text-slate-600">Check the changes, then approve them or send the job back with instructions.</p>
+                    <ActionForm action={approveJob}>
+                      <input type="hidden" name="jobId" value={job.id} />
+                      <button className="btn w-full"><Check className="size-4" /> Approve</button>
+                    </ActionForm>
+                  </>
+                )}
+                {job.mediaRemovedAt ? null : (
+                  <ActionForm action={reopenJob} className="space-y-2 border-t border-slate-100 pt-4">
+                    <input type="hidden" name="jobId" value={job.id} />
+                    <label className="label" htmlFor="review-note">{job.approvedAt ? "Still needs changes?" : "Not satisfactory?"}</label>
+                    <textarea className="input h-28" id="review-note" name="note" required maxLength={5000} placeholder="e.g. Speaker names are missing from 02:10 to 04:30, and fix the spelling of Kampala." />
+                    <button className="btn-secondary w-full"><Undo2 className="size-4" /> Send back with instructions</button>
+                    <p className="text-xs text-slate-500">{job.assignee?.name ?? "The transcriber"} sees your instructions and can edit again. Pay already credited stays, and resubmitting won&apos;t pay twice.</p>
+                  </ActionForm>
+                )}
+              </div>
+            </section>
+          )}
+          {job.status === "ASSIGNED" && job.reviewNote && (
+            <section className="rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-900 ring-1 ring-orange-600/15">
+              <p className="flex items-center gap-2 font-medium"><MessageSquareWarning className="size-4 shrink-0" /> Sent back {formatRelative(job.reviewedAt)}{job.revisions > 1 ? ` (round ${job.revisions})` : ""}</p>
+              <p className="mt-1 whitespace-pre-line">{job.reviewNote}</p>
+            </section>
+          )}
           {job.status === "UNASSIGNED" && (
             <section className="card">
               <div className="card-header">
@@ -140,17 +173,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
             <div className="card-header"><h2 className="card-title">Assignment</h2></div>
             <div className="card-body space-y-4">
               {job.assignee && <UserCell name={job.assignee.name} sub={job.assignee.email} />}
-              {job.status === "SUBMITTED" && job.mediaRemovedAt ? null : job.status === "SUBMITTED" ? (
-                <ConfirmAction
-                  action={reopenJob}
-                  fields={{ jobId: job.id }}
-                  trigger={<><Undo2 className="size-4" /> Send back for corrections</>}
-                  triggerClassName="btn-secondary w-full"
-                  title="Send this job back?"
-                  description={`${job.assignee?.name ?? "The transcriber"} will be able to edit it again. Pay already credited stays, and resubmitting won't pay twice.`}
-                  confirmLabel="Send back"
-                />
-              ) : (
+              {job.status === "SUBMITTED" ? null : (
                 <ActionForm action={assignJob} className="space-y-2">
                   <input type="hidden" name="jobId" value={job.id} />
                   <label className="label" htmlFor="assigneeId">{job.assignee ? "Reassign to" : "Assign to"}</label>
