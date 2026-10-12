@@ -30,6 +30,7 @@ export default function StorageCard({ usedBytes, removableBytes, removableCount 
               title="Remove media of all submitted jobs?"
               description={`This deletes ${removableCount} audio or video file${removableCount === 1 ? "" : "s"} (${formatBytes(removableBytes)}) for good. Jobs, transcripts and pay records are kept, but the media can't be played again and those jobs can't be sent back for corrections.`}
               confirmLabel="Remove media"
+              typeWord="REMOVE"
               danger
             />
           </div>

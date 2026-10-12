@@ -49,6 +49,7 @@ export default function PayDayCard({ payDate, totalOwed, peopleOwed }: { payDate
             title="Record payment for everyone?"
             description={`This records ${formatUGX(totalOwed)} paid to ${peopleOwed} ${peopleOwed === 1 ? "person" : "people"}, bringing everyone's balance to zero. Only do this once you've actually sent the money.`}
             confirmLabel="Record payments"
+            tick="I've actually sent this money to everyone listed."
           />
         </div>
       </div>

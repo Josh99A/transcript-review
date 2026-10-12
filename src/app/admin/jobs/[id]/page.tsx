@@ -105,14 +105,14 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                 ) : (
                   <>
                     <p className="text-sm text-slate-600">Check the changes, then approve them or send the job back with instructions.</p>
-                    <ActionForm action={approveJob}>
+                    <ActionForm action={approveJob} confirm={{ title: "Approve this transcript?", description: `${job.assignee?.name ?? "The transcriber"} is told it was accepted, and it moves to Completed.`, label: "Approve" }}>
                       <input type="hidden" name="jobId" value={job.id} />
                       <button className="btn w-full"><Check className="size-4" /> Approve</button>
                     </ActionForm>
                   </>
                 )}
                 {job.mediaRemovedAt ? null : (
-                  <ActionForm action={reopenJob} className="space-y-2 border-t border-slate-100 pt-4">
+                  <ActionForm action={reopenJob} className="space-y-2 border-t border-slate-100 pt-4" confirm={{ title: "Send this back for changes?", description: `${job.assignee?.name ?? "The transcriber"} gets your instructions and the job reopens in their editor.`, label: "Send back" }}>
                     <input type="hidden" name="jobId" value={job.id} />
                     <label className="label" htmlFor="review-note">{job.approvedAt ? "Still needs changes?" : "Not satisfactory?"}</label>
                     <textarea className="input h-28" id="review-note" name="note" required maxLength={5000} placeholder="e.g. Speaker names are missing from 02:10 to 04:30, and fix the spelling of Kampala." />
@@ -157,11 +157,11 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                           {r.note && <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">“{r.note}”</p>}
                           {r.status === "PENDING" && (
                             <div className="flex gap-2">
-                              <ActionForm action={approveRequest} className="flex-1">
+                              <ActionForm action={approveRequest} className="flex-1" confirm={{ title: `Give this job to ${r.user.name}?`, description: "Everyone else who asked for it is declined and told.", label: "Give it to them" }}>
                                 <input type="hidden" name="requestId" value={r.id} />
                                 <button className="btn w-full"><Check className="size-4" /> Give it to {r.user.name.split(" ")[0]}</button>
                               </ActionForm>
-                              <ActionForm action={declineRequest}>
+                              <ActionForm action={declineRequest} confirm={{ title: `Decline ${r.user.name}'s request?`, description: "They're told it wasn't approved. They can ask again while the job is on the board.", label: "Decline", danger: true }}>
                                 <input type="hidden" name="requestId" value={r.id} />
                                 <button className="btn-secondary" aria-label={`Decline ${r.user.name}`}><X className="size-4" /> Decline</button>
                               </ActionForm>
@@ -181,7 +181,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
             <div className="card-body space-y-4">
               {job.assignee && <UserCell name={job.assignee.name} sub={job.assignee.email} />}
               {job.status === "SUBMITTED" ? null : (
-                <ActionForm action={assignJob} className="space-y-2">
+                <ActionForm action={assignJob} className="space-y-2" confirm={{ title: job.assignee ? "Change who has this job?" : "Assign this job?", description: job.assignee ? `${job.assignee.name} loses access to it and is told. Their draft stays on the job for the next person.` : "The person you picked is told and can start right away.", label: "Save assignment" }}>
                   <input type="hidden" name="jobId" value={job.id} />
                   <label className="label" htmlFor="assigneeId">{job.assignee ? "Reassign to" : "Assign to"}</label>
                   <div className="flex gap-2">
@@ -220,6 +220,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                         title="Remove this pay?"
                         description={`${formatHours(e.seconds)} will be taken off ${e.user.name}'s total hours.`}
                         confirmLabel="Remove pay"
+                        typeWord="REMOVE"
                         danger
                       />
                     </li>
@@ -258,6 +259,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   title="Remove the media file?"
                   description="The audio or video file is deleted for good to free up space. The job, both transcripts and the pay records are kept, but nobody can play it again and the job can't be sent back for corrections."
                   confirmLabel="Remove media"
+                  typeWord="REMOVE"
                   danger
                 />
               </div>
@@ -276,8 +278,9 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                 trigger={<><Trash2 className="size-4" /> Delete</>}
                 triggerClassName="btn-secondary text-red-700 hover:bg-red-50 hover:text-red-800"
                 title="Delete this job?"
-                description="This permanently removes the media file, both transcripts and any pay credited for it. It can't be undone."
+                description="This permanently removes the media file and both transcripts. It can't be undone."
                 confirmLabel="Delete job"
+                typeWord="DELETE"
                 danger
               />
             </div>

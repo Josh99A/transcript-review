@@ -54,11 +54,11 @@ export default async function RequestsPage() {
                     />
                     {r.note && <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">“{r.note}”</p>}
                     <div className="flex gap-2">
-                      <ActionForm action={approveRequest} className="flex-1 sm:flex-none">
+                      <ActionForm action={approveRequest} className="flex-1 sm:flex-none" confirm={{ title: `Give ${j.title} to ${r.user.name}?`, description: "Everyone else who asked for it is declined and told.", label: "Give it to them" }}>
                         <input type="hidden" name="requestId" value={r.id} />
                         <button className="btn w-full"><Check className="size-4" /> Give it to {r.user.name.split(" ")[0]}</button>
                       </ActionForm>
-                      <ActionForm action={declineRequest}>
+                      <ActionForm action={declineRequest} confirm={{ title: `Decline ${r.user.name}'s request?`, description: "They're told it wasn't approved. They can ask again while the job is on the board.", label: "Decline", danger: true }}>
                         <input type="hidden" name="requestId" value={r.id} />
                         <button className="btn-secondary" aria-label={`Decline ${r.user.name}`}><X className="size-4" /> Decline</button>
                       </ActionForm>

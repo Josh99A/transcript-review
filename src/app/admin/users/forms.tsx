@@ -64,7 +64,17 @@ export function PayoutButton({ userId, name, owed, payTo }: { userId: string; na
         <Banknote className="size-3.5" /> Record payment
       </button>
       <Modal open={open} onClose={() => setOpen(false)} title={`Pay ${name}`} description={<>They&apos;re currently owed <strong className="num text-slate-900">{formatUGX(owed)}</strong>. {payTo ? <>Pay to <strong className="num text-slate-900">{payTo}</strong>.</> : "They haven't added a payment number yet."}</>}>
-        <ActionForm action={recordPayout} className="space-y-4" onDone={() => setOpen(false)}>
+        <ActionForm
+          action={recordPayout}
+          className="space-y-4"
+          onDone={() => setOpen(false)}
+          confirm={{
+            title: `Record this payment to ${name}?`,
+            description: (d) => <>This records <strong className="num text-slate-900">{formatUGX(Math.round(Number(d.get("amount")) || 0))}</strong> as paid to {name}{payTo ? <> on {payTo}</> : null}. It comes off what they&apos;re owed.</>,
+            label: "Record payment",
+            tick: "I've actually sent this money.",
+          }}
+        >
           <input type="hidden" name="userId" value={userId} />
           <div>
             <label className="label" htmlFor={`amt-${userId}`}>Amount paid (UGX)</label>
@@ -111,7 +121,7 @@ export function ResetPasswordButton({ userId, name }: { userId: string; name: st
 /** Inline picker for who referred a transcriber. */
 export function ReferrerSelect({ userId, current, referrers }: { userId: string; current: string | null; referrers: Option[] }) {
   return (
-    <ActionForm action={setReferrer}>
+    <ActionForm action={setReferrer} confirm={{ title: "Change who referred this transcriber?", description: "Referral pay for their submitted work moves to the person you picked.", label: "Change referrer" }}>
       <input type="hidden" name="userId" value={userId} />
       <select
         name="referredById"

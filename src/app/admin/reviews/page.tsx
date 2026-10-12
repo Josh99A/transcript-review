@@ -93,7 +93,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Prom
                     {showApproved ? "Open" : "Review"} <ArrowRight className="size-4" />
                   </Link>
                   {!showApproved && (
-                    <ActionForm action={approveJob}>
+                    <ActionForm action={approveJob} confirm={{ title: `Approve ${j.title}?`, description: `${j.assignee?.name ?? "The transcriber"} is told it was accepted, and it moves to Completed. Open it first if you haven't checked the changes.`, label: "Approve" }}>
                       <input type="hidden" name="jobId" value={j.id} />
                       <button className="btn-secondary"><Check className="size-4" /> Approve</button>
                     </ActionForm>
