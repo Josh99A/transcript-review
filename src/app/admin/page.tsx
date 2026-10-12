@@ -96,7 +96,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
         ]}
       />
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_320px]">
+      <div className="mt-6 space-y-6">
         <section className="card overflow-hidden">
           <div className="card-header">
             <h2 className="card-title">Jobs</h2>
@@ -171,6 +171,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                     <th>Assigned to</th>
                     <th>Status</th>
                     <th className="text-right">Length</th>
+                    <th className="text-right">Pay</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -178,17 +179,17 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                     const Icon = j.mediaType.startsWith("video") ? FileVideo : FileAudio;
                     return (
                       <tr key={j.id}>
-                        <td>
+                        <td className="min-w-72">
                           <div className="flex items-center gap-3">
                             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
                               <Icon className="size-4.5" aria-hidden />
                             </span>
                             <div className="min-w-0">
-                              <Link href={`/admin/jobs/${j.id}`} className="font-medium text-slate-900 hover:text-brand-700">
+                              <Link href={`/admin/jobs/${j.id}`} className="block font-medium break-words text-slate-900 hover:text-brand-700">
                                 {j.title}
                               </Link>
                               <JobTags job={j} className="mt-1 flex" />
-                              <div className="num text-xs text-slate-500">
+                              <div className="num mt-1 text-xs text-slate-500">
                                 {j.status === "SUBMITTED" ? `submitted ${formatRelative(j.submittedAt)}` : `updated ${formatRelative(j.updatedAt)}`}
                               </div>
                             </div>
@@ -210,8 +211,9 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                             <span className="text-slate-400">Nobody yet</span>
                           )}
                         </td>
-                        <td><StatusBadge status={jobBadge(j)} /></td>
-                        <td className="num text-right whitespace-nowrap text-slate-600">{formatDuration(j.durationSeconds)}<span className="block text-xs text-slate-400">{jobPayLabel(j)}</span></td>
+                        <td className="whitespace-nowrap"><StatusBadge status={jobBadge(j)} /></td>
+                        <td className="num text-right whitespace-nowrap text-slate-600">{formatDuration(j.durationSeconds)}</td>
+                        <td className="num text-right whitespace-nowrap text-slate-600">{jobPayLabel(j)}{j.ratePerHour != null && <span className="block text-xs text-slate-400">special rate</span>}</td>
                       </tr>
                     );
                   })}
@@ -222,7 +224,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
           )}
         </section>
 
-        <div className="space-y-6">
+        <div className="grid items-start gap-6 lg:grid-cols-3">
         <PayDayCard payDate={payDate} totalOwed={totalOwed} peopleOwed={peopleOwed} />
         <StorageCard usedBytes={usedBytes} removableBytes={removable.reduce((s, j) => s + j.bytes, 0)} removableCount={removable.length} />
         <section className="card h-fit">
