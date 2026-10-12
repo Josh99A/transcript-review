@@ -577,3 +577,152 @@ export async function updateGuidelines(formData: FormData): Promise<FormState> {
   revalidatePath("/", "layout");
   return { ok: html ? "Guidelines saved. Every job now shows them." : "Guidelines removed." };
 }
+
+// ---------- Leaving and unassigning ----------
+
+/**
+ * Takes a job off its transcriber and puts it back on Find work. Their draft edits stay for whoever
+ * takes it next, and pay credited to them for it is removed. Call with the job row locked.
+ */
+async function releaseJob(tx: Prisma.TransactionClient, job: { id: string; assigneeId: string | null }) {
+  if (!job.assigneeId) return;
+  await lockPayments(tx);
+  await tx.earning.deleteMany({ where: { jobId: job.id, userId: job.assigneeId } });
+  // Their old request is closed, so they could ask for the job again later.
+  await tx.jobRequest.updateMany({ where: { jobId: job.id, userId: job.assigneeId }, data: { status: "DECLINED" } });
+  await tx.job.update({
+    where: { id: job.id },
+    data: { assigneeId: null, status: "UNASSIGNED", assignedAt: null, submittedAt: null, approvedAt: null, reviewNote: null, reviewedAt: null, revisions: 0, posted: true },
+  });
+}
+
+function revalidateRelease(jobId: string) {
+  revalidatePath("/admin");
+  revalidatePath("/admin/reviews");
+  revalidatePath("/admin/requests");
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/board");
+  revalidatePath("/jobs");
+  revalidatePath("/earnings");
+}
+
+/** A transcriber gives back a job they can't finish. */
+export async function leaveJob(formData: FormData): Promise<FormState> {
+  const user = await requireRole("USER");
+  const jobId = String(formData.get("jobId"));
+  const reason = String(formData.get("reason") ?? "").trim().slice(0, 1000);
+  const res = await guarded(async (tx) => {
+    const job = await lockJob(tx, jobId);
+    if (!job || job.assigneeId !== user.id) refuse("This job isn't assigned to you any more.");
+    if (job!.status === "SUBMITTED") refuse(job!.approvedAt ? "This job is already approved, so it can't be left." : "Withdraw your submission first, then you can leave the job.");
+    if (job!.mediaRemovedAt) refuse("This job's media was removed, so it can't go back on the board.");
+    await releaseJob(tx, job!);
+    return job!;
+  });
+  if (failed(res)) return res;
+  await notifyAdmins({ title: `${user.name} left ${res.title}`, body: `${reason || "No reason given."} It's back on Find work.`, href: `/admin/jobs/${jobId}` });
+  revalidateRelease(jobId);
+  return { ok: "You've left the job. It's back on Find work for others." };
+}
+
+/** An admin takes a job off its transcriber and puts it back on Find work. */
+export async function unassignJob(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const jobId = String(formData.get("jobId"));
+  const reason = String(formData.get("reason") ?? "").trim().slice(0, 1000);
+  const res = await guarded(async (tx) => {
+    const job = (await lockJob(tx, jobId)) ?? refuse("This job no longer exists.");
+    if (!job.assigneeId) refuse("Nobody is assigned to this job.");
+    if (job.status === "SUBMITTED" && job.approvedAt) refuse("This job is approved. Send it back first if it needs more work.");
+    if (job.mediaRemovedAt) refuse("This job's media was removed, so it can't go back on the board.");
+    await releaseJob(tx, job);
+    return job;
+  });
+  if (failed(res)) return res;
+  await notify([res.assigneeId!], {
+    title: `${res.title} was taken off your list`,
+    body: reason || "An admin unassigned this job. You don't need to work on it any more.",
+    href: "/jobs",
+  });
+  revalidateRelease(jobId);
+  return { ok: "Unassigned. The job is back on Find work." };
+}
+
+// ---------- Issues ----------
+
+const issueSchema = z.object({
+  subject: z.string().trim().min(1, "Say briefly what the problem is").max(120, "Keep the subject under 120 characters"),
+  body: z.string().trim().min(1, "Describe the problem").max(3000, "Keep the message under 3,000 characters"),
+});
+
+function revalidateIssue(jobId: string, issueId?: string) {
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath("/admin/issues");
+  if (issueId) revalidatePath(`/admin/issues/${issueId}`);
+  revalidatePath("/admin");
+}
+
+/** A transcriber raises a problem with a job assigned to them. */
+export async function raiseIssue(formData: FormData): Promise<FormState> {
+  const user = await requireRole("USER");
+  const jobId = String(formData.get("jobId"));
+  const parsed = issueSchema.safeParse({ subject: formData.get("subject") ?? "", body: formData.get("body") ?? "" });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { title: true, assigneeId: true } });
+  if (!job || job.assigneeId !== user.id) return { error: "You can only raise issues on jobs assigned to you." };
+  const { subject, body } = parsed.data;
+  const issue = await db.issue.create({ data: { jobId, userId: user.id, subject, messages: { create: { authorId: user.id, body } } } });
+  await notifyAdmins({ title: `${user.name} raised an issue: ${subject}`, body: `${job.title}: ${body.slice(0, 300)}`, href: `/admin/issues/${issue.id}` });
+  revalidateIssue(jobId, issue.id);
+  return { ok: "Issue sent. You'll be notified when an admin replies." };
+}
+
+/** Adds a reply to an issue. Admins can resolve it in the same step; any other reply reopens it. */
+export async function replyToIssue(formData: FormData): Promise<FormState> {
+  const user = await requireUser();
+  const issueId = String(formData.get("issueId"));
+  const body = String(formData.get("body") ?? "").trim();
+  if (!body) return { error: "Write a reply first." };
+  if (body.length > 3000) return { error: "Keep the message under 3,000 characters." };
+  const issue = await db.issue.findUnique({ where: { id: issueId }, include: { job: { select: { title: true, assigneeId: true } } } });
+  const admin = user.role === "ADMIN";
+  if (!issue || (!admin && issue.userId !== user.id)) return { error: "This issue no longer exists." };
+  if (!admin && issue.job.assigneeId !== user.id) return { error: "This job isn't assigned to you any more." };
+  const resolve = admin && formData.get("resolve") === "on";
+  await db.issue.update({
+    where: { id: issueId },
+    data: { messages: { create: { authorId: user.id, body } }, status: resolve ? "RESOLVED" : "OPEN", resolvedAt: resolve ? new Date() : null },
+  });
+  if (admin) {
+    await notify([issue.userId], {
+      title: `${resolve ? "Resolved" : "Reply"}: ${issue.subject}`,
+      body: body.slice(0, 300),
+      href: `/jobs/${issue.jobId}#issue-${issueId}`,
+    });
+  } else {
+    await notifyAdmins({ title: `${user.name} replied: ${issue.subject}`, body: `${issue.job.title}: ${body.slice(0, 300)}`, href: `/admin/issues/${issueId}` });
+  }
+  revalidateIssue(issue.jobId, issueId);
+  return { ok: resolve ? "Reply sent and issue resolved." : "Reply sent." };
+}
+
+/** An admin marks an issue resolved, or reopens it. */
+export async function setIssueStatus(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const issueId = String(formData.get("issueId"));
+  const status = formData.get("status") === "RESOLVED" ? "RESOLVED" : "OPEN";
+  const { count } = await db.issue.updateMany({
+    where: { id: issueId, status: status === "RESOLVED" ? "OPEN" : "RESOLVED" },
+    data: { status, resolvedAt: status === "RESOLVED" ? new Date() : null },
+  });
+  if (!count) return { error: "This issue changed while you were looking at it. Reload and try again." };
+  const issue = await db.issue.findUniqueOrThrow({ where: { id: issueId } });
+  await notify([issue.userId], {
+    title: `${status === "RESOLVED" ? "Resolved" : "Reopened"}: ${issue.subject}`,
+    body: status === "RESOLVED" ? "An admin marked your issue as resolved." : "An admin reopened your issue.",
+    href: `/jobs/${issue.jobId}#issue-${issueId}`,
+  });
+  revalidateIssue(issue.jobId, issueId);
+  return { ok: status === "RESOLVED" ? "Marked resolved." : "Issue reopened." };
+}

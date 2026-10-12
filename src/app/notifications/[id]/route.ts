@@ -27,10 +27,10 @@ async function resolve(href: string, user: { id: string; role: string }) {
     // A submitted job opens at its review, including once it's been approved, so the outcome is in view.
     return job.status === "SUBMITTED" ? `/admin/jobs/${admin[1]}#review` : `/admin/jobs/${admin[1]}`;
   }
-  const mine = href.match(/^\/jobs\/([^/#?]+)/);
+  const mine = href.match(/^\/jobs\/([^/#?]+)(#[\w-]+)?/);
   if (mine) {
     const job = await db.job.findUnique({ where: { id: mine[1] }, select: { assigneeId: true } });
-    return job?.assigneeId === user.id ? `/jobs/${mine[1]}` : "/jobs";
+    return job?.assigneeId === user.id ? `/jobs/${mine[1]}${mine[2] ?? ""}` : "/jobs";
   }
   if (href.startsWith("/admin") && user.role !== "ADMIN") return "/notifications";
   return href;

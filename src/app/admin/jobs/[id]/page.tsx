@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, X } from "lucide-react";
+import { ArrowLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, UserMinus, X } from "lucide-react";
 import RichText from "@/components/RichText";
 import RichTextEditor from "@/components/RichTextEditor";
 import Guidelines from "@/components/Guidelines";
@@ -7,7 +7,8 @@ import { richHtml } from "@/lib/richtext";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { approveJob, approveRequest, assignJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
+import { approveJob, approveRequest, assignJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, unassignJob, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
+import { IssueStatus } from "@/components/IssueThread";
 import { ActionForm, ConfirmAction } from "@/components/client";
 import MediaPlayer from "@/components/MediaPlayer";
 import StatusBadge, { jobBadge } from "@/components/StatusBadge";
@@ -40,6 +41,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
         assignee: true,
         earnings: { include: { user: { select: { name: true } } } },
         requests: { include: { user: { select: { name: true, email: true } } }, orderBy: { createdAt: "asc" } },
+        issues: { include: { user: { select: { name: true } }, _count: { select: { messages: true } } }, orderBy: { updatedAt: "desc" } },
       },
     }),
     db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
@@ -212,6 +214,18 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   </div>
                 </ActionForm>
               )}
+              {job.assignee && !(job.status === "SUBMITTED" && job.approvedAt) && !job.mediaRemovedAt && (
+                <ActionForm
+                  action={unassignJob}
+                  className="space-y-2 border-t border-slate-100 pt-4"
+                  confirm={{ title: `Unassign ${job.assignee.name}?`, description: `They lose access and are told. The job goes back on Find work with their edits so far, and any pay credited to them for it is removed.`, label: "Unassign", danger: true }}
+                >
+                  <input type="hidden" name="jobId" value={job.id} />
+                  <label className="label" htmlFor="unassign-reason">Message to {job.assignee.name.split(" ")[0]} <span className="font-normal text-slate-400">(optional)</span></label>
+                  <textarea className="input h-16" id="unassign-reason" name="reason" maxLength={1000} placeholder="e.g. The deadline moved, so someone else will take it." />
+                  <button className="btn-secondary w-full"><UserMinus className="size-4" /> Unassign and put back on Find work</button>
+                </ActionForm>
+              )}
               <dl className="divide-y divide-slate-100 border-t border-slate-100">
                 <Row label="Uploaded">{formatDate(job.createdAt)}</Row>
                 <Row label="Assigned">{formatDate(job.assignedAt)}</Row>
@@ -219,6 +233,22 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
               </dl>
             </div>
           </section>
+
+          {job.issues.length > 0 && (
+            <section className="card">
+              <div className="card-header"><h2 className="card-title">Issues</h2></div>
+              <ul className="divide-y divide-slate-100">
+                {job.issues.map((i) => (
+                  <li key={i.id}>
+                    <Link href={`/admin/issues/${i.id}`} className="block px-5 py-3 hover:bg-slate-50">
+                      <span className="flex items-center gap-2"><span className="min-w-0 flex-1 text-sm font-medium break-words text-slate-900">{i.subject}</span><IssueStatus status={i.status} /></span>
+                      <span className="mt-0.5 block text-xs text-slate-500">{i.user.name} · {i._count.messages} message{i._count.messages === 1 ? "" : "s"} · {formatRelative(i.updatedAt)}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
 
           <section className="card">
             <div className="card-header"><h2 className="card-title">Time credited</h2></div>

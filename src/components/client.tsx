@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { LoaderCircle, X } from "lucide-react";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -60,6 +61,8 @@ export function ActionForm({
   children,
   onDone,
   confirm,
+  resetOnSuccess,
+  redirectTo,
 }: {
   action: Action;
   success?: string;
@@ -67,7 +70,12 @@ export function ActionForm({
   children: React.ReactNode;
   onDone?: () => void;
   confirm?: Confirm;
+  /** Clear the fields once it works, e.g. after sending a message. */
+  resetOnSuccess?: boolean;
+  /** Go here once it works. */
+  redirectTo?: string;
 }) {
+  const router = useRouter();
   const [pending, start] = useTransition();
   const [asking, setAsking] = useState<FormData | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
@@ -76,7 +84,10 @@ export function ActionForm({
       const res = await action(data);
       report(res, success);
       setAsking(null);
-      if (!res?.error) onDone?.();
+      if (res?.error) return;
+      if (resetOnSuccess) formRef.current?.reset();
+      onDone?.();
+      if (redirectTo) router.push(redirectTo);
     });
   const cancel = () => {
     if (pending) return;
@@ -215,4 +226,21 @@ export function ConfirmAction({
       </Modal>
     </>
   );
+}
+
+/** Opens and scrolls to a collapsed section when the link points at it, e.g. a notification to #issue-…. */
+export function OpenLinkedDetails() {
+  useEffect(() => {
+    const open = () => {
+      const el = location.hash ? document.getElementById(decodeURIComponent(location.hash.slice(1))) : null;
+      if (el instanceof HTMLDetailsElement) {
+        el.open = true;
+        el.scrollIntoView({ block: "start" });
+      }
+    };
+    open();
+    window.addEventListener("hashchange", open);
+    return () => window.removeEventListener("hashchange", open);
+  }, []);
+  return null;
 }
