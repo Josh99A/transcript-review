@@ -1,7 +1,10 @@
-import { CalendarClock, Clock, FileAudio, FileVideo, Languages, Search, Wallet } from "lucide-react";
+import { CalendarClock, CircleCheck, Clock, FileAudio, FileVideo, Hourglass, Inbox, Languages, Search, Wallet } from "lucide-react";
+import type { Prisma } from "@prisma/client";
+import Link from "next/link";
 import RichText from "@/components/RichText";
 import type { Metadata } from "next";
-import { EmptyState, PageHeader } from "@/components/ui";
+import { EmptyState, PageHeader, StatList } from "@/components/ui";
+import Filters from "./Filters";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDeadline, formatDuration, formatRelative, formatUGX } from "@/lib/format";
@@ -10,20 +13,81 @@ import { jobPayLabel } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "Find work" };
 
-export default async function BoardPage() {
+const LENGTHS: Record<string, { label: string; where: Prisma.IntFilter }> = {
+  short: { label: "Short (under 15 min)", where: { lt: 15 * 60 } },
+  medium: { label: "Medium (15 to 45 min)", where: { gte: 15 * 60, lte: 45 * 60 } },
+  long: { label: "Long (over 45 min)", where: { gt: 45 * 60 } },
+};
+const SORTS: Record<string, { label: string; orderBy: Prisma.JobOrderByWithRelationInput[] }> = {
+  deadline: { label: "Deadline first", orderBy: [{ deadline: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }] },
+  newest: { label: "Newest", orderBy: [{ createdAt: "desc" }] },
+  longest: { label: "Longest", orderBy: [{ durationSeconds: "desc" }, { createdAt: "desc" }] },
+  shortest: { label: "Shortest", orderBy: [{ durationSeconds: "asc" }, { createdAt: "desc" }] },
+};
+
+type Params = { length?: string; type?: string; language?: string; rate?: string; sort?: string };
+
+export default async function BoardPage({ searchParams }: { searchParams: Promise<Params> }) {
   const user = await requireRole("USER");
+  const sp = await searchParams;
+  const length = sp.length && LENGTHS[sp.length] ? sp.length : "";
+  const type = sp.type === "audio" || sp.type === "video" ? sp.type : "";
+  const rate = sp.rate === "usual" || sp.rate === "custom" ? sp.rate : "";
+  const sort = sp.sort && SORTS[sp.sort] ? sp.sort : "deadline";
+  const open: Prisma.JobWhereInput = { posted: true, status: "UNASSIGNED" };
+  const [languages, counts, mine] = await Promise.all([
+    db.job.findMany({ where: { ...open, language: { not: null } }, select: { language: true }, distinct: ["language"], orderBy: { language: "asc" } }),
+    db.job.groupBy({ by: ["status"], where: { OR: [open, { assigneeId: { not: null } }] }, _count: true }),
+    db.job.count({ where: { assigneeId: user.id, status: "ASSIGNED" } }),
+  ]);
+  const languageList = languages.map((l) => l.language!).filter(Boolean);
+  const language = sp.language && languageList.includes(sp.language) ? sp.language : "";
   const jobs = await db.job.findMany({
-    where: { posted: true, status: "UNASSIGNED" },
+    where: {
+      ...open,
+      ...(length ? { durationSeconds: LENGTHS[length].where } : {}),
+      ...(type ? { mediaType: { startsWith: type } } : {}),
+      ...(language ? { language } : {}),
+      ...(rate === "usual" ? { ratePerHour: null } : rate === "custom" ? { ratePerHour: { not: null } } : {}),
+    },
     include: { requests: { where: { userId: user.id } } },
-    orderBy: [{ deadline: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }],
+    orderBy: SORTS[sort].orderBy,
   });
+  const count = (s: string) => counts.find((c) => c.status === s)?._count ?? 0;
+  const posted = count("UNASSIGNED");
+  const inProgress = count("ASSIGNED");
+  const done = count("SUBMITTED");
+  const filtered = Boolean(length || type || language || rate);
+  const any = { value: "", label: "Any" };
+  const fields = [
+    { name: "length", label: "Length", value: length, options: [any, ...Object.entries(LENGTHS).map(([value, l]) => ({ value, label: l.label }))] },
+    { name: "type", label: "Media", value: type, options: [any, { value: "audio", label: "Audio" }, { value: "video", label: "Video" }] },
+    ...(languageList.length > 0 ? [{ name: "language", label: "Language", value: language, options: [any, ...languageList.map((l) => ({ value: l, label: l }))] }] : []),
+    { name: "rate", label: "Rate", value: rate, options: [any, { value: "usual", label: "Usual rate" }, { value: "custom", label: "Special rate" }] },
+    { name: "sort", label: "Sort by", value: sort, options: Object.entries(SORTS).map(([value, o]) => ({ value, label: o.label })) },
+  ];
 
   return (
     <>
       <PageHeader title="Find work" description="Jobs waiting for a transcriber. Request the ones you'd like and an admin will pick who gets each one." />
+      <div className="mb-4">
+        <StatList
+          stats={[
+            { icon: Inbox, label: "Posted", value: posted, tone: "brand", hint: "Open to request now" },
+            { icon: CircleCheck, label: "Assigned", value: inProgress + done, tone: "emerald", hint: `${done} finished` },
+            { icon: Hourglass, label: "In progress", value: inProgress, tone: "amber", hint: mine > 0 ? <Link href="/jobs" className="font-medium text-brand-600 hover:text-brand-700">{mine} of them yours</Link> : "None of them yours" },
+          ]}
+        />
+      </div>
+      {posted > 0 && <Filters fields={fields} active={filtered || sort !== "deadline"} />}
+      {filtered && jobs.length > 0 && <p className="mb-3 text-sm text-slate-500">Showing {jobs.length} of {posted} open job{posted === 1 ? "" : "s"}</p>}
       {jobs.length === 0 ? (
         <div className="card">
-          <EmptyState icon={Search} title="No open jobs right now" description="New jobs show up here as soon as an admin posts them." />
+          {filtered ? (
+            <EmptyState icon={Search} title="No jobs match these filters" description="Try a different length, media type or rate." action={<Link href="/board" className="btn-secondary">Clear filters</Link>} />
+          ) : (
+            <EmptyState icon={Search} title="No open jobs right now" description="New jobs show up here as soon as an admin posts them." />
+          )}
         </div>
       ) : (
         <ul className="grid gap-4 lg:grid-cols-2">
