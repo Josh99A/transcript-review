@@ -78,6 +78,8 @@ model Job {
   mediaRemovedAt        DateTime?
   // Admin review of a submission. A send-back stores the instructions; approval marks it done.
   reviewNote            String?
+  // When an admin last added to the send-back notes after sending the job back.
+  reviewNoteEditedAt    DateTime?
   reviewedAt            DateTime?
   approvedAt            DateTime?
   revisions             Int            @default(0)

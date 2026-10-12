@@ -373,7 +373,7 @@ export async function reopenJob(formData: FormData): Promise<FormState> {
   // Conditional on the job still being as we just read it, so it can't be sent back twice or after it changed hands.
   const { count } = await db.job.updateMany({
     where: { id: jobId, status: "SUBMITTED", assigneeId: job.assigneeId, mediaRemovedAt: null },
-    data: { status: "ASSIGNED", submittedAt: null, approvedAt: null, reviewNote: note, reviewedAt: new Date(), revisions: { increment: 1 } },
+    data: { status: "ASSIGNED", submittedAt: null, approvedAt: null, reviewNote: note, reviewedAt: new Date(), reviewNoteEditedAt: null, revisions: { increment: 1 } },
   });
   if (!count) return { error: "This job changed while you were looking at it. Reload and try again." };
   await notify([job.assigneeId], { title: `Changes needed: ${job.title}`, body: richText(note).slice(0, 500), href: `/jobs/${jobId}`, jobId, kind: "sent-back" });
@@ -383,6 +383,29 @@ export async function reopenJob(formData: FormData): Promise<FormState> {
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/jobs");
   return { ok: "Sent back with your instructions." };
+}
+
+/** Changes the notes on a job that was sent back, e.g. to add something the admin forgot. */
+export async function updateReviewNote(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const jobId = String(formData.get("jobId"));
+  const note = cleanRich(String(formData.get("note") ?? ""));
+  if (richText(note).length > 5000) return { error: "Keep the instructions under 5,000 characters." };
+  if (!note) return { error: "The notes can't be empty. Write what needs to change." };
+  const job = await db.job.findUnique({ where: { id: jobId }, include: { assignee: { select: { name: true } } } });
+  if (!job) return { error: "This job no longer exists." };
+  if (job.reviewNote === note) return { ok: "No changes to save." };
+  // Only while the job is still back with the transcriber; once they resubmit, the notes are done with.
+  const { count } = await db.job.updateMany({
+    where: { id: jobId, status: "ASSIGNED", assigneeId: job.assigneeId, reviewNote: { not: null } },
+    data: { reviewNote: note, reviewNoteEditedAt: new Date() },
+  });
+  if (!count) return { error: "This job isn't waiting on changes any more, so its notes can't be edited. Reload to see where it is." };
+  await notify([job.assigneeId], { title: `Notes updated: ${job.title}`, body: `The admin changed what needs fixing. ${richText(note)}`.slice(0, 500), href: `/jobs/${jobId}`, jobId, kind: "sent-back" });
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/jobs");
+  return { ok: `Notes saved. ${job.assignee?.name ?? "The transcriber"} was told.` };
 }
 
 /** Marks a submitted job as reviewed and accepted. */

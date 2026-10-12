@@ -63,7 +63,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       )}
       {job.status === "ASSIGNED" && job.reviewNote && (
         <div className="mb-4 rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-900 ring-1 ring-orange-600/15">
-          <p className="flex items-center gap-2 font-medium"><MessageSquareWarning className="size-4 shrink-0" /> The admin reviewed this {formatRelative(job.reviewedAt)} and asked for changes:</p>
+          <p className="flex items-center gap-2 font-medium"><MessageSquareWarning className="size-4 shrink-0" /> The admin reviewed this {formatRelative(job.reviewedAt)} and asked for changes:{job.reviewNoteEditedAt && <UpdatedTag at={job.reviewNoteEditedAt} />}</p>
           <RichText html={job.reviewNote} className="mt-1" />
           <p className="mt-2 text-xs text-orange-800">Make the changes below and submit again.</p>
         </div>

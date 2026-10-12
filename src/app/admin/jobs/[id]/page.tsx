@@ -10,7 +10,7 @@ import { richHtml } from "@/lib/richtext";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { approveJob, approveRequest, assignJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, unassignJob, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
+import { approveJob, approveRequest, assignJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, unassignJob, updateReviewNote, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
 import { IssueStatus } from "@/components/IssueThread";
 import { ActionForm, ConfirmAction } from "@/components/client";
 import MediaPlayer from "@/components/MediaPlayer";
@@ -158,6 +158,16 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
             <section className="rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-900 ring-1 ring-orange-600/15">
               <p className="flex items-center gap-2 font-medium"><MessageSquareWarning className="size-4 shrink-0" /> Sent back {formatRelative(job.reviewedAt)}{job.revisions > 1 ? ` (round ${job.revisions})` : ""}</p>
               <RichText html={job.reviewNote} className="mt-1" />
+              {job.reviewNoteEditedAt && <p className="mt-1 text-xs text-orange-800">Edited {formatRelative(job.reviewNoteEditedAt)}</p>}
+              <details className="mt-3 border-t border-orange-600/15 pt-3">
+                <summary className="cursor-pointer font-medium text-brand-700 hover:text-brand-800">Edit or add to these notes</summary>
+                <ActionForm action={updateReviewNote} className="mt-3 space-y-3">
+                  <input type="hidden" name="jobId" value={job.id} />
+                  <RichTextEditor name="note" id="review-note-edit" defaultValue={job.reviewNote} minHeight="8rem" />
+                  <p className="text-xs text-orange-800">{job.assignee?.name ?? "The transcriber"} sees the new notes right away and gets a notification.</p>
+                  <button className="btn">Save notes</button>
+                </ActionForm>
+              </details>
             </section>
           )}
           {job.status === "UNASSIGNED" && (
