@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, Languages, MessageSquareWarning, Wallet } from "lucide-react";
+import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, Languages, MessageSquareWarning } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,8 +7,7 @@ import StatusBadge, { jobBadge } from "@/components/StatusBadge";
 import { MediaRemoved, PageHeader } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { formatDate, formatDeadline, formatDuration, formatRelative, formatUGX } from "@/lib/format";
-import { earningsFor } from "@/lib/pay";
+import { formatDate, formatDeadline, formatDuration, formatRelative } from "@/lib/format";
 import Editor from "./Editor";
 
 export const metadata: Metadata = { title: "Edit transcript" };
@@ -18,7 +17,6 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const { id } = await params;
   const job = await db.job.findUnique({ where: { id } });
   if (!job || job.assigneeId !== user.id) notFound();
-  const pay = earningsFor(job.durationSeconds);
   const due = job.deadline && job.status === "ASSIGNED" ? formatDeadline(job.deadline) : null;
 
   return (
@@ -34,7 +32,6 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <span className="num flex flex-wrap items-center gap-x-4 gap-y-1">
             <StatusBadge status={jobBadge(job)} />
             <span className="inline-flex items-center gap-1.5"><Clock className="size-3.5" /> {formatDuration(job.durationSeconds)}</span>
-            <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> {formatUGX(pay)}</span>
             {job.language && <span className="inline-flex items-center gap-1.5"><Languages className="size-3.5" /> {job.language}</span>}
             {due && <span className={`inline-flex items-center gap-1.5 ${due.overdue ? "text-red-700" : due.soon ? "text-amber-700" : ""}`}><CalendarClock className="size-3.5" /> {due.text}</span>}
           </span>
@@ -53,7 +50,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         </div>
       )}
       {job.status === "ASSIGNED" ? (
-        <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} pay={pay} />
+        <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} seconds={job.durationSeconds} />
       ) : (
         <div className="space-y-4">
           <div className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm ring-1 ${job.approvedAt ? "bg-emerald-50 text-emerald-800 ring-emerald-600/15" : "bg-sky-50 text-sky-800 ring-sky-600/15"}`}>

@@ -58,18 +58,17 @@ export default async function EarningsPage() {
         <section className="card h-fit overflow-hidden">
           <div className="card-header"><h2 className="card-title">Earnings history</h2></div>
           {earnings.length === 0 ? (
-            <EmptyState icon={Wallet} title="Nothing earned yet" description="Pay appears here the moment you submit a transcript." action={<Link href="/jobs" className="btn-secondary">Go to my jobs</Link>} />
+            <EmptyState icon={Wallet} title="Nothing earned yet" description="Each transcript you submit adds its length to your total hours." action={<Link href="/jobs" className="btn-secondary">Go to my jobs</Link>} />
           ) : (
             <div className="relative overflow-x-auto">
               <table className="table table-stack">
-                <thead><tr><th>Job</th><th>Length</th><th>Credited</th><th className="text-right">Amount</th></tr></thead>
+                <thead><tr><th>Job</th><th>Credited</th><th className="text-right">Time added</th></tr></thead>
                 <tbody>
                   {earnings.map((e) => (
                     <tr key={e.id}>
                       <td className="font-medium text-slate-900">{e.job.title}</td>
-                      <td data-label="Length" className="num">{formatDuration(e.job.durationSeconds)}</td>
                       <td data-label="Credited" className="whitespace-nowrap text-slate-600">{formatDate(e.createdAt)}</td>
-                      <td data-label="Amount" className="num text-right font-medium text-emerald-700">+{formatUGX(e.amount)}</td>
+                      <td data-label="Time added" className="num text-right font-medium text-emerald-700">+{formatHours(e.seconds)}</td>
                     </tr>
                   ))}
                 </tbody>

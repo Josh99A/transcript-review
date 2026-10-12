@@ -10,8 +10,7 @@ import TranscriptDiff from "@/components/TranscriptDiff";
 import { MediaRemoved, PageHeader, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { deadlineInput, formatBytes, formatDate, formatDeadline, formatDuration, formatRelative, formatUGX } from "@/lib/format";
-import { earningsFor } from "@/lib/pay";
+import { deadlineInput, formatBytes, formatHours, formatDate, formatDeadline, formatDuration, formatRelative } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Job" };
 
@@ -47,7 +46,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
       <PageHeader
         back={<Link href="/admin" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
         title={job.title}
-        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={jobBadge(job)} /><span className="num">{formatDuration(job.durationSeconds)} · pays {formatUGX(earningsFor(job.durationSeconds))}</span></span>}
+        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={jobBadge(job)} /><span className="num">{formatDuration(job.durationSeconds)}</span></span>}
         actions={
           <>
             <a href={`/api/jobs/${job.id}/transcript?format=docx`} className="btn-secondary"><Download className="size-4" /> Word .docx</a>
@@ -195,23 +194,23 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
           </section>
 
           <section className="card">
-            <div className="card-header"><h2 className="card-title">Pay</h2></div>
+            <div className="card-header"><h2 className="card-title">Time credited</h2></div>
             <div className="card-body space-y-4">
               {job.earnings.length === 0 ? (
-                <p className="text-sm text-slate-500">Nothing credited yet. {formatUGX(earningsFor(job.durationSeconds))} is credited when the transcript is submitted.</p>
+                <p className="text-sm text-slate-500">Nothing credited yet. When the transcript is submitted, its {formatHours(job.durationSeconds)} are added to the transcriber&apos;s total hours, which their pay is worked out on.</p>
               ) : (
                 <ul className="space-y-2">
                   {job.earnings.map((e) => (
                     <li key={e.id} className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm">
                       <span className="flex-1 text-emerald-900">{e.user.name}</span>
-                      <span className="num font-semibold text-emerald-900">{formatUGX(e.amount)}</span>
+                      <span className="num font-semibold text-emerald-900">{formatHours(e.seconds)}</span>
                       <ConfirmAction
                         action={removeEarning}
                         fields={{ earningId: e.id }}
                         trigger={<Trash2 className="size-3.5" />}
                         triggerClassName="btn-ghost size-7 px-0 text-emerald-800 hover:bg-emerald-100"
                         title="Remove this pay?"
-                        description={`${formatUGX(e.amount)} will be taken off ${e.user.name}'s earnings.`}
+                        description={`${formatHours(e.seconds)} will be taken off ${e.user.name}'s total hours.`}
                         confirmLabel="Remove pay"
                         danger
                       />

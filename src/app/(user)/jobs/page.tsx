@@ -1,4 +1,4 @@
-import { ArrowRight, CircleCheck, Clock, FileAudio, FileVideo, Inbox, Wallet } from "lucide-react";
+import { ArrowRight, CircleCheck, Clock, FileAudio, FileVideo, Inbox } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import StatusBadge, { jobBadge } from "@/components/StatusBadge";
@@ -8,7 +8,6 @@ import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balanceFor } from "@/lib/earnings";
 import { formatDeadline, formatDuration, formatHours, formatRelative, formatUGX } from "@/lib/format";
-import { earningsFor } from "@/lib/pay";
 import { getNextPayDate } from "@/lib/settings";
 import SubmittedToast from "./SubmittedToast";
 
@@ -29,7 +28,6 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
   ]);
   const todo = jobs.filter((j) => j.status === "ASSIGNED");
   const done = jobs.filter((j) => j.status === "SUBMITTED").sort((a, b) => +(b.submittedAt ?? 0) - +(a.submittedAt ?? 0));
-  const todoPay = todo.reduce((s, j) => s + earningsFor(j.durationSeconds), 0);
   const todoSeconds = todo.reduce((s, j) => s + j.durationSeconds, 0);
   const firstName = user.name.split(" ")[0];
 
@@ -41,7 +39,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 [&>*:last-child]:col-span-2 sm:[&>*:last-child]:col-span-1">
         <StatCard icon={Inbox} label="To do" value={todo.length} tone="amber" hint={todo.length ? `${formatHours(todoSeconds)} of media` : "All caught up"} />
-        <StatCard icon={Wallet} label="Up for grabs" value={formatUGX(todoPay)} tone="brand" hint="If you finish everything assigned" />
+        <StatCard icon={Clock} label="Hours completed" value={formatHours(balance.seconds)} tone="brand" hint="Your pay is worked out on this total" />
         <StatCard icon={CircleCheck} label="Waiting to be paid" value={formatUGX(balance.owed)} tone="emerald" hint={<Link href="/earnings" className="font-medium text-brand-600 hover:text-brand-700">View earnings</Link>} />
       </div>
 
@@ -73,13 +71,12 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
                       <Icon className="size-5" />
                     </span>
                     <div className="min-w-0 flex-1">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <span className="truncate font-medium text-slate-900">{j.title}</span>
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="min-w-0 font-medium break-words text-slate-900">{j.title}</span>
                         {j.reviewNote && <StatusBadge status="CHANGES" />}
                       </div>
                       <div className="num mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
                         <span className="inline-flex items-center gap-1"><Clock className="size-3" /> {formatDuration(j.durationSeconds)}</span>
-                        <span className="font-medium text-slate-700">{formatUGX(earningsFor(j.durationSeconds))}</span>
                         {j.deadline ? (
                           <span className={formatDeadline(j.deadline).overdue ? "text-red-700" : formatDeadline(j.deadline).soon ? "text-amber-700" : ""}>Due {formatDeadline(j.deadline).text}</span>
                         ) : (
@@ -103,7 +100,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
           <div className="card-header"><h2 className="card-title">Submitted</h2></div>
           <div className="relative overflow-x-auto">
             <table className="table table-stack">
-              <thead><tr><th>Job</th><th>Status</th><th>Length</th><th>Submitted</th><th className="text-right">Earned</th></tr></thead>
+              <thead><tr><th>Job</th><th>Status</th><th>Length</th><th>Submitted</th><th className="text-right">Time credited</th></tr></thead>
               <tbody>
                 {done.map((j) => (
                   <tr key={j.id}>
@@ -111,7 +108,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
                     <td data-label="Status"><StatusBadge status={jobBadge(j)} /></td>
                     <td data-label="Length" className="num">{formatDuration(j.durationSeconds)}</td>
                     <td data-label="Submitted" className="whitespace-nowrap text-slate-600">{formatRelative(j.submittedAt)}</td>
-                    <td data-label="Earned" className="num text-right font-medium">{formatUGX(j.earnings.reduce((s, e) => s + e.amount, 0))}</td>
+                    <td data-label="Time credited" className="num text-right font-medium">{formatHours(j.earnings.reduce((s, e) => s + e.seconds, 0))}</td>
                   </tr>
                 ))}
               </tbody>

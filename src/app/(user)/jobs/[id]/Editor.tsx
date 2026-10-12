@@ -7,7 +7,7 @@ import { toast } from "sonner";
 import { saveDraft, submitJob } from "@/app/actions";
 import { Modal, Spinner } from "@/components/client";
 import MediaPlayer, { SKIP_SECONDS, SPEEDS } from "@/components/MediaPlayer";
-import { formatDuration, formatUGX } from "@/lib/format";
+import { formatDuration, formatHours } from "@/lib/format";
 
 /** Seconds to jump back when resuming with the keyboard, so you re-hear the last words. */
 const AUTO_REWIND = 2;
@@ -30,13 +30,13 @@ export default function Editor({
   mediaType,
   initial,
   original,
-  pay,
+  seconds,
 }: {
   jobId: string;
   mediaType: string;
   initial: string;
   original: string;
-  pay: number;
+  seconds: number;
 }) {
   const [text, setText] = useState(initial);
   const [saved, setSaved] = useState(initial);
@@ -210,7 +210,7 @@ export default function Editor({
         />
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
           <p className="text-xs text-slate-500">
-            Submitting adds <span className="num font-semibold text-slate-700">{formatUGX(pay)}</span> to your earnings, paid on the next pay date.
+            Submitting adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours, which your pay is worked out on.
           </p>
           <button type="button" className="btn ml-auto" onClick={() => setConfirmOpen(true)} disabled={submitting || !text.trim()}>
             <Send className="size-4" /> Submit transcript
@@ -227,7 +227,7 @@ export default function Editor({
         <dl className="mb-5 grid grid-cols-3 gap-3 rounded-lg bg-slate-50 p-4 text-center">
           <div><dt className="text-xs text-slate-500">Words added</dt><dd className="num mt-0.5 font-semibold text-emerald-700">+{changes.added}</dd></div>
           <div><dt className="text-xs text-slate-500">Words removed</dt><dd className="num mt-0.5 font-semibold text-red-700">−{changes.removed}</dd></div>
-          <div><dt className="text-xs text-slate-500">You earn</dt><dd className="num mt-0.5 font-semibold text-slate-900">{formatUGX(pay)}</dd></div>
+          <div><dt className="text-xs text-slate-500">Adds to your hours</dt><dd className="num mt-0.5 font-semibold text-slate-900">{formatHours(seconds)}</dd></div>
         </dl>
         {changes.added + changes.removed === 0 && (
           <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">You haven&apos;t changed anything from the original yet.</p>

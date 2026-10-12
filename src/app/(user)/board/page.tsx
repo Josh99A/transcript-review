@@ -1,10 +1,9 @@
-import { CalendarClock, Clock, FileAudio, FileVideo, Languages, Search, Wallet } from "lucide-react";
+import { CalendarClock, Clock, FileAudio, FileVideo, Languages, Search } from "lucide-react";
 import type { Metadata } from "next";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { formatDeadline, formatDuration, formatRelative, formatUGX } from "@/lib/format";
-import { earningsFor, RATE_PER_HOUR_UGX } from "@/lib/pay";
+import { formatDeadline, formatDuration, formatRelative } from "@/lib/format";
 import RequestButton from "./RequestButton";
 
 export const metadata: Metadata = { title: "Find work" };
@@ -37,10 +36,6 @@ export default async function BoardPage() {
                     <h2 className="font-semibold text-slate-900">{j.title}</h2>
                     <p className="text-xs text-slate-500">Posted {formatRelative(j.createdAt)}</p>
                   </div>
-                  <div className="text-right">
-                    <div className="num text-lg font-semibold text-slate-900">{formatUGX(earningsFor(j.durationSeconds))}</div>
-                    <div className="text-xs text-slate-500">pay</div>
-                  </div>
                 </div>
                 <dl className="num mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-slate-600">
                   <div className="inline-flex items-center gap-1.5"><Clock className="size-4 text-slate-400" /><dt className="sr-only">Length</dt><dd>{formatDuration(j.durationSeconds)}</dd></div>
@@ -50,7 +45,6 @@ export default async function BoardPage() {
                       <CalendarClock className="size-4 opacity-70" /><dt className="sr-only">Deadline</dt><dd>{due.text}</dd>
                     </div>
                   )}
-                  <div className="inline-flex items-center gap-1.5"><Wallet className="size-4 text-slate-400" /><dt className="sr-only">Rate</dt><dd>{RATE_PER_HOUR_UGX.toLocaleString("en-US")}/hr</dd></div>
                 </dl>
                 {j.description && <p className="mt-3 text-sm whitespace-pre-line text-slate-700">{j.description}</p>}
                 <div className="mt-auto pt-4">

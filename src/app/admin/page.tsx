@@ -9,7 +9,6 @@ import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatDuration, formatRelative, formatUGX } from "@/lib/format";
-import { earningsFor } from "@/lib/pay";
 import { getNextPayDate } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Dashboard" };
@@ -131,16 +130,15 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
             <div>
               <ul className="divide-y divide-slate-100 sm:hidden">
                 {jobs.map((j) => {
-                  const credited = j.earnings.reduce((s, e) => s + e.amount, 0);
                   return (
                     <li key={j.id}>
                       <Link href={`/admin/jobs/${j.id}`} className="block px-4 py-3 active:bg-slate-50">
                         <div className="flex items-start justify-between gap-3">
                           <span className="min-w-0 font-medium break-words text-slate-900">{j.title}</span>
-                          <span className={`num shrink-0 text-sm ${credited ? "font-medium text-slate-900" : "text-slate-400"}`}>{formatUGX(credited || earningsFor(j.durationSeconds))}</span>
+                          <span className="num shrink-0 text-sm text-slate-600">{formatDuration(j.durationSeconds)}</span>
                         </div>
                         <div className="num mt-0.5 text-xs text-slate-500">
-                          {formatDuration(j.durationSeconds)} · {j.status === "SUBMITTED" ? `submitted ${formatRelative(j.submittedAt)}` : `updated ${formatRelative(j.updatedAt)}`}
+                          {j.status === "SUBMITTED" ? `submitted ${formatRelative(j.submittedAt)}` : `updated ${formatRelative(j.updatedAt)}`}
                         </div>
                         <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
                           <StatusBadge status={jobBadge(j)} />
@@ -158,12 +156,11 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                     <th>Job</th>
                     <th>Assigned to</th>
                     <th>Status</th>
-                    <th className="text-right">Pay</th>
+                    <th className="text-right">Length</th>
                   </tr>
                 </thead>
                 <tbody>
                   {jobs.map((j) => {
-                    const credited = j.earnings.reduce((s, e) => s + e.amount, 0);
                     const Icon = j.mediaType.startsWith("video") ? FileVideo : FileAudio;
                     return (
                       <tr key={j.id}>
@@ -177,7 +174,6 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                                 {j.title}
                               </Link>
                               <div className="num text-xs text-slate-500">
-                                {formatDuration(j.durationSeconds)} ·{" "}
                                 {j.status === "SUBMITTED" ? `submitted ${formatRelative(j.submittedAt)}` : `updated ${formatRelative(j.updatedAt)}`}
                               </div>
                             </div>
@@ -200,22 +196,13 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                           )}
                         </td>
                         <td><StatusBadge status={jobBadge(j)} /></td>
-                        <td className="num text-right whitespace-nowrap">
-                          {credited ? (
-                            <span className="font-medium text-slate-900">{formatUGX(credited)}</span>
-                          ) : (
-                            <span className="text-slate-400" title="Credited when submitted">{formatUGX(earningsFor(j.durationSeconds))}</span>
-                          )}
-                        </td>
+                        <td className="num text-right whitespace-nowrap text-slate-600">{formatDuration(j.durationSeconds)}</td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
               </div>
-              <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
-                Grey amounts are what the job will pay once it&apos;s submitted.
-              </p>
             </div>
           )}
         </section>
