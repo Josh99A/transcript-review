@@ -2,8 +2,8 @@ import TranscriptView from "@/components/TranscriptView";
 import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, LifeBuoy, LogOut, MessageSquareWarning, Send, Undo2, Wallet } from "lucide-react";
 import JobTags from "@/components/JobTags";
 import RichText from "@/components/RichText";
-import Guidelines from "@/components/Guidelines";
-import { getGuidelines } from "@/lib/guidelines";
+import Guidelines, { UpdatedTag } from "@/components/Guidelines";
+import { getGuidelinesInfo } from "@/lib/guidelines";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -26,7 +26,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const { id } = await params;
   const [job, guidelines, issues] = await Promise.all([
     db.job.findUnique({ where: { id }, include: { earnings: { where: { userId: user.id } } } }),
-    getGuidelines(),
+    getGuidelinesInfo(),
     db.issue.findMany({ where: { jobId: id, userId: user.id }, include: issueInclude, orderBy: { createdAt: "desc" } }),
   ]);
   if (!job || job.assigneeId !== user.id) notFound();
@@ -53,8 +53,11 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         }
       />
       {job.description && (
-        <div className="mb-4 rounded-xl bg-brand-50/60 px-4 py-3 text-sm text-slate-700 ring-1 ring-brand-600/10">
-          <p className="font-medium text-slate-900">Notes from the admin</p>
+        <div id="instructions" className="mb-4 rounded-xl bg-brand-50/60 px-4 py-3 text-sm text-slate-700 ring-1 ring-brand-600/10">
+          <p className="flex flex-wrap items-center gap-2 font-medium text-slate-900">
+            Notes from the admin
+            {job.instructionsUpdatedAt && job.assignedAt && job.instructionsUpdatedAt > job.assignedAt && <UpdatedTag at={job.instructionsUpdatedAt} />}
+          </p>
           <RichText html={job.description} className="mt-1" />
         </div>
       )}
@@ -65,7 +68,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <p className="mt-2 text-xs text-orange-800">Make the changes below and submit again.</p>
         </div>
       )}
-      <Guidelines html={guidelines} open={job.status === "ASSIGNED"} />
+      <Guidelines html={guidelines.html} updatedAt={guidelines.updatedAt} since={job.assignedAt} open={job.status === "ASSIGNED"} />
       {job.status === "ASSIGNED" ? (
         <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} seconds={job.durationSeconds} ratePerHour={job.ratePerHour} />
       ) : (

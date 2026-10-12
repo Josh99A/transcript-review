@@ -86,11 +86,11 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                 <span>Deadline: <span className={due?.overdue ? "text-red-700" : "text-slate-900"}>{due?.text ?? "None"}</span></span>
               </div>
               <details>
-                <summary className="cursor-pointer font-medium text-brand-600 hover:text-brand-700">Edit details</summary>
+                <summary className="cursor-pointer font-medium text-brand-600 hover:text-brand-700">Edit details and notes</summary>
                 <ActionForm action={updateJobDetails} className="mt-3 space-y-3">
                   <input type="hidden" name="jobId" value={job.id} />
                   <div><label className="label" htmlFor="d-title">Title</label><input className="input" id="d-title" name="title" defaultValue={job.title} required /></div>
-                  <div><label className="label" htmlFor="d-desc">Details for transcribers</label><RichTextEditor name="description" id="d-desc" defaultValue={richHtml(job.description)} /></div>
+                  <div><label className="label" htmlFor="d-desc">Details for transcribers</label><RichTextEditor name="description" id="d-desc" defaultValue={richHtml(job.description)} /><p className="hint mt-1">You can add to these at any time. {job.assignee && !job.approvedAt ? `${job.assignee.name} sees the change right away and is told about it.` : "Whoever takes the job sees them."}</p></div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div><label className="label" htmlFor="d-project">Project</label><ProjectField id="d-project" projects={projects} defaultValue={job.project ?? ""} /></div>
                     <div><label className="label" htmlFor="d-lang">Language</label><LanguageField id="d-lang" defaultValue={job.language ?? ""} /></div>
@@ -107,7 +107,11 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
               <summary className="cursor-pointer font-medium text-brand-600 hover:text-brand-700">Edit guidelines</summary>
               <ActionForm action={updateGuidelines} className="mt-3 space-y-3">
                 <RichTextEditor name="guidelines" id="guidelines" defaultValue={guidelines} minHeight="10rem" />
-                <p className="hint">These show on every job, for every transcriber.</p>
+                <label className="flex items-start gap-2 text-sm text-slate-700">
+                  <input type="checkbox" name="tell" defaultChecked className="mt-0.5 size-4 rounded border-slate-300" />
+                  <span>Tell transcribers who have jobs open that the guidelines changed</span>
+                </label>
+                <p className="hint">These show on every job, for every transcriber. You can also edit them from Guidelines in the menu.</p>
                 <button className="btn">Save guidelines</button>
               </ActionForm>
             </details>

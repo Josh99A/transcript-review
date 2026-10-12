@@ -47,43 +47,45 @@ model User {
 }
 
 model Job {
-  id                 String       @id @default(cuid())
-  title              String
+  id                    String         @id @default(cuid())
+  title                 String
   // Details shown on the job board and to the transcriber.
-  description        String       @default("")
+  description           String         @default("")
+  // When an admin last changed the description, so the transcriber can see it was updated.
+  instructionsUpdatedAt DateTime?
   // Tells jobs apart, e.g. the client or study a recording belongs to.
-  project            String?
-  language           String?
-  deadline           DateTime?
+  project               String?
+  language              String?
+  deadline              DateTime?
   // Unassigned jobs on the board can be requested by transcribers.
-  posted             Boolean      @default(false)
-  requests           JobRequest[]
+  posted                Boolean        @default(false)
+  requests              JobRequest[]
   // Cloudinary asset as "<public id>.<format>", and its size in bytes.
-  mediaPath          String
-  mediaBytes         Int          @default(0)
-  mediaType          String
-  durationSeconds    Int
+  mediaPath             String
+  mediaBytes            Int            @default(0)
+  mediaType             String
+  durationSeconds       Int
   // Special jobs paid at their own hourly rate (UGX per hour) instead of the usual one.
-  ratePerHour        Int?
-  originalTranscript String
-  editedTranscript   String
-  status             JobStatus    @default(UNASSIGNED)
-  assigneeId         String?
-  assignee           User?        @relation(fields: [assigneeId], references: [id])
-  assignedAt         DateTime?
-  submittedAt        DateTime?
+  ratePerHour           Int?
+  originalTranscript    String
+  editedTranscript      String
+  status                JobStatus      @default(UNASSIGNED)
+  assigneeId            String?
+  assignee              User?          @relation(fields: [assigneeId], references: [id])
+  assignedAt            DateTime?
+  submittedAt           DateTime?
   // Set when an admin deletes the media file to save space; the job and its records stay.
-  mediaRemovedAt     DateTime?
+  mediaRemovedAt        DateTime?
   // Admin review of a submission. A send-back stores the instructions; approval marks it done.
-  reviewNote         String?
-  reviewedAt         DateTime?
-  approvedAt         DateTime?
-  revisions          Int          @default(0)
-  earnings           Earning[]
-  issues             Issue[]
-  notifications      Notification[]
-  createdAt          DateTime     @default(now())
-  updatedAt          DateTime     @updatedAt
+  reviewNote            String?
+  reviewedAt            DateTime?
+  approvedAt            DateTime?
+  revisions             Int            @default(0)
+  earnings              Earning[]
+  issues                Issue[]
+  notifications         Notification[]
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
 }
 
 model Payout {

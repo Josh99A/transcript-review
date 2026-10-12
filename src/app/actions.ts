@@ -7,7 +7,7 @@ import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { cleanRich, richText } from "@/lib/richtext";
-import { setGuidelines } from "@/lib/guidelines";
+import { getGuidelinesInfo, setGuidelines } from "@/lib/guidelines";
 import { createSession, destroySession, homeFor, requireAdmin, requireRole, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
@@ -270,10 +270,28 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
   if (richText(description).length > 5000) return { error: "Keep the details under 5,000 characters." };
   const ratePerHour = parseRate(formData.get("ratePerHour"));
   if (ratePerHour === "invalid") return { error: "Enter the rate as a whole number of shillings per hour, or leave it empty." };
+  const before = await db.job.findUnique({ where: { id: jobId }, select: { description: true } });
+  if (!before) return { error: "This job no longer exists." };
+  const instructionsChanged = before.description !== description;
   const job = await db.job.update({
     where: { id: jobId },
-    data: { title, description, language: language || null, project: project.replace(/\s+/g, " ") || null, deadline: parseDeadline(deadline), ratePerHour },
+    data: {
+      title, description, language: language || null, project: project.replace(/\s+/g, " ") || null, deadline: parseDeadline(deadline), ratePerHour,
+      ...(instructionsChanged ? { instructionsUpdatedAt: new Date() } : {}),
+    },
+    include: { assignee: { select: { name: true } } },
   });
+  // Whoever is working on it hears about new instructions; an approved job is finished, so nobody is told.
+  const told = instructionsChanged && job.assigneeId && !job.approvedAt ? job.assignee?.name : null;
+  if (told) {
+    await notify([job.assigneeId!], {
+      title: `Instructions updated: ${job.title}`,
+      body: description ? "An admin changed the notes for this job. Open it to read them." : "An admin removed the notes for this job.",
+      href: `/jobs/${jobId}`,
+      jobId,
+      kind: "instructions",
+    });
+  }
   // Keep pay already credited for this job in line with its pricing.
   await db.earning.updateMany({
     where: { jobId },
@@ -283,7 +301,8 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
   revalidatePath("/admin");
   revalidatePath("/board");
   revalidatePath("/admin/users");
-  return { ok: "Details saved." };
+  revalidatePath(`/jobs/${jobId}`);
+  return { ok: told ? `Details saved. ${told} was told the instructions changed.` : "Details saved." };
 }
 
 export async function setPosted(formData: FormData): Promise<FormState> {
@@ -604,9 +623,19 @@ export async function updateGuidelines(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const html = cleanRich(String(formData.get("guidelines") ?? ""));
   if (richText(html).length > 10000) return { error: "Keep the guidelines under 10,000 characters." };
+  if ((await getGuidelinesInfo()).html === html) return { ok: "No changes to save." };
   await setGuidelines(html);
+  // Tell everyone with a job still open, so nobody keeps working from the old rules.
+  let told = 0;
+  if (formData.get("tell") === "on") {
+    const open = await db.job.findMany({ where: { assigneeId: { not: null }, approvedAt: null }, select: { assigneeId: true }, distinct: ["assigneeId"] });
+    const ids = open.map((j) => j.assigneeId!);
+    told = ids.length;
+    if (ids.length) await notify(ids, { title: "Transcription guidelines updated", body: html ? "An admin changed the guidelines that apply to every job. Read them before you carry on." : "An admin removed the general guidelines.", href: "/guidelines" });
+  }
   revalidatePath("/", "layout");
-  return { ok: html ? "Guidelines saved. Every job now shows them." : "Guidelines removed." };
+  const who = told ? ` ${told} transcriber${told === 1 ? " was" : "s were"} told.` : "";
+  return { ok: (html ? "Guidelines saved. Every job now shows them." : "Guidelines removed.") + who };
 }
 
 // ---------- Leaving and unassigning ----------
