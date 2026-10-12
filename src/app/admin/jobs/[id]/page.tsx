@@ -11,7 +11,7 @@ import { MediaRemoved, PageHeader, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { deadlineInput, formatBytes, formatDate, formatDeadline, formatDuration, formatHours, formatRelative, formatUGX } from "@/lib/format";
-import { expectedPayFor } from "@/lib/pay";
+import { jobPayLabel } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "Job" };
 
@@ -47,7 +47,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
       <PageHeader
         back={<Link href="/admin" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
         title={job.title}
-        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={jobBadge(job)} /><span className="num">{formatDuration(job.durationSeconds)} · expected ~{formatUGX(expectedPayFor(job.durationSeconds))}</span></span>}
+        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={jobBadge(job)} /><span className="num">{formatDuration(job.durationSeconds)} · expected {jobPayLabel(job)}</span></span>}
         actions={
           <>
             <a href={`/api/jobs/${job.id}/transcript?format=docx`} className="btn-secondary"><Download className="size-4" /> Word .docx</a>
@@ -75,6 +75,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div><label className="label" htmlFor="d-lang">Language</label><input className="input" id="d-lang" name="language" defaultValue={job.language ?? ""} /></div>
                     <div><label className="label" htmlFor="d-due">Deadline</label><input className="input" id="d-due" name="deadline" type="date" defaultValue={deadlineInput(job.deadline)} /></div>
+                    <div><label className="label" htmlFor="d-fixed">Fixed price (UGX)</label><input className="input" id="d-fixed" name="fixedPay" inputMode="numeric" defaultValue={job.fixedPay ?? ""} placeholder="Empty = pay by length" /></div>
                   </div>
                   <button className="btn">Save details</button>
                 </ActionForm>

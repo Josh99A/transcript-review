@@ -32,12 +32,14 @@ export default function Editor({
   initial,
   original,
   seconds,
+  fixedPay,
 }: {
   jobId: string;
   mediaType: string;
   initial: string;
   original: string;
   seconds: number;
+  fixedPay: number | null;
 }) {
   const [text, setText] = useState(initial);
   const [saved, setSaved] = useState(initial);
@@ -211,7 +213,11 @@ export default function Editor({
         />
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
           <p className="text-xs text-slate-500">
-            Submitting adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours (about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds))}</span>). Pay is worked out on your total hours.
+            {fixedPay != null ? (
+              <>This job pays a fixed <span className="num font-semibold text-slate-700">{formatUGX(fixedPay)}</span> when you submit it.</>
+            ) : (
+              <>Submitting adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours (about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds))}</span>). Pay is worked out on your total hours.</>
+            )}
           </p>
           <button type="button" className="btn ml-auto" onClick={() => setConfirmOpen(true)} disabled={submitting || !text.trim()}>
             <Send className="size-4" /> Submit transcript

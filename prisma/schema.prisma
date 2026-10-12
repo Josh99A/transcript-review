@@ -58,6 +58,8 @@ model Job {
   mediaBytes         Int          @default(0)
   mediaType          String
   durationSeconds    Int
+  // Set for jobs with their own price, paid instead of the hourly rate.
+  fixedPay           Int?
   originalTranscript String
   editedTranscript   String
   status             JobStatus    @default(UNASSIGNED)
@@ -99,6 +101,8 @@ model Earning {
   referrer   User?    @relation("ReferralEarnings", fields: [referrerId], references: [id])
   // Media length credited. Totals are paid on cumulative time, not the sum of rounded per-job amounts.
   seconds    Int      @default(0)
+  // Fixed-price job: amount is paid as is and these seconds don't count toward hourly pay.
+  fixed      Boolean  @default(false)
   createdAt  DateTime @default(now())
 
   @@unique([jobId, userId])

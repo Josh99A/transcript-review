@@ -8,7 +8,7 @@ import { createSession, destroySession, homeFor, requireAdmin, requireRole, requ
 import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatPayDate, parseDeadline } from "@/lib/format";
-import { earningsFor } from "@/lib/pay";
+import { earningsFor, parseFixedPay } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { getNextPayDate, setNextPayDate } from "@/lib/settings";
 import { deleteMedia } from "@/lib/media";
@@ -185,13 +185,21 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
   const parsed = detailsSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const { title, description, language, deadline } = parsed.data;
-  await db.job.update({
+  const fixedPay = parseFixedPay(formData.get("fixedPay"));
+  if (fixedPay === "invalid") return { error: "Enter the fixed price as a whole number of shillings, or leave it empty." };
+  const job = await db.job.update({
     where: { id: jobId },
-    data: { title, description, language: language || null, deadline: parseDeadline(deadline) },
+    data: { title, description, language: language || null, deadline: parseDeadline(deadline), fixedPay },
+  });
+  // Keep pay already credited for this job in line with its pricing.
+  await db.earning.updateMany({
+    where: { jobId },
+    data: { fixed: fixedPay != null, amount: fixedPay ?? earningsFor(job.durationSeconds) },
   });
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
   revalidatePath("/board");
+  revalidatePath("/admin/users");
   return { ok: "Details saved." };
 }
 
@@ -411,8 +419,9 @@ export async function submitJob(jobId: string, text: string): Promise<FormState>
       create: {
         jobId,
         userId: user.id,
-        amount: earningsFor(job.durationSeconds),
+        amount: job.fixedPay ?? earningsFor(job.durationSeconds),
         seconds: job.durationSeconds,
+        fixed: job.fixedPay != null,
         referrerId: user.referredById,
       },
       update: {},

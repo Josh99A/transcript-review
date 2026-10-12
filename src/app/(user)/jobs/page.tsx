@@ -10,7 +10,7 @@ import { balanceFor } from "@/lib/earnings";
 import { formatDeadline, formatDuration, formatHours, formatRelative, formatUGX } from "@/lib/format";
 import { getNextPayDate } from "@/lib/settings";
 import SubmittedToast from "./SubmittedToast";
-import { expectedPayFor } from "@/lib/pay";
+import { jobPayLabel } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "My jobs" };
 
@@ -78,7 +78,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
                       </div>
                       <div className="num mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
                         <span className="inline-flex items-center gap-1"><Clock className="size-3" /> {formatDuration(j.durationSeconds)}</span>
-                        <span className="font-medium text-slate-700">~{formatUGX(expectedPayFor(j.durationSeconds))}</span>
+                        <span className="font-medium text-slate-700">{jobPayLabel(j)}</span>
                         {j.deadline ? (
                           <span className={formatDeadline(j.deadline).overdue ? "text-red-700" : formatDeadline(j.deadline).soon ? "text-amber-700" : ""}>Due {formatDeadline(j.deadline).text}</span>
                         ) : (

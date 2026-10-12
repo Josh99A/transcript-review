@@ -4,6 +4,7 @@ import { db } from "@/lib/db";
 import { parseDeadline } from "@/lib/format";
 import { uploadMedia } from "@/lib/media";
 import { mediaTypeOf } from "@/lib/mediaTypes";
+import { parseFixedPay } from "@/lib/pay";
 import { docxToText } from "@/lib/docx";
 
 export async function POST(req: Request) {
@@ -20,6 +21,8 @@ export async function POST(req: Request) {
   const description = String(form.get("description") ?? "").trim().slice(0, 5000);
   const language = String(form.get("language") ?? "").trim().slice(0, 60) || null;
   const deadline = parseDeadline(String(form.get("deadline") ?? ""));
+  const fixedPay = parseFixedPay(form.get("fixedPay"));
+  if (fixedPay === "invalid") return NextResponse.json({ error: "Enter the fixed price as a whole number of shillings, or leave it empty." }, { status: 400 });
 
   let transcript = String(form.get("transcriptText") ?? "");
   const transcriptFile = form.get("transcriptFile");
@@ -58,6 +61,7 @@ export async function POST(req: Request) {
       mediaBytes: stored.bytes,
       mediaType,
       durationSeconds,
+      fixedPay,
       originalTranscript: transcript,
       editedTranscript: transcript,
       description,

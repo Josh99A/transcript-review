@@ -5,7 +5,7 @@ import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDeadline, formatDuration, formatRelative, formatUGX } from "@/lib/format";
 import RequestButton from "./RequestButton";
-import { expectedPayFor } from "@/lib/pay";
+import { jobPayLabel } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "Find work" };
 
@@ -40,7 +40,7 @@ export default async function BoardPage() {
                 </div>
                 <dl className="num mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-sm text-slate-600">
                   <div className="inline-flex items-center gap-1.5"><Clock className="size-4 text-slate-400" /><dt className="sr-only">Length</dt><dd>{formatDuration(j.durationSeconds)}</dd></div>
-                  <div className="inline-flex items-center gap-1.5"><Wallet className="size-4 text-slate-400" /><dt className="sr-only">Expected pay</dt><dd>~{formatUGX(expectedPayFor(j.durationSeconds))} expected</dd></div>
+                  <div className="inline-flex items-center gap-1.5"><Wallet className="size-4 text-slate-400" /><dt className="sr-only">Expected pay</dt><dd>{jobPayLabel(j)}{j.fixedPay == null ? " expected" : ""}</dd></div>
                   {j.language && <div className="inline-flex items-center gap-1.5"><Languages className="size-4 text-slate-400" /><dt className="sr-only">Language</dt><dd>{j.language}</dd></div>}
                   {due && (
                     <div className={`inline-flex items-center gap-1.5 ${due.overdue ? "text-red-700" : due.soon ? "text-amber-700" : ""}`}>

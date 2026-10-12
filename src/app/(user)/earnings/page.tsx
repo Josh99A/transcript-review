@@ -26,7 +26,7 @@ export default async function EarningsPage() {
 
   return (
     <>
-      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of all your submitted transcripts.`} />
+      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of all your submitted transcripts. Fixed-price jobs pay their set price instead.`} />
       <div className="mb-6">
         <PayDateBanner payDate={payDate} owed={owed} detail={`Paid on your total of ${formatHours(seconds)} of transcribed media, minus what you've already been paid.`} />
       </div>
@@ -62,13 +62,13 @@ export default async function EarningsPage() {
           ) : (
             <div className="relative overflow-x-auto">
               <table className="table table-stack">
-                <thead><tr><th>Job</th><th>Credited</th><th className="text-right">Time added</th></tr></thead>
+                <thead><tr><th>Job</th><th>Credited</th><th className="text-right">Adds</th></tr></thead>
                 <tbody>
                   {earnings.map((e) => (
                     <tr key={e.id}>
                       <td className="font-medium text-slate-900">{e.job.title}</td>
                       <td data-label="Credited" className="whitespace-nowrap text-slate-600">{formatDate(e.createdAt)}</td>
-                      <td data-label="Time added" className="num text-right font-medium text-emerald-700">+{formatHours(e.seconds)}</td>
+                      <td data-label="Adds" className="num text-right font-medium text-emerald-700">{e.fixed ? `${formatUGX(e.amount)} fixed` : `+${formatHours(e.seconds)}`}</td>
                     </tr>
                   ))}
                 </tbody>

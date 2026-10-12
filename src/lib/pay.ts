@@ -19,3 +19,17 @@ export function referralPayFor(durationSeconds: number): number {
 export function expectedPayFor(durationSeconds: number): number {
   return Math.round(earningsFor(durationSeconds) / 100) * 100;
 }
+
+/** Expected pay label for a job: its fixed price, or an estimate from its length. */
+export function jobPayLabel(job: { durationSeconds: number; fixedPay: number | null }): string {
+  const fmt = (n: number) => `UGX ${n.toLocaleString("en-US")}`;
+  return job.fixedPay != null ? `${fmt(job.fixedPay)} fixed` : `~${fmt(expectedPayFor(job.durationSeconds))}`;
+}
+
+/** Parses an admin-entered fixed price; empty means no fixed price. */
+export function parseFixedPay(raw: FormDataEntryValue | null): number | null | "invalid" {
+  const s = String(raw ?? "").replace(/[,\s]/g, "");
+  if (!s) return null;
+  const n = Number(s);
+  return Number.isInteger(n) && n > 0 && n <= 100_000_000 ? n : "invalid";
+}
