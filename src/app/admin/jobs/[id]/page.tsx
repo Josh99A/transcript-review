@@ -1,3 +1,4 @@
+import ReplaceTranscript from "./ReplaceTranscript";
 import { ArrowLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, UserMinus, X } from "lucide-react";
 import RichText from "@/components/RichText";
 import RichTextEditor from "@/components/RichTextEditor";
@@ -120,7 +121,13 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
           {/* Review links land here: the comparison, with the approve and send-back controls right under it. */}
           <div id="review" className="scroll-mt-4 space-y-6">
             <section className="card overflow-hidden">
-              <div className="card-header"><h2 className="card-title">Transcript review</h2></div>
+              <div className="card-header">
+                <h2 className="card-title">Transcript review</h2>
+                {job.status !== "SUBMITTED" && (
+                  <div className="ml-auto"><ReplaceTranscript jobId={job.id} assignee={job.assignee?.name ?? null} hasEdits={job.editedTranscript !== job.originalTranscript} /></div>
+                )}
+                {job.status === "SUBMITTED" && !job.approvedAt && <span className="ml-auto text-xs text-slate-500">Wrong transcript? Send it back first, then replace it.</span>}
+              </div>
               <TranscriptDiff original={job.originalTranscript} edited={job.editedTranscript} finalLabel={job.status === "SUBMITTED" ? "Submitted" : "Current draft"} />
             </section>
             {job.status === "SUBMITTED" && (
