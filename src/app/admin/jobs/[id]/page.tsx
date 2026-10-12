@@ -89,40 +89,43 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
             </div>
           </section>
           {job.mediaRemovedAt ? <MediaRemoved at={job.mediaRemovedAt} /> : <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>}
-          <section className="card overflow-hidden">
-            <div className="card-header"><h2 className="card-title">Transcript review</h2></div>
-            <TranscriptDiff original={job.originalTranscript} edited={job.editedTranscript} finalLabel={job.status === "SUBMITTED" ? "Submitted" : "Current draft"} />
-          </section>
+          {/* Review links land here: the comparison, with the approve and send-back controls right under it. */}
+          <div id="review" className="scroll-mt-4 space-y-6">
+            <section className="card overflow-hidden">
+              <div className="card-header"><h2 className="card-title">Transcript review</h2></div>
+              <TranscriptDiff original={job.originalTranscript} edited={job.editedTranscript} finalLabel={job.status === "SUBMITTED" ? "Submitted" : "Current draft"} />
+            </section>
+            {job.status === "SUBMITTED" && (
+              <section className="card">
+                <div className="card-header"><h2 className="card-title">Review</h2></div>
+                <div className="card-body space-y-4">
+                  {job.approvedAt ? (
+                    <p className="flex items-center gap-2 text-sm text-emerald-700"><CircleCheck className="size-4 shrink-0" /> Approved {formatRelative(job.approvedAt)}.</p>
+                  ) : (
+                    <>
+                      <p className="text-sm text-slate-600">Check the changes, then approve them or send the job back with instructions.</p>
+                      <ActionForm action={approveJob} confirm={{ title: "Approve this transcript?", description: `${job.assignee?.name ?? "The transcriber"} is told it was accepted, and it moves to Completed.`, label: "Approve" }}>
+                        <input type="hidden" name="jobId" value={job.id} />
+                        <button className="btn w-full"><Check className="size-4" /> Approve</button>
+                      </ActionForm>
+                    </>
+                  )}
+                  {job.mediaRemovedAt ? null : (
+                    <ActionForm action={reopenJob} className="space-y-2 border-t border-slate-100 pt-4" confirm={{ title: "Send this back for changes?", description: `${job.assignee?.name ?? "The transcriber"} gets your instructions and the job reopens in their editor.`, label: "Send back" }}>
+                      <input type="hidden" name="jobId" value={job.id} />
+                      <label className="label" htmlFor="review-note">{job.approvedAt ? "Still needs changes?" : "Not satisfactory?"}</label>
+                      <textarea className="input h-28" id="review-note" name="note" required maxLength={5000} placeholder="e.g. Speaker names are missing from 02:10 to 04:30, and fix the spelling of Kampala." />
+                      <button className="btn-secondary w-full"><Undo2 className="size-4" /> Send back with instructions</button>
+                      <p className="text-xs text-slate-500">{job.assignee?.name ?? "The transcriber"} sees your instructions and can edit again. Pay already credited stays, and resubmitting won&apos;t pay twice.</p>
+                    </ActionForm>
+                  )}
+                </div>
+              </section>
+            )}
+          </div>
         </div>
 
         <div className="space-y-6">
-          {job.status === "SUBMITTED" && (
-            <section id="review" className="card scroll-mt-4">
-              <div className="card-header"><h2 className="card-title">Review</h2></div>
-              <div className="card-body space-y-4">
-                {job.approvedAt ? (
-                  <p className="flex items-center gap-2 text-sm text-emerald-700"><CircleCheck className="size-4 shrink-0" /> Approved {formatRelative(job.approvedAt)}.</p>
-                ) : (
-                  <>
-                    <p className="text-sm text-slate-600">Check the changes, then approve them or send the job back with instructions.</p>
-                    <ActionForm action={approveJob} confirm={{ title: "Approve this transcript?", description: `${job.assignee?.name ?? "The transcriber"} is told it was accepted, and it moves to Completed.`, label: "Approve" }}>
-                      <input type="hidden" name="jobId" value={job.id} />
-                      <button className="btn w-full"><Check className="size-4" /> Approve</button>
-                    </ActionForm>
-                  </>
-                )}
-                {job.mediaRemovedAt ? null : (
-                  <ActionForm action={reopenJob} className="space-y-2 border-t border-slate-100 pt-4" confirm={{ title: "Send this back for changes?", description: `${job.assignee?.name ?? "The transcriber"} gets your instructions and the job reopens in their editor.`, label: "Send back" }}>
-                    <input type="hidden" name="jobId" value={job.id} />
-                    <label className="label" htmlFor="review-note">{job.approvedAt ? "Still needs changes?" : "Not satisfactory?"}</label>
-                    <textarea className="input h-28" id="review-note" name="note" required maxLength={5000} placeholder="e.g. Speaker names are missing from 02:10 to 04:30, and fix the spelling of Kampala." />
-                    <button className="btn-secondary w-full"><Undo2 className="size-4" /> Send back with instructions</button>
-                    <p className="text-xs text-slate-500">{job.assignee?.name ?? "The transcriber"} sees your instructions and can edit again. Pay already credited stays, and resubmitting won&apos;t pay twice.</p>
-                  </ActionForm>
-                )}
-              </div>
-            </section>
-          )}
           {job.status === "ASSIGNED" && job.reviewNote && (
             <section className="rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-900 ring-1 ring-orange-600/15">
               <p className="flex items-center gap-2 font-medium"><MessageSquareWarning className="size-4 shrink-0" /> Sent back {formatRelative(job.reviewedAt)}{job.revisions > 1 ? ` (round ${job.revisions})` : ""}</p>
