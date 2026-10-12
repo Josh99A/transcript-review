@@ -2,16 +2,15 @@ import { CircleCheck, FileAudio, FileVideo, Hourglass, Inbox, Search, Upload, Wa
 import type { Metadata } from "next";
 import Link from "next/link";
 import PayDayCard from "@/components/PayDayCard";
-import StatusBadge from "@/components/StatusBadge";
+import StatusBadge, { jobBadge } from "@/components/StatusBadge";
 import StorageCard from "@/components/StorageCard";
-import { Avatar, EmptyState, PageHeader, StatCard, UserCell } from "@/components/ui";
+import { Avatar, EmptyState, PageHeader, StatList, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatDuration, formatRelative, formatUGX } from "@/lib/format";
-import { earningsFor } from "@/lib/pay";
-import { mediaSize } from "@/lib/media";
 import { getNextPayDate } from "@/lib/settings";
+import { jobPayLabel } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -34,7 +33,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     db.job.findMany({
       where: {
         ...(filter === "ALL" ? {} : { status: filter }),
-        ...(query ? { OR: [{ title: { contains: query } }, { assignee: { name: { contains: query } } }] } : {}),
+        ...(query ? { OR: [{ title: { contains: query, mode: "insensitive" } }, { assignee: { name: { contains: query, mode: "insensitive" } } }] } : {}),
       },
       include: { assignee: { select: { name: true } }, earnings: true, _count: { select: { requests: { where: { status: "PENDING" } } } } },
       orderBy: [{ updatedAt: "desc" }],
@@ -43,10 +42,10 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     balancesByUser(),
     db.job.groupBy({ by: ["status"], _count: true }),
     getNextPayDate(),
-    db.job.findMany({ where: { mediaRemovedAt: null }, select: { mediaPath: true, status: true } }),
+    db.job.findMany({ where: { mediaRemovedAt: null }, select: { mediaBytes: true, status: true } }),
     db.jobRequest.count({ where: { status: "PENDING", job: { status: "UNASSIGNED" } } }),
   ]);
-  const sizes = await Promise.all(stored.map(async (j) => ({ status: j.status, bytes: await mediaSize(j.mediaPath) })));
+  const sizes = stored.map((j) => ({ status: j.status, bytes: j.mediaBytes }));
   const usedBytes = sizes.reduce((s, j) => s + j.bytes, 0);
   const removable = sizes.filter((j) => j.status === "SUBMITTED");
   const count = (s: Filter) =>
@@ -76,12 +75,14 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
-        <StatCard icon={Inbox} label="Waiting to assign" value={count("UNASSIGNED")} tone="slate" hint={pendingRequests ? `${pendingRequests} request${pendingRequests === 1 ? "" : "s"} to review` : undefined} />
-        <StatCard icon={Hourglass} label="In progress" value={count("ASSIGNED")} tone="amber" />
-        <StatCard icon={CircleCheck} label="Submitted" value={count("SUBMITTED")} tone="emerald" />
-        <StatCard icon={Wallet} label="Owed to team" value={formatUGX(totalOwed)} tone="brand" hint={waitingHint(owing.filter((o) => o.balance.owed > 0).length)} />
-      </div>
+      <StatList
+        stats={[
+          { icon: Inbox, label: "Waiting to assign", value: count("UNASSIGNED"), tone: "slate", hint: pendingRequests ? <Link href="/admin/requests" className="font-medium text-brand-600 hover:text-brand-700">{pendingRequests} request{pendingRequests === 1 ? "" : "s"} to review</Link> : undefined },
+          { icon: Hourglass, label: "In progress", value: count("ASSIGNED"), tone: "amber" },
+          { icon: CircleCheck, label: "Submitted", value: count("SUBMITTED"), tone: "emerald" },
+          { icon: Wallet, label: "Owed to team", value: formatUGX(totalOwed), tone: "brand", hint: waitingHint(peopleOwed) },
+        ]}
+      />
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_320px]">
         <section className="card overflow-hidden">
@@ -93,7 +94,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
               <input className="input pl-9" name="q" defaultValue={query} placeholder="Search title or person" aria-label="Search jobs" />
             </form>
           </div>
-          <div className="flex gap-1 overflow-x-auto border-b border-slate-100 px-5" role="tablist">
+          <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3 sm:px-5" role="tablist">
             {FILTERS.map((f) => {
               const active = f === filter;
               return (
@@ -102,12 +103,12 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                   href={href(f)}
                   role="tab"
                   aria-selected={active}
-                  className={`-mb-px flex items-center gap-2 border-b-2 px-2 py-2.5 text-sm font-medium whitespace-nowrap transition-colors ${
-                    active ? "border-brand-600 text-brand-700" : "border-transparent text-slate-500 hover:text-slate-800"
+                  className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium whitespace-nowrap ring-1 ring-inset ${
+                    active ? "bg-brand-50 text-brand-700 ring-brand-600/20" : "bg-white text-slate-600 ring-slate-200 hover:text-slate-900"
                   }`}
                 >
                   {FILTER_LABELS[f]}
-                  <span className={`num rounded-full px-1.5 py-0.5 text-[11px] ${active ? "bg-brand-100 text-brand-700" : "bg-slate-100 text-slate-600"}`}>
+                  <span className={`num text-xs ${active ? "text-brand-700" : "text-slate-400"}`}>
                     {count(f)}
                   </span>
                 </Link>
@@ -127,39 +128,59 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
               />
             )
           ) : (
-            <div className="relative overflow-x-auto">
-              <table className="table table-stack">
+            <div>
+              <ul className="divide-y divide-slate-100 sm:hidden">
+                {jobs.map((j) => {
+                  return (
+                    <li key={j.id}>
+                      <Link href={`/admin/jobs/${j.id}`} className="block px-4 py-3 active:bg-slate-50">
+                        <div className="flex items-start justify-between gap-3">
+                          <span className="min-w-0 font-medium break-words text-slate-900">{j.title}</span>
+                          <span className="num shrink-0 text-right text-sm text-slate-600">{formatDuration(j.durationSeconds)}<span className="block text-xs text-slate-400">{jobPayLabel(j)}</span></span>
+                        </div>
+                        <div className="num mt-0.5 text-xs text-slate-500">
+                          {j.status === "SUBMITTED" ? `submitted ${formatRelative(j.submittedAt)}` : `updated ${formatRelative(j.updatedAt)}`}
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+                          <StatusBadge status={jobBadge(j)} />
+                          <span className="text-slate-600">{assignedLabel(j)}</span>
+                        </div>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+              <div className="hidden overflow-x-auto sm:block">
+              <table className="table">
                 <thead>
                   <tr>
                     <th>Job</th>
                     <th>Assigned to</th>
                     <th>Status</th>
-                    <th className="text-right">Pay</th>
+                    <th className="text-right">Length</th>
                   </tr>
                 </thead>
                 <tbody>
                   {jobs.map((j) => {
-                    const credited = j.earnings.reduce((s, e) => s + e.amount, 0);
                     const Icon = j.mediaType.startsWith("video") ? FileVideo : FileAudio;
                     return (
-                      <tr key={j.id} className="group relative">
+                      <tr key={j.id}>
                         <td>
                           <div className="flex items-center gap-3">
                             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
                               <Icon className="size-4.5" aria-hidden />
                             </span>
                             <div className="min-w-0">
-                              <Link href={`/admin/jobs/${j.id}`} className="font-medium text-slate-900 after:absolute after:inset-0 group-hover:text-brand-700">
+                              <Link href={`/admin/jobs/${j.id}`} className="font-medium text-slate-900 hover:text-brand-700">
                                 {j.title}
                               </Link>
                               <div className="num text-xs text-slate-500">
-                                {formatDuration(j.durationSeconds)} ·{" "}
                                 {j.status === "SUBMITTED" ? `submitted ${formatRelative(j.submittedAt)}` : `updated ${formatRelative(j.updatedAt)}`}
                               </div>
                             </div>
                           </div>
                         </td>
-                        <td data-label="Assigned to">
+                        <td>
                           {!j.assignee && j._count.requests > 0 ? (
                             <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-amber-800 ring-1 ring-amber-600/20 ring-inset">
                               {j._count.requests} request{j._count.requests === 1 ? "" : "s"} to review
@@ -175,22 +196,14 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                             <span className="text-slate-400">Nobody yet</span>
                           )}
                         </td>
-                        <td data-label="Status"><StatusBadge status={j.status} /></td>
-                        <td data-label="Pay" className="num text-right whitespace-nowrap">
-                          {credited ? (
-                            <span className="font-medium text-slate-900">{formatUGX(credited)}</span>
-                          ) : (
-                            <span className="text-slate-400" title="Credited when submitted">{formatUGX(earningsFor(j.durationSeconds))}</span>
-                          )}
-                        </td>
+                        <td><StatusBadge status={jobBadge(j)} /></td>
+                        <td className="num text-right whitespace-nowrap text-slate-600">{formatDuration(j.durationSeconds)}<span className="block text-xs text-slate-400">{jobPayLabel(j)}</span></td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
-              <p className="border-t border-slate-100 px-5 py-3 text-xs text-slate-500">
-                Grey amounts are what the job will pay once it&apos;s submitted.
-              </p>
+              </div>
             </div>
           )}
         </section>
@@ -224,6 +237,12 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
       </div>
     </>
   );
+}
+
+function assignedLabel(j: { assignee: { name: string } | null; posted: boolean; _count: { requests: number } }) {
+  if (j.assignee) return j.assignee.name;
+  if (j._count.requests > 0) return `${j._count.requests} request${j._count.requests === 1 ? "" : "s"} to review`;
+  return j.posted ? "On the job board" : "Nobody yet";
 }
 
 function waitingHint(n: number) {

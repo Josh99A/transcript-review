@@ -3,7 +3,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
   url      = env("DATABASE_URL")
 }
 
@@ -20,16 +20,19 @@ enum JobStatus {
 }
 
 model User {
-  id           String       @id @default(cuid())
-  name         String
-  email        String       @unique
-  passwordHash String
-  role         Role         @default(USER)
-  createdAt    DateTime     @default(now())
-  jobs         Job[]
-  earnings     Earning[]    @relation("Earnings")
-  payouts      Payout[]
-  jobRequests  JobRequest[]
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  passwordHash  String
+  role          Role           @default(USER)
+  createdAt     DateTime       @default(now())
+  jobs          Job[]
+  earnings      Earning[]      @relation("Earnings")
+  payouts       Payout[]
+  jobRequests   JobRequest[]
+  notifications Notification[]
+  issues        Issue[]
+  issueMessages IssueMessage[]
 
   // Where payments go, entered by the person themselves (or an admin).
   payNetwork String?
@@ -53,9 +56,13 @@ model Job {
   // Unassigned jobs on the board can be requested by transcribers.
   posted             Boolean      @default(false)
   requests           JobRequest[]
+  // Cloudinary asset as "<public id>.<format>", and its size in bytes.
   mediaPath          String
+  mediaBytes         Int          @default(0)
   mediaType          String
   durationSeconds    Int
+  // Set for jobs with their own price, paid instead of the hourly rate.
+  fixedPay           Int?
   originalTranscript String
   editedTranscript   String
   status             JobStatus    @default(UNASSIGNED)
@@ -65,7 +72,13 @@ model Job {
   submittedAt        DateTime?
   // Set when an admin deletes the media file to save space; the job and its records stay.
   mediaRemovedAt     DateTime?
+  // Admin review of a submission. A send-back stores the instructions; approval marks it done.
+  reviewNote         String?
+  reviewedAt         DateTime?
+  approvedAt         DateTime?
+  revisions          Int          @default(0)
   earnings           Earning[]
+  issues             Issue[]
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 }
@@ -92,6 +105,8 @@ model Earning {
   referrer   User?    @relation("ReferralEarnings", fields: [referrerId], references: [id])
   // Media length credited. Totals are paid on cumulative time, not the sum of rounded per-job amounts.
   seconds    Int      @default(0)
+  // Fixed-price job: amount is paid as is and these seconds don't count toward hourly pay.
+  fixed      Boolean  @default(false)
   createdAt  DateTime @default(now())
 
   @@unique([jobId, userId])
@@ -122,4 +137,54 @@ model JobRequest {
   createdAt DateTime      @default(now())
 
   @@unique([jobId, userId])
+}
+
+/// An in-app notice for one person, shown under the bell until they read it.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String?
+  href      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}
+
+enum IssueStatus {
+  OPEN
+  RESOLVED
+}
+
+/// A problem a transcriber raised about a job, and the conversation with admins about it.
+model Issue {
+  id         String         @id @default(cuid())
+  jobId      String
+  job        Job            @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  subject    String
+  status     IssueStatus    @default(OPEN)
+  messages   IssueMessage[]
+  resolvedAt DateTime?
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@index([status, updatedAt])
+  @@index([jobId])
+}
+
+model IssueMessage {
+  id        String   @id @default(cuid())
+  issueId   String
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([issueId, createdAt])
 }

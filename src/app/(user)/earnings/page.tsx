@@ -1,4 +1,4 @@
-import { Banknote, CircleCheck, Clock, Wallet } from "lucide-react";
+import { Banknote, CircleCheck, Clock, HandCoins, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, StatCard } from "@/components/ui";
@@ -20,13 +20,13 @@ export default async function EarningsPage() {
     db.payout.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
   ]);
   const [balance, payDate] = await Promise.all([balanceFor(user.id), getNextPayDate()]);
-  const { earned, owed, seconds } = balance;
+  const { earned, owed, seconds, referralPay, referralSeconds } = balance;
   const paid = payouts.reduce((s, p) => s + p.amount, 0);
   const paidPct = earned ? Math.min(100, Math.round((paid / earned) * 100)) : 0;
 
   return (
     <>
-      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of all your submitted transcripts.`} />
+      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of all your submitted transcripts. Fixed-price jobs pay their set price instead.`} />
       <div className="mb-6">
         <PayDateBanner payDate={payDate} owed={owed} detail={`Paid on your total of ${formatHours(seconds)} of transcribed media, minus what you've already been paid.`} />
       </div>
@@ -51,6 +51,11 @@ export default async function EarningsPage() {
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:col-span-2">
           <StatCard icon={CircleCheck} label="Total earned" value={formatUGX(earned)} tone="emerald" hint={`${earnings.length} transcript${earnings.length === 1 ? "" : "s"} submitted`} />
           <StatCard icon={Clock} label="Media completed" value={formatHours(seconds)} tone="slate" hint={`${formatDuration(seconds)} in total`} />
+          {(referralPay > 0 || referralSeconds > 0) && (
+            <div className="col-span-2">
+              <StatCard icon={HandCoins} label="From people you referred" value={formatUGX(referralPay)} tone="brand" hint={<><span className="num">{formatHours(referralSeconds)}</span> submitted by them · <Link href="/referrals" className="font-medium text-brand-600 hover:text-brand-700">See referrals</Link></>} />
+            </div>
+          )}
         </div>
       </div>
 
@@ -58,18 +63,17 @@ export default async function EarningsPage() {
         <section className="card h-fit overflow-hidden">
           <div className="card-header"><h2 className="card-title">Earnings history</h2></div>
           {earnings.length === 0 ? (
-            <EmptyState icon={Wallet} title="Nothing earned yet" description="Pay appears here the moment you submit a transcript." action={<Link href="/jobs" className="btn-secondary">Go to my jobs</Link>} />
+            <EmptyState icon={Wallet} title="Nothing earned yet" description="Each transcript you submit adds its length to your total hours." action={<Link href="/jobs" className="btn-secondary">Go to my jobs</Link>} />
           ) : (
             <div className="relative overflow-x-auto">
               <table className="table table-stack">
-                <thead><tr><th>Job</th><th>Length</th><th>Credited</th><th className="text-right">Amount</th></tr></thead>
+                <thead><tr><th>Job</th><th>Credited</th><th className="text-right">Adds</th></tr></thead>
                 <tbody>
                   {earnings.map((e) => (
                     <tr key={e.id}>
                       <td className="font-medium text-slate-900">{e.job.title}</td>
-                      <td data-label="Length" className="num">{formatDuration(e.job.durationSeconds)}</td>
                       <td data-label="Credited" className="whitespace-nowrap text-slate-600">{formatDate(e.createdAt)}</td>
-                      <td data-label="Amount" className="num text-right font-medium text-emerald-700">+{formatUGX(e.amount)}</td>
+                      <td data-label="Adds" className="num text-right font-medium text-emerald-700">{e.fixed ? `${formatUGX(e.amount)} fixed` : `+${formatHours(e.seconds)}`}</td>
                     </tr>
                   ))}
                 </tbody>

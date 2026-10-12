@@ -1,5 +1,6 @@
 "use client";
 
+import RichTextEditor from "@/components/RichTextEditor";
 import { CloudUpload, FileAudio, FileText, FileVideo, Pencil, TriangleAlert, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
@@ -7,7 +8,7 @@ import { toast } from "sonner";
 import { Spinner } from "@/components/client";
 import { formatDuration, formatUGX } from "@/lib/format";
 import { adtsDuration, MEDIA_ACCEPT, mediaTypeOf, mp4Duration } from "@/lib/mediaTypes";
-import { earningsFor, RATE_PER_HOUR_UGX } from "@/lib/pay";
+import { expectedPayFor } from "@/lib/pay";
 
 /** Reads the length of an audio/video file in the browser. */
 async function readDuration(file: File, type: string): Promise<number> {
@@ -79,9 +80,9 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [pasted, setPasted] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
-  const [description, setDescription] = useState("");
   const [language, setLanguage] = useState("");
   const [deadline, setDeadline] = useState("");
+  const [fixedPay, setFixedPay] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
@@ -121,9 +122,10 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
     data.set("media", media);
     data.set("durationSeconds", String(Math.round(effectiveDuration)));
     data.set("assigneeId", assigneeId);
-    data.set("description", description);
+    data.set("description", String(new FormData(e.currentTarget as HTMLFormElement).get("description") ?? ""));
     data.set("language", language);
     data.set("deadline", deadline);
+    data.set("fixedPay", fixedPay);
     if (mode === "file" && transcriptFile) data.set("transcriptFile", transcriptFile);
     else data.set("transcriptText", pasted);
     setProgress(0);
@@ -235,7 +237,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
           </div>
           <div className="mt-4">
             <label className="label" htmlFor="description">Details for transcribers <span className="font-normal text-slate-400">(optional)</span></label>
-            <textarea className="input h-24" id="description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Two speakers, some Luganda. Label speakers and keep timestamps." />
+            <RichTextEditor name="description" id="description" placeholder="e.g. Two speakers, some Luganda. Label speakers and keep timestamps." />
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
@@ -246,6 +248,11 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
               <label className="label" htmlFor="deadline">Deadline <span className="font-normal text-slate-400">(optional)</span></label>
               <input className="input" id="deadline" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
             </div>
+          </div>
+          <div className="mt-4">
+            <label className="label" htmlFor="fixedPay">Fixed price in UGX <span className="font-normal text-slate-400">(optional)</span></label>
+            <input className="input sm:max-w-60" id="fixedPay" inputMode="numeric" value={fixedPay} onChange={(e) => setFixedPay(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Leave empty to pay by length" />
+            <p className="hint">Use this for jobs with their own price. It&apos;s paid as is, instead of by the hour.</p>
           </div>
         </Step>
 
@@ -297,12 +304,8 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
           <div className="card-header"><h2 className="card-title">Summary</h2></div>
           <dl className="card-body space-y-3 text-sm">
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Length</dt><dd className="num font-medium">{effectiveDuration > 0 ? formatDuration(effectiveDuration) : "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">Rate</dt><dd className="num">{formatUGX(RATE_PER_HOUR_UGX)}/hr</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-slate-500">Expected pay</dt><dd className="num">{fixedPay ? `${formatUGX(Number(fixedPay))} fixed` : effectiveDuration > 0 ? `~${formatUGX(expectedPayFor(effectiveDuration))}` : "—"}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Assigned to</dt><dd className="truncate">{assigneeName ?? (assigneeId === "" ? "Job board" : "Nobody yet")}</dd></div>
-            <div className="flex items-baseline justify-between gap-3 border-t border-slate-100 pt-3">
-              <dt className="font-medium text-slate-700">Pays</dt>
-              <dd className="num text-xl font-semibold text-slate-900">{formatUGX(earningsFor(effectiveDuration))}</dd>
-            </div>
           </dl>
           <div className="border-t border-slate-100 p-5">
             {error && (

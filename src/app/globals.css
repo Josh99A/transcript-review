@@ -156,3 +156,29 @@
     backdrop-filter: none;
   }
 }
+
+/* Formatted instructions written by admins. */
+@layer components {
+  .rich p + p,
+  .rich p + ul,
+  .rich p + ol,
+  .rich ul + p,
+  .rich ol + p {
+    @apply mt-2;
+  }
+  .rich ul {
+    @apply list-disc space-y-1 pl-5;
+  }
+  .rich ol {
+    @apply list-decimal space-y-1 pl-5;
+  }
+  .rich u {
+    @apply underline decoration-1 underline-offset-2;
+  }
+  .rich mark {
+    @apply rounded bg-amber-200/80 px-0.5 text-inherit;
+  }
+  .rich strong {
+    @apply font-semibold;
+  }
+}

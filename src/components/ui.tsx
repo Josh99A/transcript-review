@@ -59,6 +59,34 @@ export function StatCard({
   );
 }
 
+export type Stat = { icon: LucideIcon; label: string; value: React.ReactNode; hint?: React.ReactNode; tone?: keyof typeof STAT_TONES };
+
+/**
+ * Headline numbers in one flat card: a list of rows on phones, columns from sm up.
+ * Used instead of a grid of separate cards, which some budget Android phones paint twice.
+ */
+export function StatList({ stats }: { stats: Stat[] }) {
+  const cols = { 2: "sm:grid-cols-2", 3: "sm:grid-cols-3", 4: "sm:grid-cols-2 xl:grid-cols-4" }[stats.length] ?? "sm:grid-cols-3";
+  return (
+    <div className={`card divide-y divide-slate-100 sm:grid sm:divide-y-0 ${cols}`}>
+      {stats.map(({ icon: Icon, label, value, hint, tone = "slate" }) => (
+        <div key={label} className="flex items-center gap-3 px-4 py-3 sm:px-5 sm:py-4">
+          <div className={`hidden size-10 shrink-0 items-center justify-center rounded-lg sm:flex ${STAT_TONES[tone]}`}>
+            <Icon className="size-5" aria-hidden />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm text-slate-500">{label}</div>
+            {hint && <div className="text-xs text-slate-500 sm:hidden">{hint}</div>}
+            <div className="num hidden truncate text-2xl font-semibold tracking-tight text-slate-900 sm:block">{value}</div>
+            {hint && <div className="mt-0.5 hidden text-xs text-slate-500 sm:block">{hint}</div>}
+          </div>
+          <div className="num shrink-0 text-right text-lg font-semibold text-slate-900 sm:hidden">{value}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function EmptyState({
   icon: Icon,
   title,

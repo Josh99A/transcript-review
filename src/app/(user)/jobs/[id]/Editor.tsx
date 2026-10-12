@@ -1,13 +1,15 @@
 "use client";
 
 import { diffWords } from "diff";
-import { Check, CloudUpload, Keyboard, Send, Undo2 } from "lucide-react";
+import { Check, CloudUpload, Download, FileUp, Keyboard, Redo2, RotateCcw, Send, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { saveDraft, submitJob } from "@/app/actions";
 import { Modal, Spinner } from "@/components/client";
 import MediaPlayer, { SKIP_SECONDS, SPEEDS } from "@/components/MediaPlayer";
-import { formatDuration, formatUGX } from "@/lib/format";
+import { formatDuration, formatHours, formatUGX } from "@/lib/format";
+import { expectedPayFor } from "@/lib/pay";
+import { useUndo } from "./useUndo";
 
 /** Seconds to jump back when resuming with the keyboard, so you re-hear the last words. */
 const AUTO_REWIND = 2;
@@ -20,6 +22,8 @@ const SHORTCUTS: [string[], string][] = [
   [["Alt", "↓"], "Slower"],
   [["Alt", "↑"], "Faster"],
   [["Alt", "T"], "Insert current timestamp"],
+  [["Ctrl", "Z"], "Undo"],
+  [["Ctrl", "Shift", "Z"], "Redo (or Ctrl+Y)"],
   [["Ctrl", "S"], "Save draft"],
 ];
 
@@ -30,15 +34,17 @@ export default function Editor({
   mediaType,
   initial,
   original,
-  pay,
+  seconds,
+  fixedPay,
 }: {
   jobId: string;
   mediaType: string;
   initial: string;
   original: string;
-  pay: number;
+  seconds: number;
+  fixedPay: number | null;
 }) {
-  const [text, setText] = useState(initial);
+  const { text, set: setText, undo, redo, canUndo, canRedo } = useUndo(initial);
   const [saved, setSaved] = useState(initial);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [savedAt, setSavedAt] = useState<Date | null>(null);
@@ -46,6 +52,9 @@ export default function Editor({
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [submitting, startSubmit] = useTransition();
+  const [uploadedFrom, setUploadedFrom] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const mediaRef = useRef<HTMLMediaElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isVideo = mediaType.startsWith("video");
@@ -98,6 +107,23 @@ export default function Editor({
     });
   }, []);
 
+  const history = useCallback(
+    (dir: "undo" | "redo") => {
+      const cursor = dir === "undo" ? undo() : redo();
+      const ta = textareaRef.current;
+      if (cursor == null || !ta) return;
+      requestAnimationFrame(() => {
+        ta.setSelectionRange(cursor, cursor);
+        // Bring the change into view without opening the phone keyboard.
+        if (document.activeElement !== ta) {
+          const line = ta.value.slice(0, cursor).split("\n").length;
+          ta.scrollTop = Math.max(0, line * 28 - ta.clientHeight / 2);
+        }
+      });
+    },
+    [undo, redo],
+  );
+
   // Playback shortcuts work while typing, so you never leave the keyboard.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -131,12 +157,19 @@ export default function Editor({
         if (m) insertAtCursor(`[${formatDuration(m.currentTime)}] `);
       }
       else if ((e.ctrlKey || e.metaKey) && key.toLowerCase() === "s") save(textareaRef.current?.value ?? "", true);
+      else if ((e.ctrlKey || e.metaKey) && !e.altKey && (key.toLowerCase() === "y" || (key.toLowerCase() === "z" && e.shiftKey))) {
+        if (e.target === textareaRef.current) history("redo");
+        else handled = false;
+      } else if ((e.ctrlKey || e.metaKey) && !e.altKey && key.toLowerCase() === "z") {
+        if (e.target === textareaRef.current) history("undo");
+        else handled = false;
+      }
       else handled = false;
       if (handled) e.preventDefault();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [insertAtCursor, save]);
+  }, [insertAtCursor, save, history]);
 
   const changes = useMemo(() => {
     if (!confirmOpen) return { added: 0, removed: 0 };
@@ -152,9 +185,28 @@ export default function Editor({
 
   function submit() {
     startSubmit(async () => {
-      const res = await submitJob(jobId, text);
+      const res = await submitJob(jobId, text, uploadedFrom ?? undefined);
       if (res?.error) toast.error(res.error);
     });
+  }
+
+  async function upload(file: File) {
+    setUploading(true);
+    try {
+      const data = new FormData();
+      data.set("file", file);
+      const res = await fetch(`/api/jobs/${jobId}/upload`, { method: "POST", body: data });
+      const body = await res.json().catch(() => ({ error: "Upload failed. Try again." }));
+      if (!res.ok || typeof body.text !== "string") return void toast.error(body.error ?? "Upload failed. Try again.");
+      setText(body.text);
+      setUploadedFrom(file.name);
+      setConfirmOpen(true);
+    } catch {
+      toast.error("Upload failed. Check your connection and try again.");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   }
 
   const status = {
@@ -192,25 +244,46 @@ export default function Editor({
           </span>
           <span className="num text-slate-400">{words.toLocaleString()} words</span>
           <div className="ml-auto flex items-center gap-1">
+            {/* preventDefault on pointer down keeps the textarea's focus (and the phone keyboard) as it was. */}
+            <button type="button" className="btn-ghost size-10 px-0 sm:size-8" onPointerDown={(e) => e.preventDefault()} onClick={() => history("undo")} disabled={!canUndo} aria-label="Undo" title="Undo (Ctrl+Z)">
+              <Undo2 className="size-4" />
+            </button>
+            <button type="button" className="btn-ghost size-10 px-0 sm:size-8" onPointerDown={(e) => e.preventDefault()} onClick={() => history("redo")} disabled={!canRedo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">
+              <Redo2 className="size-4" />
+            </button>
             <button type="button" className="btn-ghost btn-sm" onClick={() => setRestoreOpen(true)} disabled={text === original}>
-              <Undo2 className="size-3.5" /> Restore original
+              <RotateCcw className="size-3.5" /> Restore original
             </button>
             <button type="button" className="btn-ghost btn-sm" onClick={() => save(text, true)} disabled={!dirty || saveState === "saving"}>
               <CloudUpload className="size-3.5" /> Save
             </button>
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 text-xs text-slate-500">
+          <span className="mr-auto">Prefer working offline? Download the {isVideo ? "video" : "audio"} and the original transcript, then upload your corrected transcript to submit.</span>
+          <a href={`/api/media/${jobId}?download=1`} className="btn-ghost btn-sm"><Download className="size-3.5" /> {isVideo ? "Video" : "Audio"}</a>
+          <a href={`/api/jobs/${jobId}/transcript?format=docx&version=original`} className="btn-ghost btn-sm"><Download className="size-3.5" /> Original .docx</a>
+          <a href={`/api/jobs/${jobId}/transcript?version=original`} className="btn-ghost btn-sm"><Download className="size-3.5" /> .txt</a>
+          <input ref={fileRef} type="file" accept=".docx,.txt" className="sr-only" id={`up-${jobId}`} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+          <button type="button" className="btn-secondary btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading || submitting}>
+            {uploading ? <Spinner className="size-3.5" /> : <FileUp className="size-3.5" />} Upload finished file
+          </button>
+        </div>
         <textarea
           ref={textareaRef}
           className="min-h-[55vh] w-full flex-1 resize-y border-0 bg-white px-5 py-4 font-mono text-base leading-7 sm:text-[15px] text-slate-800 focus:ring-0 focus:outline-none"
           value={text}
-          onChange={(e) => setText(e.target.value)}
+          onChange={(e) => setText(e.target.value, true)}
           spellCheck
           aria-label="Transcript"
         />
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
           <p className="text-xs text-slate-500">
-            Submitting adds <span className="num font-semibold text-slate-700">{formatUGX(pay)}</span> to your earnings, paid on the next pay date.
+            {fixedPay != null ? (
+              <>This job pays a fixed <span className="num font-semibold text-slate-700">{formatUGX(fixedPay)}</span> when you submit it.</>
+            ) : (
+              <>Submitting adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours (about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds))}</span>). Pay is worked out on your total hours.</>
+            )}
           </p>
           <button type="button" className="btn ml-auto" onClick={() => setConfirmOpen(true)} disabled={submitting || !text.trim()}>
             <Send className="size-4" /> Submit transcript
@@ -220,20 +293,20 @@ export default function Editor({
 
       <Modal
         open={confirmOpen}
-        onClose={() => !submitting && setConfirmOpen(false)}
-        title="Submit this transcript?"
-        description="Once submitted you can't edit it unless an admin sends it back."
+        onClose={() => { if (!submitting) { setConfirmOpen(false); setUploadedFrom(null); } }}
+        title={uploadedFrom ? `Submit ${uploadedFrom}?` : "Submit this transcript?"}
+        description={uploadedFrom ? "Your file's text is now in the editor. Check the changes below, then submit. You can't edit it after that unless an admin sends it back." : "Once submitted you can't edit it unless an admin sends it back."}
       >
         <dl className="mb-5 grid grid-cols-3 gap-3 rounded-lg bg-slate-50 p-4 text-center">
           <div><dt className="text-xs text-slate-500">Words added</dt><dd className="num mt-0.5 font-semibold text-emerald-700">+{changes.added}</dd></div>
           <div><dt className="text-xs text-slate-500">Words removed</dt><dd className="num mt-0.5 font-semibold text-red-700">−{changes.removed}</dd></div>
-          <div><dt className="text-xs text-slate-500">You earn</dt><dd className="num mt-0.5 font-semibold text-slate-900">{formatUGX(pay)}</dd></div>
+          <div><dt className="text-xs text-slate-500">Adds to your hours</dt><dd className="num mt-0.5 font-semibold text-slate-900">{formatHours(seconds)}</dd></div>
         </dl>
         {changes.added + changes.removed === 0 && (
           <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">You haven&apos;t changed anything from the original yet.</p>
         )}
         <div className="flex justify-end gap-2">
-          <button type="button" className="btn-secondary" onClick={() => setConfirmOpen(false)} disabled={submitting}>Keep editing</button>
+          <button type="button" className="btn-secondary" onClick={() => { setConfirmOpen(false); setUploadedFrom(null); }} disabled={submitting}>Keep editing</button>
           <button type="button" className="btn" onClick={submit} disabled={submitting}>
             {submitting ? <Spinner /> : <Send className="size-4" />} Submit
           </button>

@@ -1,14 +1,19 @@
 "use client";
 
-import { AudioLines, ClipboardList, HandCoins, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
+import { AudioLines, CircleCheckBig, ClipboardCheck, ClipboardList, HandCoins, Inbox, LifeBuoy, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { logout } from "@/app/actions";
+import Bell from "./Bell";
 import { Avatar } from "./ui";
 
 const ADMIN_LINKS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { href: "/admin/reviews", label: "Reviews", icon: ClipboardCheck },
+  { href: "/admin/requests", label: "Requests", icon: Inbox },
+  { href: "/admin/issues", label: "Issues", icon: LifeBuoy },
+  { href: "/admin/completed", label: "Completed", icon: CircleCheckBig },
   { href: "/admin/jobs/new", label: "Upload job", icon: Upload },
   { href: "/admin/users", label: "Team & payments", icon: Users },
 ];
@@ -32,10 +37,11 @@ function Brand() {
   );
 }
 
-export default function SideNav({ user }: { user: { name: string; email: string; role: "ADMIN" | "USER" | "REFERRER" } }) {
+export default function SideNav({ user, refers = false, badges = {} }: { user: { name: string; email: string; role: "ADMIN" | "USER" | "REFERRER" }; refers?: boolean; badges?: Record<string, number> }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const links: { href: string; label: string; icon: typeof Wallet; exact?: boolean }[] = LINKS[user.role];
+  const links: { href: string; label: string; icon: typeof Wallet; exact?: boolean }[] =
+    user.role === "USER" && refers ? [...USER_LINKS, ...REFERRER_LINKS] : LINKS[user.role];
 
   const isActive = (l: (typeof links)[number]) =>
     l.exact ? pathname === l.href : pathname === l.href || pathname.startsWith(l.href + "/");
@@ -44,6 +50,7 @@ export default function SideNav({ user }: { user: { name: string; email: string;
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center px-5">
         <Brand />
+        <span className="ml-auto hidden lg:block"><Bell /></span>
       </div>
       <div className="px-3 pt-2 text-[11px] font-medium tracking-wider text-slate-400 uppercase">
         {ROLE_LABELS[user.role]}
@@ -63,6 +70,9 @@ export default function SideNav({ user }: { user: { name: string; email: string;
             >
               <l.icon className={`size-4.5 ${active ? "text-brand-600" : "text-slate-400"}`} aria-hidden />
               {l.label}
+              {badges[l.href] ? (
+                <span className="num ml-auto rounded-full bg-brand-600 px-2 py-0.5 text-xs font-semibold text-white" aria-label={`${badges[l.href]} waiting`}>{badges[l.href]}</span>
+              ) : null}
             </Link>
           );
         })}
@@ -88,11 +98,12 @@ export default function SideNav({ user }: { user: { name: string; email: string;
     <>
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-200 bg-white lg:block">{nav}</aside>
 
-      <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4 lg:hidden">
+      <header className="flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4 lg:hidden">
         <button className="btn-ghost size-9 px-0" onClick={() => setOpen(true)} aria-label="Open menu">
           <Menu className="size-5" />
         </button>
         <Brand />
+        <span className="ml-auto"><Bell /></span>
       </header>
 
       {open && (

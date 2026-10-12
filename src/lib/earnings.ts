@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { earningsFor, referralPayFor } from "./pay";
 
@@ -17,19 +18,24 @@ export type Balance = {
 const empty = (): Balance => ({ seconds: 0, transcriptPay: 0, referralSeconds: 0, referralPay: 0, earned: 0, paid: 0, owed: 0 });
 
 /** Earned, paid and owed totals for every user, keyed by user id. */
-export async function balancesByUser(): Promise<Map<string, Balance>> {
+export async function balancesByUser(client: Prisma.TransactionClient = db): Promise<Map<string, Balance>> {
   const [earned, referred, paid] = await Promise.all([
-    db.earning.groupBy({ by: ["userId"], _sum: { seconds: true } }),
-    db.earning.groupBy({ by: ["referrerId"], where: { referrerId: { not: null } }, _sum: { seconds: true } }),
-    db.payout.groupBy({ by: ["userId"], _sum: { amount: true } }),
+    client.earning.groupBy({ by: ["userId", "fixed"], _sum: { seconds: true, amount: true } }),
+    client.earning.groupBy({ by: ["referrerId"], where: { referrerId: { not: null } }, _sum: { seconds: true } }),
+    client.payout.groupBy({ by: ["userId"], _sum: { amount: true } }),
   ]);
   const map = new Map<string, Balance>();
   const get = (id: string) => map.get(id) ?? map.set(id, empty()).get(id)!;
+  // Hourly pay is worked out on the total of time-priced work; fixed-price jobs add their price as is.
+  const hourlySeconds = new Map<string, number>();
+  const fixedPay = new Map<string, number>();
   for (const e of earned) {
     const b = get(e.userId);
-    b.seconds = e._sum.seconds ?? 0;
-    b.transcriptPay = earningsFor(b.seconds);
+    b.seconds += e._sum.seconds ?? 0;
+    if (e.fixed) fixedPay.set(e.userId, (fixedPay.get(e.userId) ?? 0) + (e._sum.amount ?? 0));
+    else hourlySeconds.set(e.userId, (hourlySeconds.get(e.userId) ?? 0) + (e._sum.seconds ?? 0));
   }
+  for (const [id, b] of map) b.transcriptPay = earningsFor(hourlySeconds.get(id) ?? 0) + (fixedPay.get(id) ?? 0);
   for (const r of referred) {
     const b = get(r.referrerId!);
     b.referralSeconds = r._sum.seconds ?? 0;

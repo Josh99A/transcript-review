@@ -3,7 +3,8 @@ import type { Metadata } from "next";
 import PayDateBanner from "@/components/PayDateBanner";
 import PaymentDetails from "@/components/PaymentDetails";
 import { EmptyState, PageHeader, StatCard, UserCell } from "@/components/ui";
-import { requireRole } from "@/lib/auth";
+import { redirect } from "next/navigation";
+import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balanceFor } from "@/lib/earnings";
 import { formatDate, formatHours, formatUGX } from "@/lib/format";
@@ -13,7 +14,9 @@ import { getNextPayDate } from "@/lib/settings";
 export const metadata: Metadata = { title: "My referrals" };
 
 export default async function ReferralsPage() {
-  const user = await requireRole("REFERRER");
+  // Referrers, and transcribers who referred someone.
+  const user = await requireUser();
+  if (user.role === "ADMIN") redirect("/admin");
   const [referrals, credited, payouts, balance, payDate] = await Promise.all([
     db.user.findMany({ where: { referredById: user.id }, orderBy: { createdAt: "desc" } }),
     // Work credited to this referrer, per transcriber.
@@ -32,7 +35,7 @@ export default async function ReferralsPage() {
         description={`You earn ${formatUGX(REFERRAL_RATE_PER_HOUR_UGX)} for every hour of transcript submitted by the people you referred.`}
       />
       <div className="mb-6">
-        <PayDateBanner payDate={payDate} owed={balance.owed} detail="Everything you've earned from referrals and not yet been paid is paid on this date." />
+        <PayDateBanner payDate={payDate} owed={balance.owed} detail={user.role === "USER" ? "Your referral earnings are paid together with your transcription pay." : "Everything you've earned from referrals and not yet been paid is paid on this date."} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">

@@ -1,14 +1,11 @@
-import { randomUUID } from "node:crypto";
-import { createWriteStream } from "node:fs";
-import path from "node:path";
-import { Readable } from "node:stream";
-import { pipeline } from "node:stream/promises";
+import { cleanRich, richText } from "@/lib/richtext";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseDeadline } from "@/lib/format";
-import { ensureUploadDir, mediaFile } from "@/lib/media";
+import { uploadMedia } from "@/lib/media";
 import { mediaTypeOf } from "@/lib/mediaTypes";
+import { parseFixedPay } from "@/lib/pay";
 import { docxToText } from "@/lib/docx";
 
 export async function POST(req: Request) {
@@ -22,9 +19,12 @@ export async function POST(req: Request) {
   // "" posts the job on the board, "__hold" keeps it unassigned and off the board.
   const assignTo = String(form.get("assigneeId") ?? "");
   const assigneeId = assignTo && assignTo !== "__hold" ? assignTo : null;
-  const description = String(form.get("description") ?? "").trim().slice(0, 5000);
+  const description = cleanRich(String(form.get("description") ?? "").slice(0, 50000));
+  if (richText(description).length > 5000) return NextResponse.json({ error: "Keep the details under 5,000 characters." }, { status: 400 });
   const language = String(form.get("language") ?? "").trim().slice(0, 60) || null;
   const deadline = parseDeadline(String(form.get("deadline") ?? ""));
+  const fixedPay = parseFixedPay(form.get("fixedPay"));
+  if (fixedPay === "invalid") return NextResponse.json({ error: "Enter the fixed price as a whole number of shillings, or leave it empty." }, { status: 400 });
 
   let transcript = String(form.get("transcriptText") ?? "");
   const transcriptFile = form.get("transcriptFile");
@@ -48,17 +48,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Couldn't read the media length. Enter it manually." }, { status: 400 });
   if (!transcript.trim()) return NextResponse.json({ error: "Add a transcript." }, { status: 400 });
 
-  await ensureUploadDir();
-  const ext = path.extname(media.name).toLowerCase().replace(/[^.a-z0-9]/g, "").slice(0, 10);
-  const stored = `${randomUUID()}${ext}`;
-  await pipeline(Readable.fromWeb(media.stream() as never), createWriteStream(mediaFile(stored)));
+  let stored: Awaited<ReturnType<typeof uploadMedia>>;
+  try {
+    stored = await uploadMedia(media);
+  } catch (err) {
+    console.error("Media upload failed", err);
+    return NextResponse.json({ error: "Couldn't store the media file. Try again, or use a smaller file." }, { status: 502 });
+  }
 
   const job = await db.job.create({
     data: {
       title,
-      mediaPath: stored,
+      mediaPath: stored.name,
+      mediaBytes: stored.bytes,
       mediaType,
       durationSeconds,
+      fixedPay,
       originalTranscript: transcript,
       editedTranscript: transcript,
       description,
