@@ -7,7 +7,8 @@ import { toast } from "sonner";
 import { saveDraft, submitJob } from "@/app/actions";
 import { Modal, Spinner } from "@/components/client";
 import MediaPlayer, { SKIP_SECONDS, SPEEDS } from "@/components/MediaPlayer";
-import { formatDuration, formatHours } from "@/lib/format";
+import { formatDuration, formatHours, formatUGX } from "@/lib/format";
+import { expectedPayFor } from "@/lib/pay";
 
 /** Seconds to jump back when resuming with the keyboard, so you re-hear the last words. */
 const AUTO_REWIND = 2;
@@ -210,7 +211,7 @@ export default function Editor({
         />
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
           <p className="text-xs text-slate-500">
-            Submitting adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours, which your pay is worked out on.
+            Submitting adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours (about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds))}</span>). Pay is worked out on your total hours.
           </p>
           <button type="button" className="btn ml-auto" onClick={() => setConfirmOpen(true)} disabled={submitting || !text.trim()}>
             <Send className="size-4" /> Submit transcript

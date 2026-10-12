@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Spinner } from "@/components/client";
-import { formatDuration } from "@/lib/format";
+import { formatDuration, formatUGX } from "@/lib/format";
 import { adtsDuration, MEDIA_ACCEPT, mediaTypeOf, mp4Duration } from "@/lib/mediaTypes";
+import { expectedPayFor } from "@/lib/pay";
 
 /** Reads the length of an audio/video file in the browser. */
 async function readDuration(file: File, type: string): Promise<number> {
@@ -296,6 +297,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
           <div className="card-header"><h2 className="card-title">Summary</h2></div>
           <dl className="card-body space-y-3 text-sm">
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Length</dt><dd className="num font-medium">{effectiveDuration > 0 ? formatDuration(effectiveDuration) : "—"}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-slate-500">Expected pay</dt><dd className="num">{effectiveDuration > 0 ? `~${formatUGX(expectedPayFor(effectiveDuration))}` : "—"}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Assigned to</dt><dd className="truncate">{assigneeName ?? (assigneeId === "" ? "Job board" : "Nobody yet")}</dd></div>
           </dl>
           <div className="border-t border-slate-100 p-5">

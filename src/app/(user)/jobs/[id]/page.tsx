@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, Languages, MessageSquareWarning } from "lucide-react";
+import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, Languages, MessageSquareWarning, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,8 +7,9 @@ import StatusBadge, { jobBadge } from "@/components/StatusBadge";
 import { MediaRemoved, PageHeader } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { formatDate, formatDeadline, formatDuration, formatRelative } from "@/lib/format";
+import { formatDate, formatDeadline, formatDuration, formatRelative, formatUGX } from "@/lib/format";
 import Editor from "./Editor";
+import { expectedPayFor } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "Edit transcript" };
 
@@ -32,6 +33,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <span className="num flex flex-wrap items-center gap-x-4 gap-y-1">
             <StatusBadge status={jobBadge(job)} />
             <span className="inline-flex items-center gap-1.5"><Clock className="size-3.5" /> {formatDuration(job.durationSeconds)}</span>
+            <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> ~{formatUGX(expectedPayFor(job.durationSeconds))} expected</span>
             {job.language && <span className="inline-flex items-center gap-1.5"><Languages className="size-3.5" /> {job.language}</span>}
             {due && <span className={`inline-flex items-center gap-1.5 ${due.overdue ? "text-red-700" : due.soon ? "text-amber-700" : ""}`}><CalendarClock className="size-3.5" /> {due.text}</span>}
           </span>

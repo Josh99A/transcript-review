@@ -10,6 +10,7 @@ import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatDuration, formatRelative, formatUGX } from "@/lib/format";
 import { getNextPayDate } from "@/lib/settings";
+import { expectedPayFor } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "Dashboard" };
 
@@ -135,7 +136,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                       <Link href={`/admin/jobs/${j.id}`} className="block px-4 py-3 active:bg-slate-50">
                         <div className="flex items-start justify-between gap-3">
                           <span className="min-w-0 font-medium break-words text-slate-900">{j.title}</span>
-                          <span className="num shrink-0 text-sm text-slate-600">{formatDuration(j.durationSeconds)}</span>
+                          <span className="num shrink-0 text-right text-sm text-slate-600">{formatDuration(j.durationSeconds)}<span className="block text-xs text-slate-400">~{formatUGX(expectedPayFor(j.durationSeconds))}</span></span>
                         </div>
                         <div className="num mt-0.5 text-xs text-slate-500">
                           {j.status === "SUBMITTED" ? `submitted ${formatRelative(j.submittedAt)}` : `updated ${formatRelative(j.updatedAt)}`}
@@ -196,7 +197,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                           )}
                         </td>
                         <td><StatusBadge status={jobBadge(j)} /></td>
-                        <td className="num text-right whitespace-nowrap text-slate-600">{formatDuration(j.durationSeconds)}</td>
+                        <td className="num text-right whitespace-nowrap text-slate-600">{formatDuration(j.durationSeconds)}<span className="block text-xs text-slate-400">~{formatUGX(expectedPayFor(j.durationSeconds))}</span></td>
                       </tr>
                     );
                   })}
