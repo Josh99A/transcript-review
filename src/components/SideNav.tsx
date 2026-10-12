@@ -88,7 +88,7 @@ export default function SideNav({ user }: { user: { name: string; email: string;
     <>
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r border-slate-200 bg-white lg:block">{nav}</aside>
 
-      <header className="fixed inset-x-0 top-0 z-30 flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4 lg:hidden">
+      <header className="flex h-14 items-center gap-3 border-b border-slate-200 bg-white px-4 lg:hidden">
         <button className="btn-ghost size-9 px-0" onClick={() => setOpen(true)} aria-label="Open menu">
           <Menu className="size-5" />
         </button>
