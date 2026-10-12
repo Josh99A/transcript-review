@@ -1,4 +1,6 @@
 import { CircleCheck, Download } from "lucide-react";
+import SortSelect from "@/components/SortSelect";
+import { pickSort, sortJobs, sortOptions, type SortKey } from "@/lib/sort";
 import JobTags from "@/components/JobTags";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -16,9 +18,12 @@ const PAY_TONE: Record<PayState, string> = {
   Unpaid: "bg-slate-100 text-slate-700 ring-slate-500/20",
 };
 
-export default async function CompletedPage({ searchParams }: { searchParams: Promise<{ unpaid?: string; who?: string }> }) {
+const DONE_SORTS: SortKey[] = ["approved_new", "approved_old", "submitted_new", "submitted_old", "assigned_new", "assigned_old", "longest", "shortest", "pay_high", "pay_low", "title"];
+
+export default async function CompletedPage({ searchParams }: { searchParams: Promise<{ unpaid?: string; who?: string; sort?: string }> }) {
   await requireAdmin();
-  const { unpaid, who } = await searchParams;
+  const { unpaid, who, sort: sortParam } = await searchParams;
+  const sort = await pickSort("completed", sortParam, DONE_SORTS, "approved_new");
   const [jobs, people, paid, earnings] = await Promise.all([
     db.job.findMany({
       where: { status: "SUBMITTED", approvedAt: { not: null } },
@@ -38,7 +43,7 @@ export default async function CompletedPage({ searchParams }: { searchParams: Pr
     payState.set(e.id, cover >= e.amount ? "Paid" : cover > 0 ? "Part paid" : "Unpaid");
     left.set(e.userId, Math.max(0, cover - e.amount));
   }
-  const rows = jobs
+  const rows = sortJobs([...jobs], sort)
     .map((j) => {
       const e = j.earnings.find((x) => x.userId === j.assigneeId) ?? j.earnings[0];
       return { job: j, amount: e?.amount ?? 0, state: (e ? payState.get(e.id) : undefined) ?? ("Unpaid" as PayState) };
@@ -55,7 +60,7 @@ export default async function CompletedPage({ searchParams }: { searchParams: Pr
 
   return (
     <>
-      <PageHeader title="Completed" description="Approved jobs, newest first. Pay status counts each person's payments against their jobs oldest first." />
+      <PageHeader title="Completed" description="Approved jobs. Pay status counts each person's payments against their jobs oldest first." />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <Link href={href({ unpaid: "" })} className={chip(!unpaid)}>All</Link>
         <Link href={href({ unpaid: "1" })} className={chip(!!unpaid)}>Not fully paid</Link>
@@ -68,6 +73,7 @@ export default async function CompletedPage({ searchParams }: { searchParams: Pr
           </select>
           <button className="btn-secondary btn-sm">Filter</button>
         </form>
+        <SortSelect page="completed" value={sort} options={sortOptions(DONE_SORTS)} className="w-full sm:w-auto" />
       </div>
 
       {rows.length === 0 ? (

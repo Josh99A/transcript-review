@@ -1,4 +1,6 @@
 import { CircleCheck, FileAudio, FileVideo, Hourglass, Inbox, Search, Upload, Wallet } from "lucide-react";
+import SortSelect from "@/components/SortSelect";
+import { pickSort, sortJobs, sortOptions, type SortKey } from "@/lib/sort";
 import JobTags from "@/components/JobTags";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -24,9 +26,12 @@ const FILTER_LABELS: Record<Filter, string> = {
   SUBMITTED: "Submitted",
 };
 
-export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ status?: string; q?: string }> }) {
+const DASH_SORTS: SortKey[] = ["updated", "posted_new", "posted_old", "assigned_new", "assigned_old", "submitted_new", "submitted_old", "deadline", "longest", "shortest", "pay_high", "pay_low", "title"];
+
+export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; sort?: string }> }) {
   await requireAdmin();
-  const { status, q = "" } = await searchParams;
+  const { status, q = "", sort: sortParam } = await searchParams;
+  const sort = await pickSort("dashboard", sortParam, DASH_SORTS, "updated");
   const filter: Filter = FILTERS.includes(status as Filter) ? (status as Filter) : "ALL";
   const query = q.trim();
 
@@ -37,7 +42,6 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
         ...(query ? { OR: [{ title: { contains: query, mode: "insensitive" } }, { project: { contains: query, mode: "insensitive" } }, { assignee: { name: { contains: query, mode: "insensitive" } } }] } : {}),
       },
       include: { assignee: { select: { name: true } }, earnings: true, _count: { select: { requests: { where: { status: "PENDING" } } } } },
-      orderBy: [{ updatedAt: "desc" }],
     }),
     db.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, orderBy: { name: "asc" } }),
     balancesByUser(),
@@ -47,6 +51,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     db.job.findMany({ where: { mediaRemovedAt: null }, select: { mediaBytes: true, status: true } }),
     db.jobRequest.count({ where: { status: "PENDING", job: { status: "UNASSIGNED" } } }),
   ]);
+  sortJobs(jobs, sort);
   const sizes = stored.map((j) => ({ status: j.status, bytes: j.mediaBytes }));
   const usedBytes = sizes.reduce((s, j) => s + j.bytes, 0);
   const removable = sizes.filter((j) => j.status === "SUBMITTED");
@@ -96,6 +101,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
               <input className="input pl-9" name="q" defaultValue={query} placeholder="Search title, project or person" aria-label="Search jobs" />
             </form>
+            <SortSelect page="dashboard" value={sort} options={sortOptions(DASH_SORTS)} className="w-full sm:w-auto" />
           </div>
           <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3 sm:px-5" role="tablist">
             {FILTERS.map((f) => {

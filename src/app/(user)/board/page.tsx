@@ -1,4 +1,6 @@
 import { CalendarClock, CircleCheck, Clock, FileAudio, FileVideo, Hourglass, Inbox, Search, Wallet } from "lucide-react";
+import SortSelect from "@/components/SortSelect";
+import { pickSort, sortJobs, sortOptions, type SortKey } from "@/lib/sort";
 import type { Prisma } from "@prisma/client";
 import Link from "next/link";
 import RichText from "@/components/RichText";
@@ -20,12 +22,7 @@ const LENGTHS: Record<string, { label: string; where: Prisma.IntFilter }> = {
   medium: { label: "Medium (15 to 45 min)", where: { gte: 15 * 60, lte: 45 * 60 } },
   long: { label: "Long (over 45 min)", where: { gt: 45 * 60 } },
 };
-const SORTS: Record<string, { label: string; orderBy: Prisma.JobOrderByWithRelationInput[] }> = {
-  deadline: { label: "Deadline first", orderBy: [{ deadline: { sort: "asc", nulls: "last" } }, { createdAt: "desc" }] },
-  newest: { label: "Newest", orderBy: [{ createdAt: "desc" }] },
-  longest: { label: "Longest", orderBy: [{ durationSeconds: "desc" }, { createdAt: "desc" }] },
-  shortest: { label: "Shortest", orderBy: [{ durationSeconds: "asc" }, { createdAt: "desc" }] },
-};
+const BOARD_SORTS: SortKey[] = ["deadline", "posted_new", "posted_old", "longest", "shortest", "pay_high", "pay_low", "title"];
 
 type Params = { project?: string; length?: string; type?: string; language?: string; rate?: string; sort?: string };
 
@@ -35,7 +32,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
   const length = sp.length && LENGTHS[sp.length] ? sp.length : "";
   const type = sp.type === "audio" || sp.type === "video" ? sp.type : "";
   const rate = sp.rate === "usual" || sp.rate === "custom" ? sp.rate : "";
-  const sort = sp.sort && SORTS[sp.sort] ? sp.sort : "deadline";
+  const sort = await pickSort("board", sp.sort, BOARD_SORTS, "deadline");
   const open: Prisma.JobWhereInput = { posted: true, status: "UNASSIGNED" };
   const [projects, languages, counts, mine] = await Promise.all([
     projectNames(open),
@@ -56,8 +53,8 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
       ...(rate === "usual" ? { ratePerHour: null } : rate === "custom" ? { ratePerHour: { not: null } } : {}),
     },
     include: { requests: { where: { userId: user.id } } },
-    orderBy: SORTS[sort].orderBy,
   });
+  sortJobs(jobs, sort);
   const count = (s: string) => counts.find((c) => c.status === s)?._count ?? 0;
   const posted = count("UNASSIGNED");
   const inProgress = count("ASSIGNED");
@@ -70,7 +67,6 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
     { name: "type", label: "Media", value: type, options: [any, { value: "audio", label: "Audio" }, { value: "video", label: "Video" }] },
     ...(languageList.length > 0 ? [{ name: "language", label: "Language", value: language, options: [any, ...languageList.map((l) => ({ value: l, label: l }))] }] : []),
     { name: "rate", label: "Rate", value: rate, options: [any, { value: "usual", label: "Usual rate" }, { value: "custom", label: "Special rate" }] },
-    { name: "sort", label: "Sort by", value: sort, options: Object.entries(SORTS).map(([value, o]) => ({ value, label: o.label })) },
   ];
 
   return (
@@ -85,7 +81,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
           ]}
         />
       </div>
-      {posted > 0 && <Filters fields={fields} active={filtered || sort !== "deadline"} />}
+      {posted > 0 && <Filters fields={fields} active={filtered} sort={<SortSelect page="board" value={sort} options={sortOptions(BOARD_SORTS)} />} />}
       {filtered && jobs.length > 0 && <p className="mb-3 text-sm text-slate-500">Showing {jobs.length} of {posted} open job{posted === 1 ? "" : "s"}</p>}
       {jobs.length === 0 ? (
         <div className="card">

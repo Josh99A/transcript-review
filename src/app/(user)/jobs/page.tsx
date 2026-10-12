@@ -1,4 +1,6 @@
 import { ArrowRight, CircleCheck, Clock, Eye, FileAudio, FileVideo, Undo2, X } from "lucide-react";
+import SortSelect from "@/components/SortSelect";
+import { pickSort, sortJobs, sortOptions, type SortKey } from "@/lib/sort";
 import PayPicture from "@/components/PayPicture";
 import { ActionForm } from "@/components/client";
 import { withdrawSubmission } from "@/app/actions";
@@ -20,14 +22,16 @@ import { jobPayLabel } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "My jobs" };
 
-export default async function MyJobsPage({ searchParams }: { searchParams: Promise<{ submitted?: string }> }) {
+const MINE_SORTS: SortKey[] = ["assigned_new", "assigned_old", "deadline", "submitted_new", "submitted_old", "longest", "shortest", "pay_high", "pay_low", "title"];
+
+export default async function MyJobsPage({ searchParams }: { searchParams: Promise<{ submitted?: string; sort?: string }> }) {
   const user = await requireRole("USER");
-  const { submitted } = await searchParams;
+  const { submitted, sort: sortParam } = await searchParams;
+  const sort = await pickSort("my-jobs", sortParam, MINE_SORTS, "assigned_new");
   const [jobs, balance, expected, payDate, openJobs, requests] = await Promise.all([
     db.job.findMany({
       where: { assigneeId: user.id },
       include: { earnings: { where: { userId: user.id } } },
-      orderBy: [{ assignedAt: "desc" }],
     }),
     balanceFor(user.id),
     expectedFor(user.id),
@@ -39,12 +43,13 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
       orderBy: { createdAt: "desc" },
     }),
   ]);
+  sortJobs(jobs, sort);
   const open = jobs.filter((j) => j.status === "ASSIGNED");
   const started = (j: (typeof jobs)[number]) => j.editedTranscript !== j.originalTranscript;
   const changes = open.filter((j) => j.reviewNote);
   const inProgress = open.filter((j) => !j.reviewNote && started(j));
   const notStarted = open.filter((j) => !j.reviewNote && !started(j));
-  const sent = jobs.filter((j) => j.status === "SUBMITTED").sort((a, b) => +(b.submittedAt ?? 0) - +(a.submittedAt ?? 0));
+  const sent = jobs.filter((j) => j.status === "SUBMITTED");
   const awaiting = sent.filter((j) => !j.approvedAt);
   const completed = sent.filter((j) => j.approvedAt);
   const firstName = user.name.split(" ")[0];
@@ -67,7 +72,8 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
       {justSent && <SubmittedBanner job={justSent} />}
       <PayPicture expected={expected} balance={balance} />
 
-      <nav aria-label="Jump to" className="mt-6 flex flex-wrap gap-2">
+      <div className="mt-6 flex flex-wrap items-start justify-between gap-3">
+      <nav aria-label="Jump to" className="flex flex-wrap gap-2">
         {groups.map((g) =>
           g.count ? (
             <a key={g.id} href={`#${g.id}`} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ring-1 ring-inset ${g.tone}`}>
@@ -80,6 +86,8 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
           ),
         )}
       </nav>
+        {jobs.length > 1 && <SortSelect page="my-jobs" value={sort} options={sortOptions(MINE_SORTS)} />}
+      </div>
 
       {open.length === 0 && (
         <div className="card mt-6">

@@ -7,9 +7,10 @@ type Option = { value: string; label: string };
 type Field = { name: string; label: string; value: string; options: Option[] };
 
 /** Filter and sort controls for the job board; each change reloads the list. */
-export default function Filters({ fields, active }: { fields: Field[]; active: boolean }) {
+export default function Filters({ fields, active, sort }: { fields: Field[]; active: boolean; sort: React.ReactNode }) {
   return (
-    <form className="card mb-4 p-3 sm:p-4" onChange={(e) => e.currentTarget.requestSubmit()}>
+    <div className="card mb-4 p-3 sm:p-4">
+    <form onChange={(e) => e.currentTarget.requestSubmit()}>
       <div className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-700">
         <SlidersHorizontal className="size-4 text-slate-400" aria-hidden /> Filter jobs
         {active && (
@@ -18,7 +19,8 @@ export default function Filters({ fields, active }: { fields: Field[]; active: b
           </Link>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+      {/* Sort is kept in a cookie by SortSelect, so filtering keeps the chosen order. */}
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
         {fields.map((f) => (
           <label key={f.name} className="min-w-0">
             <span className="mb-1 block text-xs text-slate-500">{f.label}</span>
@@ -30,5 +32,7 @@ export default function Filters({ fields, active }: { fields: Field[]; active: b
       </div>
       <noscript><button className="btn-secondary mt-2">Apply</button></noscript>
     </form>
+    <div className="mt-3 border-t border-slate-100 pt-3">{sort}</div>
+    </div>
   );
 }
