@@ -1,3 +1,4 @@
+import TranscriptView from "@/components/TranscriptView";
 import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, LifeBuoy, LogOut, MessageSquareWarning, Send, Undo2, Wallet } from "lucide-react";
 import JobTags from "@/components/JobTags";
 import RichText from "@/components/RichText";
@@ -92,7 +93,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           {job.mediaRemovedAt ? <MediaRemoved at={job.mediaRemovedAt} /> : <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>}
           <div className="card px-5 py-4">
             <h2 className="mb-2 text-sm font-semibold text-slate-900">What you submitted <span className="font-normal text-slate-500">(read only)</span></h2>
-            <pre className="font-mono text-[15px] leading-7 whitespace-pre-wrap text-slate-800">{job.editedTranscript}</pre>
+            <TranscriptView text={job.editedTranscript} />
           </div>
         </div>
       )}

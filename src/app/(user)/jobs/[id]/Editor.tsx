@@ -9,6 +9,8 @@ import { Modal, Spinner } from "@/components/client";
 import MediaPlayer, { SKIP_SECONDS, SPEEDS } from "@/components/MediaPlayer";
 import { formatDuration, formatHours, formatUGX } from "@/lib/format";
 import { expectedPayFor } from "@/lib/pay";
+import { countWords, hasTable } from "@/lib/transcriptTables";
+import BlockEditor from "./BlockEditor";
 import { useUndo } from "./useUndo";
 
 /** Seconds to jump back when resuming with the keyboard, so you re-hear the last words. */
@@ -57,10 +59,17 @@ export default function Editor({
   const fileRef = useRef<HTMLInputElement>(null);
   const mediaRef = useRef<HTMLMediaElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const textRef = useRef(text);
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
   const isVideo = mediaType.startsWith("video");
 
   const dirty = text !== saved;
-  const words = useMemo(() => (text.trim() ? text.trim().split(/\s+/).length : 0), [text]);
+  const words = useMemo(() => countWords(text), [text]);
+  // Transcripts with tables get a table editor; everything else keeps the single text box.
+  const withTables = useMemo(() => hasTable(text), [text]);
 
   const save = useCallback(
     async (value: string, manual = false) => {
@@ -96,6 +105,15 @@ export default function Editor({
   }, [dirty]);
 
   const insertAtCursor = useCallback((snippet: string) => {
+    const active = document.activeElement;
+    if (active instanceof HTMLTextAreaElement && active !== textareaRef.current && editorRef.current?.contains(active)) {
+      // A box in the table editor: set its value the way typing would, so its own change handler updates the transcript.
+      const { selectionStart: a, selectionEnd: b, value } = active;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(active, value.slice(0, a) + snippet + value.slice(b));
+      active.dispatchEvent(new Event("input", { bubbles: true }));
+      active.setSelectionRange(a + snippet.length, a + snippet.length);
+      return;
+    }
     const ta = textareaRef.current;
     if (!ta) return;
     const { selectionStart: a, selectionEnd: b, value } = ta;
@@ -111,6 +129,7 @@ export default function Editor({
     (dir: "undo" | "redo") => {
       const cursor = dir === "undo" ? undo() : redo();
       const ta = textareaRef.current;
+      // In the table editor the cursor can't be placed by offset, so the change just shows.
       if (cursor == null || !ta) return;
       requestAnimationFrame(() => {
         ta.setSelectionRange(cursor, cursor);
@@ -126,6 +145,7 @@ export default function Editor({
 
   // Playback shortcuts work while typing, so you never leave the keyboard.
   useEffect(() => {
+    const inEditor = (t: EventTarget | null) => t instanceof HTMLTextAreaElement && !!editorRef.current?.contains(t);
     const onKey = (e: KeyboardEvent) => {
       const m = mediaRef.current;
       const key = e.key;
@@ -156,12 +176,12 @@ export default function Editor({
       else if (e.altKey && e.code === "KeyT") {
         if (m) insertAtCursor(`[${formatDuration(m.currentTime)}] `);
       }
-      else if ((e.ctrlKey || e.metaKey) && key.toLowerCase() === "s") save(textareaRef.current?.value ?? "", true);
+      else if ((e.ctrlKey || e.metaKey) && key.toLowerCase() === "s") save(textRef.current, true);
       else if ((e.ctrlKey || e.metaKey) && !e.altKey && (key.toLowerCase() === "y" || (key.toLowerCase() === "z" && e.shiftKey))) {
-        if (e.target === textareaRef.current) history("redo");
+        if (inEditor(e.target)) history("redo");
         else handled = false;
       } else if ((e.ctrlKey || e.metaKey) && !e.altKey && key.toLowerCase() === "z") {
-        if (e.target === textareaRef.current) history("undo");
+        if (inEditor(e.target)) history("undo");
         else handled = false;
       }
       else handled = false;
@@ -269,6 +289,10 @@ export default function Editor({
             {uploading ? <Spinner className="size-3.5" /> : <FileUp className="size-3.5" />} Upload finished file
           </button>
         </div>
+        <div ref={editorRef} className="flex flex-1 flex-col">
+        {withTables ? (
+          <BlockEditor text={text} onChange={setText} />
+        ) : (
         <textarea
           ref={textareaRef}
           className="min-h-[55vh] w-full flex-1 resize-y border-0 bg-white px-5 py-4 font-mono text-base leading-7 sm:text-[15px] text-slate-800 focus:ring-0 focus:outline-none"
@@ -277,6 +301,8 @@ export default function Editor({
           spellCheck
           aria-label="Transcript"
         />
+        )}
+        </div>
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
           <p className="text-xs text-slate-500">
             {ratePerHour != null ? (

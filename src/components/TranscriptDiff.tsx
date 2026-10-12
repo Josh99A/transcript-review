@@ -2,6 +2,7 @@
 
 import { diffWords } from "diff";
 import { useMemo, useState } from "react";
+import TranscriptView from "./TranscriptView";
 
 type View = "changes" | "final" | "original";
 
@@ -52,10 +53,8 @@ export default function TranscriptDiff({ original, edited, finalLabel }: { origi
               ),
             )
           )
-        ) : view === "final" ? (
-          edited
         ) : (
-          original
+          <TranscriptView text={view === "final" ? edited : original} className="text-[14px] whitespace-normal" />
         )}
       </div>
     </>
