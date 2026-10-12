@@ -182,7 +182,6 @@ function JobGroup({ id, title, hint, jobs, action }: { id: string; title: string
 }
 
 function SubmittedBanner({ job }: { job: MyJob }) {
-  const pay = job.earnings[0]?.amount ?? 0;
   return (
     <section role="status" className="relative mb-6 rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-600/20 sm:p-5">
       <ClearSubmitted />
@@ -192,7 +191,7 @@ function SubmittedBanner({ job }: { job: MyJob }) {
         <div className="min-w-0 space-y-2 text-sm text-emerald-900">
           <p className="text-base font-semibold">Sent for review: {job.title}</p>
           <p>
-            About <span className="num font-semibold">{formatUGX(pay)}</span> for this job is now <span className="font-medium">awaiting approval</span>. It moves to <Link href="/earnings" className="font-medium underline">your earnings</Link> when an admin approves it, and can only be paid after that.
+            It&apos;s now <span className="font-medium">awaiting review</span>. Its pay is added to <Link href="/earnings" className="font-medium underline">your earnings</Link> once an admin approves it.
           </p>
           <div>
             <p className="font-medium">What happens next</p>
@@ -227,7 +226,7 @@ function DoneGroup({ id, title, hint, jobs }: { id: string; title: string; hint:
               <span className="num flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
                 <StatusBadge status={jobBadge(j)} />
                 <span>{formatDuration(j.durationSeconds)} · {j.approvedAt ? `approved ${formatRelative(j.approvedAt)}` : `submitted ${formatDate(j.submittedAt)}`}</span>
-                {j.earnings[0] && (j.approvedAt ? <span className="font-medium text-emerald-700">{formatUGX(j.earnings[0].amount)} earned</span> : <span className="font-medium text-sky-700">{formatUGX(j.earnings[0].amount)} awaiting approval</span>)}
+                {j.earnings[0] && (j.approvedAt ? <span className="font-medium text-emerald-700">{formatUGX(j.earnings[0].amount)} earned</span> : null)}
                 <span className="inline-flex items-center gap-1 font-medium text-brand-600"><Eye className="size-4" aria-hidden /> View</span>
               </span>
             </Link>

@@ -20,7 +20,7 @@ export default async function EarningsPage() {
     db.payout.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
   ]);
   const [balance, payDate, expected] = await Promise.all([balanceFor(user.id), getNextPayDate(), expectedFor(user.id)]);
-  const { earned, owed, seconds, referralPay, referralSeconds, awaiting, awaitingJobs } = balance;
+  const { earned, owed, seconds, referralPay, referralSeconds, awaitingJobs } = balance;
   const approvedCount = earnings.filter((e) => e.job.status === "SUBMITTED" && e.job.approvedAt).length;
   const paid = payouts.reduce((s, p) => s + p.amount, 0);
   const paidPct = earned ? Math.min(100, Math.round((paid / earned) * 100)) : 0;
@@ -63,10 +63,10 @@ export default async function EarningsPage() {
           <div className="col-span-2">
             <StatCard
               icon={ClipboardCheck}
-              label="Awaiting approval"
-              value={formatUGX(awaiting)}
+              label="Awaiting review"
+              value={`${awaitingJobs} job${awaitingJobs === 1 ? "" : "s"}`}
               tone="slate"
-              hint={awaitingJobs ? <>From {awaitingJobs} submitted job{awaitingJobs === 1 ? "" : "s"} waiting for an admin. <strong className="font-medium text-slate-700">Not earned yet</strong>: it moves to Earned when approved.</> : "Nothing waiting for approval."}
+              hint={awaitingJobs ? "Submitted and waiting for an admin. Their pay is added to Earned once approved." : "Nothing waiting for review."}
             />
           </div>
           <StatCard icon={CircleCheck} label="Earned from approved work" value={formatUGX(earned)} tone="emerald" hint={`${approvedCount} approved transcript${approvedCount === 1 ? "" : "s"}`} />
@@ -93,8 +93,8 @@ export default async function EarningsPage() {
                     <tr key={e.id}>
                       <td className="font-medium text-slate-900">{e.job.title}</td>
                       <td data-label="Submitted" className="whitespace-nowrap text-slate-600">{formatDate(e.createdAt)}</td>
-                      <td data-label="Status" className="whitespace-nowrap">{e.job.status === "SUBMITTED" && e.job.approvedAt ? <span className="text-emerald-700">Approved</span> : e.job.status === "SUBMITTED" ? <span className="text-sky-700">Awaiting approval</span> : <span className="text-orange-700">Sent back for changes</span>}</td>
-                      <td data-label="Adds" className={`num text-right font-medium ${e.job.approvedAt ? "text-emerald-700" : "text-slate-400"}`}>{e.customRate ? `${formatUGX(e.amount)}` : `+${formatHours(e.seconds)}`}{e.customRate && <span className="block text-xs font-normal text-slate-400">special rate</span>}</td>
+                      <td data-label="Status" className="whitespace-nowrap">{e.job.status === "SUBMITTED" && e.job.approvedAt ? <span className="text-emerald-700">Approved</span> : e.job.status === "SUBMITTED" ? <span className="text-sky-700">Awaiting review</span> : <span className="text-orange-700">Sent back for changes</span>}</td>
+                      <td data-label="Adds" className={`num text-right font-medium ${e.job.approvedAt ? "text-emerald-700" : "text-slate-400"}`}>{!e.job.approvedAt ? <span className="font-normal">After approval</span> : <>{e.customRate ? `${formatUGX(e.amount)}` : `+${formatHours(e.seconds)}`}{e.customRate && <span className="block text-xs font-normal text-slate-400">special rate</span>}</>}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -22,10 +22,10 @@ export default function PayPicture({ expected, balance, earningsLink = true }: {
     {
       icon: ClipboardCheck,
       tone: "bg-sky-50 text-sky-600",
-      label: "Awaiting approval",
-      value: formatUGX(balance.awaiting),
+      label: "Awaiting review",
+      value: `${balance.awaitingJobs} job${balance.awaitingJobs === 1 ? "" : "s"}`,
       note: balance.awaitingJobs
-        ? `${balance.awaitingJobs} submitted job${balance.awaitingJobs === 1 ? "" : "s"} (${formatHours(balance.awaitingSeconds)}) waiting for an admin. Not earned yet: it moves to Earned when approved.`
+        ? `Submitted and waiting for an admin (${formatHours(balance.awaitingSeconds)}). Their pay is added to Earned once approved.`
         : "Nothing waiting. Work you submit shows here until an admin approves it.",
       extra: null,
     },

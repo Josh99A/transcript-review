@@ -48,7 +48,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <span className="num flex flex-wrap items-center gap-x-4 gap-y-1">
             <StatusBadge status={jobBadge(job)} />
             <span className="inline-flex items-center gap-1.5"><Clock className="size-3.5" /> {formatDuration(job.durationSeconds)}</span>
-            <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> {job.status === "SUBMITTED" && job.earnings[0] ? `${formatUGX(job.earnings[0].amount)} ${job.approvedAt ? "earned" : "awaiting approval"}` : `${jobPayLabel(job)} expected`}</span>
+            <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> {job.status === "SUBMITTED" ? (job.approvedAt && job.earnings[0] ? `${formatUGX(job.earnings[0].amount)} earned` : "Pay added once approved") : `${jobPayLabel(job)} expected`}</span>
             <JobTags job={job} />
             {due && <span className={`inline-flex items-center gap-1.5 ${due.overdue ? "text-red-700" : due.soon ? "text-amber-700" : ""}`}><CalendarClock className="size-3.5" /> {due.text}</span>}
           </span>
@@ -84,7 +84,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   ? `You submitted this on ${formatDate(job.submittedAt)} and it was approved ${formatRelative(job.approvedAt)}. Nothing more to do.`
                   : `You submitted this on ${formatDate(job.submittedAt)}. An admin will review it, and you'll be notified if they approve it or ask for changes.`}
               </p>
-              {job.earnings[0] && <p className="num mt-0.5 text-xs opacity-80">{job.approvedAt ? `${formatUGX(job.earnings[0].amount)} added to your earnings for this job.` : `${formatUGX(job.earnings[0].amount)} for this job is awaiting approval. It's added to your earnings when an admin approves it.`}</p>}
+              {job.earnings[0] && <p className="num mt-0.5 text-xs opacity-80">{job.approvedAt ? `${formatUGX(job.earnings[0].amount)} added to your earnings for this job.` : "Its pay is added to your earnings when an admin approves it."}</p>}
             </div>
             <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary btn-sm"><Download className="size-3.5" /> .txt</a>
           </div>
