@@ -1,7 +1,7 @@
 "use client";
 
 import { diffWords } from "diff";
-import { Check, CloudUpload, Keyboard, Send, Undo2 } from "lucide-react";
+import { Check, CloudUpload, Download, FileUp, Keyboard, Send, Undo2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { saveDraft, submitJob } from "@/app/actions";
@@ -49,6 +49,9 @@ export default function Editor({
   const [restoreOpen, setRestoreOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const [submitting, startSubmit] = useTransition();
+  const [uploadedFrom, setUploadedFrom] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
   const mediaRef = useRef<HTMLMediaElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const isVideo = mediaType.startsWith("video");
@@ -155,9 +158,28 @@ export default function Editor({
 
   function submit() {
     startSubmit(async () => {
-      const res = await submitJob(jobId, text);
+      const res = await submitJob(jobId, text, uploadedFrom ?? undefined);
       if (res?.error) toast.error(res.error);
     });
+  }
+
+  async function upload(file: File) {
+    setUploading(true);
+    try {
+      const data = new FormData();
+      data.set("file", file);
+      const res = await fetch(`/api/jobs/${jobId}/upload`, { method: "POST", body: data });
+      const body = await res.json().catch(() => ({ error: "Upload failed. Try again." }));
+      if (!res.ok || typeof body.text !== "string") return void toast.error(body.error ?? "Upload failed. Try again.");
+      setText(body.text);
+      setUploadedFrom(file.name);
+      setConfirmOpen(true);
+    } catch {
+      toast.error("Upload failed. Check your connection and try again.");
+    } finally {
+      setUploading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   }
 
   const status = {
@@ -203,6 +225,15 @@ export default function Editor({
             </button>
           </div>
         </div>
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 text-xs text-slate-500">
+          <span className="mr-auto">Prefer Word? Download the original, edit it, then upload it to submit.</span>
+          <a href={`/api/jobs/${jobId}/transcript?format=docx&version=original`} className="btn-ghost btn-sm"><Download className="size-3.5" /> Original .docx</a>
+          <a href={`/api/jobs/${jobId}/transcript?version=original`} className="btn-ghost btn-sm"><Download className="size-3.5" /> .txt</a>
+          <input ref={fileRef} type="file" accept=".docx,.txt" className="sr-only" id={`up-${jobId}`} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />
+          <button type="button" className="btn-secondary btn-sm" onClick={() => fileRef.current?.click()} disabled={uploading || submitting}>
+            {uploading ? <Spinner className="size-3.5" /> : <FileUp className="size-3.5" />} Upload finished file
+          </button>
+        </div>
         <textarea
           ref={textareaRef}
           className="min-h-[55vh] w-full flex-1 resize-y border-0 bg-white px-5 py-4 font-mono text-base leading-7 sm:text-[15px] text-slate-800 focus:ring-0 focus:outline-none"
@@ -227,9 +258,9 @@ export default function Editor({
 
       <Modal
         open={confirmOpen}
-        onClose={() => !submitting && setConfirmOpen(false)}
-        title="Submit this transcript?"
-        description="Once submitted you can't edit it unless an admin sends it back."
+        onClose={() => { if (!submitting) { setConfirmOpen(false); setUploadedFrom(null); } }}
+        title={uploadedFrom ? `Submit ${uploadedFrom}?` : "Submit this transcript?"}
+        description={uploadedFrom ? "Your file's text is now in the editor. Check the changes below, then submit. You can't edit it after that unless an admin sends it back." : "Once submitted you can't edit it unless an admin sends it back."}
       >
         <dl className="mb-5 grid grid-cols-3 gap-3 rounded-lg bg-slate-50 p-4 text-center">
           <div><dt className="text-xs text-slate-500">Words added</dt><dd className="num mt-0.5 font-semibold text-emerald-700">+{changes.added}</dd></div>
@@ -240,7 +271,7 @@ export default function Editor({
           <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">You haven&apos;t changed anything from the original yet.</p>
         )}
         <div className="flex justify-end gap-2">
-          <button type="button" className="btn-secondary" onClick={() => setConfirmOpen(false)} disabled={submitting}>Keep editing</button>
+          <button type="button" className="btn-secondary" onClick={() => { setConfirmOpen(false); setUploadedFrom(null); }} disabled={submitting}>Keep editing</button>
           <button type="button" className="btn" onClick={submit} disabled={submitting}>
             {submitting ? <Spinner /> : <Send className="size-4" />} Submit
           </button>

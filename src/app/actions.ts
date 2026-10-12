@@ -481,7 +481,7 @@ export async function saveDraft(jobId: string, text: string): Promise<FormState>
 
 const MAX_TRANSCRIPT = 2_000_000;
 
-export async function submitJob(jobId: string, text: string): Promise<FormState> {
+export async function submitJob(jobId: string, text: string, fileName?: string): Promise<FormState> {
   const user = await requireUser();
   if (!text.trim()) return { error: "The transcript is empty." };
   if (text.length > MAX_TRANSCRIPT) return { error: "The transcript is too long to save." };
@@ -508,7 +508,7 @@ export async function submitJob(jobId: string, text: string): Promise<FormState>
   if (failed(res)) return res;
   await notifyAdmins({
     title: `${user.name} submitted ${res.title}`,
-    body: res.revisions > 0 ? "Resubmitted after your changes. Ready to review." : "Ready to review.",
+    body: [res.revisions > 0 ? "Resubmitted after your changes." : null, fileName ? `Uploaded as a file (${fileName.slice(0, 100)}).` : null, "Ready to review."].filter(Boolean).join(" "),
     href: `/admin/jobs/${jobId}`,
   });
   revalidatePath("/jobs");
