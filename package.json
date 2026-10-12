@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",
+    "@types/sanitize-html": "^2.16.2",
     "bcryptjs": "^3.0.3",
     "cloudinary": "^2.11.0",
     "diff": "^9.0.0",
@@ -23,6 +24,7 @@
     "prisma": "^6.19.3",
     "react": "^19.3.0",
     "react-dom": "^19.3.0",
+    "sanitize-html": "^2.18.0",
     "server-only": "^0.0.1",
     "sonner": "^2.0.8",
     "zod": "^4.6.5"

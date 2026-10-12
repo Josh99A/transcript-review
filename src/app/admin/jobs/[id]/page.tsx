@@ -1,8 +1,13 @@
 import { ArrowLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, X } from "lucide-react";
+import RichText from "@/components/RichText";
+import RichTextEditor from "@/components/RichTextEditor";
+import Guidelines from "@/components/Guidelines";
+import { getGuidelines } from "@/lib/guidelines";
+import { richHtml } from "@/lib/richtext";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { approveJob, approveRequest, assignJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, updateDuration, updateJobDetails } from "@/app/actions";
+import { approveJob, approveRequest, assignJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
 import { ActionForm, ConfirmAction } from "@/components/client";
 import MediaPlayer from "@/components/MediaPlayer";
 import StatusBadge, { jobBadge } from "@/components/StatusBadge";
@@ -27,6 +32,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 export default async function AdminJobPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
   const { id } = await params;
+  const guidelines = await getGuidelines();
   const [job, users] = await Promise.all([
     db.job.findUnique({
       where: { id },
@@ -67,7 +73,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
           <section className="card">
             <div className="card-header"><h2 className="card-title">Details</h2></div>
             <div className="card-body space-y-3 text-sm">
-              {job.description ? <p className="whitespace-pre-line text-slate-700">{job.description}</p> : <p className="text-slate-400">No details for transcribers yet.</p>}
+              {job.description ? <RichText html={job.description} className="text-slate-700" /> : <p className="text-slate-400">No details for transcribers yet.</p>}
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-slate-600">
                 <span>Language: <span className="text-slate-900">{job.language ?? "Not set"}</span></span>
                 <span>Deadline: <span className={due?.overdue ? "text-red-700" : "text-slate-900"}>{due?.text ?? "None"}</span></span>
@@ -77,7 +83,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                 <ActionForm action={updateJobDetails} className="mt-3 space-y-3">
                   <input type="hidden" name="jobId" value={job.id} />
                   <div><label className="label" htmlFor="d-title">Title</label><input className="input" id="d-title" name="title" defaultValue={job.title} required /></div>
-                  <div><label className="label" htmlFor="d-desc">Details for transcribers</label><textarea className="input h-24" id="d-desc" name="description" defaultValue={job.description} /></div>
+                  <div><label className="label" htmlFor="d-desc">Details for transcribers</label><RichTextEditor name="description" id="d-desc" defaultValue={richHtml(job.description)} /></div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div><label className="label" htmlFor="d-lang">Language</label><input className="input" id="d-lang" name="language" defaultValue={job.language ?? ""} /></div>
                     <div><label className="label" htmlFor="d-due">Deadline</label><input className="input" id="d-due" name="deadline" type="date" defaultValue={deadlineInput(job.deadline)} /></div>
@@ -88,6 +94,16 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
               </details>
             </div>
           </section>
+          <Guidelines html={guidelines} open={false}>
+            <details className="mt-3 border-t border-slate-100 pt-3">
+              <summary className="cursor-pointer font-medium text-brand-600 hover:text-brand-700">Edit guidelines</summary>
+              <ActionForm action={updateGuidelines} className="mt-3 space-y-3">
+                <RichTextEditor name="guidelines" id="guidelines" defaultValue={guidelines} minHeight="10rem" />
+                <p className="hint">These show on every job, for every transcriber.</p>
+                <button className="btn">Save guidelines</button>
+              </ActionForm>
+            </details>
+          </Guidelines>
           {job.mediaRemovedAt ? <MediaRemoved at={job.mediaRemovedAt} /> : <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>}
           {/* Review links land here: the comparison, with the approve and send-back controls right under it. */}
           <div id="review" className="scroll-mt-4 space-y-6">
@@ -114,7 +130,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                     <ActionForm action={reopenJob} className="space-y-2 border-t border-slate-100 pt-4" confirm={{ title: "Send this back for changes?", description: `${job.assignee?.name ?? "The transcriber"} gets your instructions and the job reopens in their editor.`, label: "Send back" }}>
                       <input type="hidden" name="jobId" value={job.id} />
                       <label className="label" htmlFor="review-note">{job.approvedAt ? "Still needs changes?" : "Not satisfactory?"}</label>
-                      <textarea className="input h-28" id="review-note" name="note" required maxLength={5000} placeholder="e.g. Speaker names are missing from 02:10 to 04:30, and fix the spelling of Kampala." />
+                      <RichTextEditor name="note" id="review-note" minHeight="7rem" placeholder="e.g. Speaker names are missing from 02:10 to 04:30, and fix the spelling of Kampala." />
                       <button className="btn-secondary w-full"><Undo2 className="size-4" /> Send back with instructions</button>
                       <p className="text-xs text-slate-500">{job.assignee?.name ?? "The transcriber"} sees your instructions and can edit again. Pay already credited stays, and resubmitting won&apos;t pay twice.</p>
                     </ActionForm>
@@ -129,7 +145,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
           {job.status === "ASSIGNED" && job.reviewNote && (
             <section className="rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-900 ring-1 ring-orange-600/15">
               <p className="flex items-center gap-2 font-medium"><MessageSquareWarning className="size-4 shrink-0" /> Sent back {formatRelative(job.reviewedAt)}{job.revisions > 1 ? ` (round ${job.revisions})` : ""}</p>
-              <p className="mt-1 whitespace-pre-line">{job.reviewNote}</p>
+              <RichText html={job.reviewNote} className="mt-1" />
             </section>
           )}
           {job.status === "UNASSIGNED" && (

@@ -1,4 +1,5 @@
 import { CalendarClock, Clock, FileAudio, FileVideo, Languages, Search, Wallet } from "lucide-react";
+import RichText from "@/components/RichText";
 import type { Metadata } from "next";
 import { EmptyState, PageHeader } from "@/components/ui";
 import { requireRole } from "@/lib/auth";
@@ -48,7 +49,7 @@ export default async function BoardPage() {
                     </div>
                   )}
                 </dl>
-                {j.description && <p className="mt-3 text-sm whitespace-pre-line text-slate-700">{j.description}</p>}
+                {j.description && <RichText html={j.description} className="mt-3 text-sm text-slate-700" />}
                 <div className="mt-auto pt-4">
                   <RequestButton jobId={j.id} title={j.title} status={j.requests[0]?.status ?? null} />
                 </div>

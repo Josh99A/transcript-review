@@ -1,4 +1,5 @@
 import { ArrowRight, CircleCheck, Clock, FileAudio, FileVideo, Inbox } from "lucide-react";
+import { richText } from "@/lib/richtext";
 import type { Prisma } from "@prisma/client";
 import type { Metadata } from "next";
 import Link from "next/link";
@@ -148,7 +149,7 @@ function JobGroup({ id, title, hint, jobs, action }: { id: string; title: string
                 </span>
                 <div className="min-w-0 flex-1">
                   <span className="block min-w-0 font-medium break-words text-slate-900">{j.title}</span>
-                  {j.reviewNote && <span className="mt-0.5 line-clamp-2 block text-sm text-red-700">{j.reviewNote}</span>}
+                  {j.reviewNote && <span className="mt-0.5 line-clamp-2 block text-sm text-red-700">{richText(j.reviewNote)}</span>}
                   <div className="num mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
                     <span className="inline-flex items-center gap-1"><Clock className="size-3" /> {formatDuration(j.durationSeconds)}</span>
                     <span className="font-medium text-slate-700">{jobPayLabel(j)}</span>

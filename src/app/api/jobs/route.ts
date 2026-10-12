@@ -1,3 +1,4 @@
+import { cleanRich, richText } from "@/lib/richtext";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -18,7 +19,8 @@ export async function POST(req: Request) {
   // "" posts the job on the board, "__hold" keeps it unassigned and off the board.
   const assignTo = String(form.get("assigneeId") ?? "");
   const assigneeId = assignTo && assignTo !== "__hold" ? assignTo : null;
-  const description = String(form.get("description") ?? "").trim().slice(0, 5000);
+  const description = cleanRich(String(form.get("description") ?? "").slice(0, 50000));
+  if (richText(description).length > 5000) return NextResponse.json({ error: "Keep the details under 5,000 characters." }, { status: 400 });
   const language = String(form.get("language") ?? "").trim().slice(0, 60) || null;
   const deadline = parseDeadline(String(form.get("deadline") ?? ""));
   const fixedPay = parseFixedPay(form.get("fixedPay"));

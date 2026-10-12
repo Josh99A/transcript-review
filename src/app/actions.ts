@@ -5,6 +5,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
+import { cleanRich, richText } from "@/lib/richtext";
+import { setGuidelines } from "@/lib/guidelines";
 import { createSession, destroySession, homeFor, requireAdmin, requireRole, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
@@ -240,7 +242,7 @@ async function settleRequests(tx: Prisma.TransactionClient, jobId: string, assig
 
 const detailsSchema = z.object({
   title: z.string().trim().min(1, "Give the job a title"),
-  description: z.string().trim().max(5000).default(""),
+  description: z.string().trim().max(50000).default(""),
   language: z.string().trim().max(60).default(""),
   deadline: z.string().trim().regex(/^(\d{4}-\d{2}-\d{2})?$/, "Enter a valid deadline").default(""),
 });
@@ -250,7 +252,9 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
   const jobId = String(formData.get("jobId"));
   const parsed = detailsSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  const { title, description, language, deadline } = parsed.data;
+  const { title, language, deadline } = parsed.data;
+  const description = cleanRich(parsed.data.description);
+  if (richText(description).length > 5000) return { error: "Keep the details under 5,000 characters." };
   const fixedPay = parseFixedPay(formData.get("fixedPay"));
   if (fixedPay === "invalid") return { error: "Enter the fixed price as a whole number of shillings, or leave it empty." };
   const job = await db.job.update({
@@ -326,7 +330,8 @@ export async function declineRequest(formData: FormData): Promise<FormState> {
 export async function reopenJob(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const jobId = String(formData.get("jobId"));
-  const note = String(formData.get("note") ?? "").trim().slice(0, 5000);
+  const note = cleanRich(String(formData.get("note") ?? ""));
+  if (richText(note).length > 5000) return { error: "Keep the instructions under 5,000 characters." };
   if (!note) return { error: "Write what needs to change so the transcriber knows what to fix." };
   const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
   if (job.status !== "SUBMITTED") return { error: "Only submitted jobs can be sent back." };
@@ -338,7 +343,7 @@ export async function reopenJob(formData: FormData): Promise<FormState> {
     data: { status: "ASSIGNED", submittedAt: null, approvedAt: null, reviewNote: note, reviewedAt: new Date(), revisions: { increment: 1 } },
   });
   if (!count) return { error: "This job changed while you were looking at it. Reload and try again." };
-  await notify([job.assigneeId], { title: `Changes needed: ${job.title}`, body: note, href: `/jobs/${jobId}` });
+  await notify([job.assigneeId], { title: `Changes needed: ${job.title}`, body: richText(note).slice(0, 500), href: `/jobs/${jobId}` });
   revalidatePath("/admin/reviews");
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
@@ -561,4 +566,14 @@ export async function markAllNotificationsRead(): Promise<FormState> {
   await db.notification.updateMany({ where: { userId: user.id, readAt: null }, data: { readAt: new Date() } });
   revalidatePath("/notifications");
   return { ok: "All caught up." };
+}
+
+/** Saves the transcription guidelines shown on every job. */
+export async function updateGuidelines(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const html = cleanRich(String(formData.get("guidelines") ?? ""));
+  if (richText(html).length > 10000) return { error: "Keep the guidelines under 10,000 characters." };
+  await setGuidelines(html);
+  revalidatePath("/", "layout");
+  return { ok: html ? "Guidelines saved. Every job now shows them." : "Guidelines removed." };
 }

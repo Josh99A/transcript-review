@@ -1,4 +1,7 @@
 import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, Languages, MessageSquareWarning, Pencil, Wallet } from "lucide-react";
+import RichText from "@/components/RichText";
+import Guidelines from "@/components/Guidelines";
+import { getGuidelines } from "@/lib/guidelines";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -18,7 +21,7 @@ export const metadata: Metadata = { title: "Edit transcript" };
 export default async function JobPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requireRole("USER");
   const { id } = await params;
-  const job = await db.job.findUnique({ where: { id } });
+  const [job, guidelines] = await Promise.all([db.job.findUnique({ where: { id } }), getGuidelines()]);
   if (!job || job.assigneeId !== user.id) notFound();
   const due = job.deadline && job.status === "ASSIGNED" ? formatDeadline(job.deadline) : null;
 
@@ -42,17 +45,19 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         }
       />
       {job.description && (
-        <div className="mb-4 rounded-xl bg-brand-50/60 px-4 py-3 text-sm whitespace-pre-line text-slate-700 ring-1 ring-brand-600/10">
-          <span className="font-medium text-slate-900">Notes from the admin: </span>{job.description}
+        <div className="mb-4 rounded-xl bg-brand-50/60 px-4 py-3 text-sm text-slate-700 ring-1 ring-brand-600/10">
+          <p className="font-medium text-slate-900">Notes from the admin</p>
+          <RichText html={job.description} className="mt-1" />
         </div>
       )}
       {job.status === "ASSIGNED" && job.reviewNote && (
         <div className="mb-4 rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-900 ring-1 ring-orange-600/15">
           <p className="flex items-center gap-2 font-medium"><MessageSquareWarning className="size-4 shrink-0" /> The admin reviewed this {formatRelative(job.reviewedAt)} and asked for changes:</p>
-          <p className="mt-1 whitespace-pre-line">{job.reviewNote}</p>
+          <RichText html={job.reviewNote} className="mt-1" />
           <p className="mt-2 text-xs text-orange-800">Make the changes below and submit again.</p>
         </div>
       )}
+      <Guidelines html={guidelines} open={job.status === "ASSIGNED"} />
       {job.status === "ASSIGNED" ? (
         <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} seconds={job.durationSeconds} fixedPay={job.fixedPay} />
       ) : (

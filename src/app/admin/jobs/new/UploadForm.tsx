@@ -1,5 +1,6 @@
 "use client";
 
+import RichTextEditor from "@/components/RichTextEditor";
 import { CloudUpload, FileAudio, FileText, FileVideo, Pencil, TriangleAlert, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
@@ -79,7 +80,6 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
   const [pasted, setPasted] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
-  const [description, setDescription] = useState("");
   const [language, setLanguage] = useState("");
   const [deadline, setDeadline] = useState("");
   const [fixedPay, setFixedPay] = useState("");
@@ -122,7 +122,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
     data.set("media", media);
     data.set("durationSeconds", String(Math.round(effectiveDuration)));
     data.set("assigneeId", assigneeId);
-    data.set("description", description);
+    data.set("description", String(new FormData(e.currentTarget as HTMLFormElement).get("description") ?? ""));
     data.set("language", language);
     data.set("deadline", deadline);
     data.set("fixedPay", fixedPay);
@@ -237,7 +237,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
           </div>
           <div className="mt-4">
             <label className="label" htmlFor="description">Details for transcribers <span className="font-normal text-slate-400">(optional)</span></label>
-            <textarea className="input h-24" id="description" value={description} onChange={(e) => setDescription(e.target.value)} placeholder="e.g. Two speakers, some Luganda. Label speakers and keep timestamps." />
+            <RichTextEditor name="description" id="description" placeholder="e.g. Two speakers, some Luganda. Label speakers and keep timestamps." />
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
