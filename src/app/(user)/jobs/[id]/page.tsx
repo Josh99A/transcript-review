@@ -1,4 +1,4 @@
-import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, LifeBuoy, LogOut, MessageSquareWarning, Pencil, Send, Wallet } from "lucide-react";
+import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, LifeBuoy, LogOut, MessageSquareWarning, Send, Undo2, Wallet } from "lucide-react";
 import JobTags from "@/components/JobTags";
 import RichText from "@/components/RichText";
 import Guidelines from "@/components/Guidelines";
@@ -83,10 +83,10 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary btn-sm"><Download className="size-3.5" /> .txt</a>
           </div>
           {!job.approvedAt && !job.mediaRemovedAt && (
-            <ActionForm action={withdrawSubmission} className="card flex flex-wrap items-center gap-3 px-4 py-3" confirm={{ title: "Take this submission back?", description: "It leaves the admin's review list until you submit it again. You keep the pay already credited.", label: "Take it back and edit" }}>
+            <ActionForm action={withdrawSubmission} className="card flex flex-wrap items-center gap-3 px-4 py-3" confirm={{ title: "Unsubmit this transcript?", description: `It goes back to In progress with your edits kept, and leaves the admin's review list. The ${job.earnings[0] ? formatUGX(job.earnings[0].amount) : "pay"} added for it comes off your earnings until you submit again.`, label: "Unsubmit and edit" }}>
               <input type="hidden" name="jobId" value={job.id} />
-              <p className="min-w-0 flex-1 text-sm text-slate-600">Spotted a mistake? Take the submission back, fix it in the editor or upload a new file, and resubmit before the admin reviews it. You won&apos;t be paid twice.</p>
-              <button className="btn-secondary w-full sm:w-auto"><Pencil className="size-4" /> Edit and resubmit</button>
+              <p className="min-w-0 flex-1 text-sm text-slate-600">Made a mistake? Unsubmit it, fix it in the editor or upload a new file, then submit again. You can do this until an admin reviews it.</p>
+              <button className="btn-secondary w-full sm:w-auto"><Undo2 className="size-4" /> Unsubmit</button>
             </ActionForm>
           )}
           {job.mediaRemovedAt ? <MediaRemoved at={job.mediaRemovedAt} /> : <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>}

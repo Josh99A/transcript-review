@@ -548,16 +548,25 @@ export async function submitJob(jobId: string, text: string, fileName?: string):
 export async function withdrawSubmission(formData: FormData): Promise<FormState> {
   const user = await requireRole("USER");
   const jobId = String(formData.get("jobId"));
-  const { count } = await db.job.updateMany({
-    where: { id: jobId, assigneeId: user.id, status: "SUBMITTED", approvedAt: null, mediaRemovedAt: null },
-    data: { status: "ASSIGNED", submittedAt: null },
+  // Unsubmitting takes back the pay added on submit; submitting again adds it once more.
+  const res = await guarded(async (tx) => {
+    await lockPayments(tx);
+    const job = await lockJob(tx, jobId);
+    if (!job || job.assigneeId !== user.id || job.status !== "SUBMITTED" || job.approvedAt || job.mediaRemovedAt) {
+      refuse("This submission can't be changed any more. The admin may have already reviewed it.");
+    }
+    await tx.job.update({ where: { id: jobId }, data: { status: "ASSIGNED", submittedAt: null } });
+    await tx.earning.deleteMany({ where: { jobId, userId: user.id } });
+    return job!;
   });
-  if (!count) return { error: "This submission can't be changed any more. The admin may have already reviewed it." };
+  if (failed(res)) return res;
+  await notifyAdmins({ title: `${user.name} unsubmitted ${res.title}`, body: "They're fixing a mistake and will submit it again. No need to review it yet.", href: `/admin/jobs/${jobId}` });
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/jobs");
+  revalidatePath("/earnings");
   revalidatePath("/admin/reviews");
   revalidatePath("/admin");
-  return { ok: "You can edit it again. Submit when you're done." };
+  return { ok: "Unsubmitted. Fix it and submit again when you're done." };
 }
 
 // ---------- Notifications ----------

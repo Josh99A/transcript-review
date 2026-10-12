@@ -1,5 +1,7 @@
-import { ArrowRight, CircleCheck, Clock, Eye, FileAudio, FileVideo, X } from "lucide-react";
+import { ArrowRight, CircleCheck, Clock, Eye, FileAudio, FileVideo, Undo2, X } from "lucide-react";
 import PayPicture from "@/components/PayPicture";
+import { ActionForm } from "@/components/client";
+import { withdrawSubmission } from "@/app/actions";
 import JobTags from "@/components/JobTags";
 import { richText } from "@/lib/richtext";
 import type { Prisma } from "@prisma/client";
@@ -192,10 +194,16 @@ function SubmittedBanner({ job }: { job: MyJob }) {
             <ul className="mt-1 list-disc space-y-0.5 pl-5">
               <li>An admin checks your work. You&apos;ll get a notification when they approve it or ask for changes.</li>
               <li>If they ask for changes, the job moves to Needs changes with their notes.</li>
-              <li>Until it&apos;s reviewed, you can still take it back to fix a mistake.</li>
+              <li>Made a mistake? You can unsubmit it until it&apos;s reviewed.</li>
             </ul>
           </div>
-          <Link href={`/jobs/${job.id}`} className="btn-secondary btn-sm inline-flex"><Eye className="size-3.5" /> View what you submitted</Link>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/jobs/${job.id}`} className="btn-secondary btn-sm inline-flex"><Eye className="size-3.5" /> View what you submitted</Link>
+            <ActionForm action={withdrawSubmission} redirectTo={`/jobs/${job.id}`} confirm={{ title: "Unsubmit this transcript?", description: `It goes back to In progress with your edits kept. The ${formatUGX(pay)} added for it comes off your earnings until you submit again.`, label: "Unsubmit and edit" }}>
+              <input type="hidden" name="jobId" value={job.id} />
+              <button className="btn-secondary btn-sm"><Undo2 className="size-3.5" /> Unsubmit</button>
+            </ActionForm>
+          </div>
         </div>
       </div>
     </section>
