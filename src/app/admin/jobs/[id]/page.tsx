@@ -208,7 +208,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
             <div className="card-body space-y-4">
               {job.assignee && <UserCell name={job.assignee.name} sub={job.assignee.email} />}
               {job.status === "SUBMITTED" ? null : (
-                <ActionForm action={assignJob} className="space-y-2" confirm={{ title: job.assignee ? "Change who has this job?" : "Assign this job?", description: job.assignee ? `${job.assignee.name} loses access to it and is told. Their draft stays on the job for the next person.` : "The person you picked is told and can start right away.", label: "Save assignment" }}>
+                <ActionForm action={assignJob} className="space-y-2" confirm={{ title: job.assignee ? "Change who has this job?" : "Assign this job?", description: job.assignee ? `${job.assignee.name} loses access to it and is told. Their draft stays on the job for the next person${job.earnings.some((e) => e.userId === job.assigneeId) ? ", and the pay credited to them for it is removed" : ""}.` : "The person you picked is told and can start right away.", label: "Save assignment" }}>
                   <input type="hidden" name="jobId" value={job.id} />
                   <label className="label" htmlFor="assigneeId">{job.assignee ? "Reassign to" : "Assign to"}</label>
                   <div className="flex gap-2">

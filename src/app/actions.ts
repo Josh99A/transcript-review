@@ -1,5 +1,6 @@
 "use server";
 
+import { payProblems } from "@/lib/payCheck";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -146,19 +147,24 @@ export async function payEveryone(): Promise<FormState> {
   // One pay run at a time, so a double click or two admins can't pay the same balance twice.
   const payouts = await db.$transaction(async (tx) => {
     await lockPayments(tx);
-    const [balances, people] = await Promise.all([
+    const [balances, people, problems] = await Promise.all([
       balancesByUser(tx),
       tx.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, select: { id: true } }),
+      payProblems(tx),
     ]);
-    const rows = people.map((p) => ({ userId: p.id, amount: balances.get(p.id)?.owed ?? 0, note })).filter((p) => p.amount > 0);
+    // People with pay that doesn't match their jobs are left out until it's fixed.
+    const held = new Set(problems.map((p) => p.userId));
+    const rows = people.map((p) => ({ userId: p.id, amount: balances.get(p.id)?.owed ?? 0, note })).filter((p) => p.amount > 0 && !held.has(p.userId));
     if (rows.length) await tx.payout.createMany({ data: rows });
-    return rows;
+    return { rows, held: people.filter((p) => held.has(p.id) && (balances.get(p.id)?.owed ?? 0) > 0).length };
   });
-  if (payouts.length === 0) return { error: "Nobody is owed anything right now." };
-  await Promise.all(payouts.map((p) => notify([p.userId], { title: `You were paid UGX ${p.amount.toLocaleString("en-US")}`, body: note, href: "/earnings" })));
+  const { rows: payoutRows, held } = payouts;
+  const skipped = held ? ` ${held} ${held === 1 ? "person was" : "people were"} left out because of a pay problem; see the warning on Team & payments.` : "";
+  if (payoutRows.length === 0) return { error: held ? `Nobody was paid.${skipped}` : "Nobody is owed anything right now." };
+  await Promise.all(payoutRows.map((p) => notify([p.userId], { title: `You were paid UGX ${p.amount.toLocaleString("en-US")}`, body: note, href: "/earnings" })));
   revalidatePath("/", "layout");
-  const total = payouts.reduce((s, p) => s + p.amount, 0);
-  return { ok: `Recorded ${payouts.length} payment${payouts.length === 1 ? "" : "s"} totalling UGX ${total.toLocaleString("en-US")}.` };
+  const total = payoutRows.reduce((s, p) => s + p.amount, 0);
+  return { ok: `Recorded ${payoutRows.length} payment${payoutRows.length === 1 ? "" : "s"} totalling UGX ${total.toLocaleString("en-US")}.${skipped}` };
 }
 
 /** Serializes everything that reads balances and records payments. */
@@ -200,6 +206,11 @@ export async function assignJob(formData: FormData): Promise<FormState> {
     if (assigneeId) {
       const person = await tx.user.findUnique({ where: { id: assigneeId }, select: { role: true } });
       if (person?.role !== "USER") refuse("Jobs can only go to transcribers.");
+    }
+    // Moving a job off someone takes back any pay they had for it, as leaving or unassigning does.
+    if (job.assigneeId) {
+      await lockPayments(tx);
+      await tx.earning.deleteMany({ where: { jobId, userId: job.assigneeId } });
     }
     await tx.job.update({
       where: { id: jobId },
@@ -444,6 +455,8 @@ export async function recordPayout(formData: FormData): Promise<FormState> {
   if (!Number.isFinite(amount) || amount <= 0) return { error: "Enter an amount greater than zero." };
   const res = await guarded(async (tx) => {
     await lockPayments(tx);
+    const problem = (await payProblems(tx)).find((p) => p.userId === userId);
+    if (problem) refuse(`Fix the pay problem on ${problem.jobTitle} first: ${problem.problem}`);
     const owed = (await balancesByUser(tx)).get(userId)?.owed ?? 0;
     if (amount > owed) refuse(`That's more than they're owed (UGX ${Math.max(owed, 0).toLocaleString("en-US")}).`);
     await tx.payout.create({ data: { userId, amount, note } });
@@ -550,8 +563,8 @@ export async function withdrawSubmission(formData: FormData): Promise<FormState>
   const jobId = String(formData.get("jobId"));
   // Unsubmitting takes back the pay added on submit; submitting again adds it once more.
   const res = await guarded(async (tx) => {
-    await lockPayments(tx);
     const job = await lockJob(tx, jobId);
+    await lockPayments(tx);
     if (!job || job.assigneeId !== user.id || job.status !== "SUBMITTED" || job.approvedAt || job.mediaRemovedAt) {
       refuse("This submission can't be changed any more. The admin may have already reviewed it.");
     }

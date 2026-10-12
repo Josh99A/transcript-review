@@ -1,4 +1,6 @@
 import { CircleCheck, FileAudio, FileVideo, Hourglass, Inbox, Search, Upload, Wallet } from "lucide-react";
+import PayProblems from "@/components/PayProblems";
+import { payProblems } from "@/lib/payCheck";
 import SortSelect from "@/components/SortSelect";
 import { pickSort, sortJobs, sortOptions, type SortKey } from "@/lib/sort";
 import JobTags from "@/components/JobTags";
@@ -35,7 +37,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const filter: Filter = FILTERS.includes(status as Filter) ? (status as Filter) : "ALL";
   const query = q.trim();
 
-  const [jobs, users, balances, expected, counts, payDate, stored, pendingRequests] = await Promise.all([
+  const [jobs, users, balances, problems, expected, counts, payDate, stored, pendingRequests] = await Promise.all([
     db.job.findMany({
       where: {
         ...(filter === "ALL" ? {} : { status: filter }),
@@ -45,6 +47,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     }),
     db.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, orderBy: { name: "asc" } }),
     balancesByUser(),
+    payProblems(),
     expectedByUser(),
     db.job.groupBy({ by: ["status"], _count: true }),
     getNextPayDate(),
@@ -83,6 +86,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
         }
       />
 
+      <PayProblems problems={problems} />
       <StatList
         stats={[
           { icon: Inbox, label: "Waiting to assign", value: count("UNASSIGNED"), tone: "slate", hint: pendingRequests ? <Link href="/admin/requests" className="font-medium text-brand-600 hover:text-brand-700">{pendingRequests} request{pendingRequests === 1 ? "" : "s"} to review</Link> : undefined },

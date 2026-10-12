@@ -1,4 +1,6 @@
 import { Banknote, HandCoins, Hourglass, Users, Wallet } from "lucide-react";
+import PayProblems from "@/components/PayProblems";
+import { payProblems } from "@/lib/payCheck";
 import type { Metadata } from "next";
 import { EmptyState, PageHeader, StatList, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
@@ -12,12 +14,13 @@ export const metadata: Metadata = { title: "Team & payments" };
 
 export default async function UsersPage() {
   await requireAdmin();
-  const [users, balances, expected, payouts, jobCounts] = await Promise.all([
+  const [users, balances, problems, expected, payouts, jobCounts] = await Promise.all([
     db.user.findMany({
       orderBy: [{ role: "desc" }, { name: "asc" }],
       include: { _count: { select: { referrals: true } } },
     }),
     balancesByUser(),
+    payProblems(),
     expectedByUser(),
     db.payout.findMany({ orderBy: { createdAt: "desc" }, take: 50, include: { user: { select: { name: true } } } }),
     db.job.groupBy({ by: ["assigneeId", "status"], _count: true }),
@@ -45,6 +48,7 @@ export default async function UsersPage() {
     <>
       <PageHeader title="Team & payments" description="Add people, see what each person is owed and record payments." actions={<NewUserButton referrers={referrerOptions} />} />
 
+      <PayProblems problems={problems} />
       <StatList
         stats={[
           { icon: Wallet, label: "Owed now", value: formatUGX(totals.owed), tone: "brand" },
