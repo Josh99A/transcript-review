@@ -26,7 +26,11 @@ export default async function UsersPage() {
   const transcribers = users.filter((u) => u.role === "USER");
   const referrers = users.filter((u) => u.role === "REFERRER");
   const admins = users.filter((u) => u.role === "ADMIN");
-  const referrerOptions = referrers.map((r) => ({ id: r.id, name: r.name }));
+  // Transcribers can refer people too; their referral pay joins their transcriber balance.
+  const referrerOptions = [...referrers.map((r) => ({ id: r.id, name: r.name })), ...transcribers.map((t) => ({ id: t.id, name: `${t.name} (transcriber)` }))];
+  const optionsFor = (id: string) => referrerOptions.filter((o) => o.id !== id);
+  const referrerList = [...referrers, ...transcribers.filter((t) => t._count.referrals > 0)];
+  const fromReferrals = (id: string) => balances.get(id)?.referralPay ?? 0;
   const totals = [...transcribers, ...referrers].reduce(
     (t, u) => {
       const b = balances.get(u.id) ?? zero;
@@ -62,11 +66,11 @@ export default async function UsersPage() {
                   <dl className="space-y-1.5 text-sm">
                     <Line label="Pay to"><PayTo user={u} /></Line>
                     <Line label="Jobs"><span className="num">{jobsFor(u.id, "SUBMITTED")} done · {jobsFor(u.id, "ASSIGNED")} in progress</span></Line>
-                    <Line label="Earned"><span className="num">{formatUGX(b.earned)}</span></Line>
+                    <Line label="Earned"><span className="num">{formatUGX(b.earned)}{fromReferrals(u.id) > 0 && <span className="block text-xs text-slate-500">incl. {formatUGX(fromReferrals(u.id))} from referrals</span>}</span></Line>
                   </dl>
                   <div>
                     <div className="mb-1 text-xs text-slate-500">Referred by</div>
-                    <ReferrerSelect userId={u.id} current={u.referredById} referrers={referrerOptions} />
+                    <ReferrerSelect userId={u.id} current={u.referredById} referrers={optionsFor(u.id)} />
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <PayoutButton userId={u.id} name={u.name} owed={b.owed} payTo={u.payPhone ? `${u.payPhone} (${u.payNetwork})` : null} />
@@ -92,8 +96,8 @@ export default async function UsersPage() {
                         <span className="block">{jobsFor(u.id, "SUBMITTED")} done</span>
                         <span className="block text-xs text-slate-500">{jobsFor(u.id, "ASSIGNED")} in progress</span>
                       </td>
-                      <td><ReferrerSelect userId={u.id} current={u.referredById} referrers={referrerOptions} /></td>
-                      <td className="num text-right">{formatUGX(b.earned)}</td>
+                      <td><ReferrerSelect userId={u.id} current={u.referredById} referrers={optionsFor(u.id)} /></td>
+                      <td className="num text-right">{formatUGX(b.earned)}{fromReferrals(u.id) > 0 && <span className="block text-xs text-slate-500">incl. {formatUGX(fromReferrals(u.id))} referrals</span>}</td>
                       <td className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
                       <td >
                         <div className="flex items-center justify-end gap-1">
@@ -113,28 +117,28 @@ export default async function UsersPage() {
 
       <section className="card mt-6 overflow-hidden">
         <div className="card-header"><h2 className="card-title">Referrers</h2><span className="text-xs text-slate-500">Earn {formatUGX(REFERRAL_RATE_PER_HOUR_UGX)} per hour of transcript submitted by the people they referred</span></div>
-        {referrers.length === 0 ? (
-          <EmptyState icon={HandCoins} title="No referrers yet" description="Add someone with the Referrer role, then pick them as “Referred by” on the transcribers they brought in." />
+        {referrerList.length === 0 ? (
+          <EmptyState icon={HandCoins} title="No referrers yet" description="Pick a referrer or another transcriber as “Referred by” on the transcribers they brought in." />
         ) : (
           <>
           <ul className="divide-y divide-slate-100 sm:hidden">
-            {referrers.map((u) => {
+            {referrerList.map((u) => {
               const b = balances.get(u.id) ?? zero;
               const names = transcribers.filter((t) => t.referredById === u.id).map((t) => t.name);
               return (
                 <li key={u.id} className="space-y-3 px-4 py-4">
-                  <PersonSummary user={u} owed={b.owed} />
+                  {u.role === "USER" ? <UserCell name={u.name} sub="Transcriber · paid with their transcriber balance" /> : <PersonSummary user={u} owed={b.owed} />}
                   <dl className="space-y-1.5 text-sm">
-                    <Line label="Pay to"><PayTo user={u} /></Line>
+                    {u.role !== "USER" && <Line label="Pay to"><PayTo user={u} /></Line>}
                     <Line label="Referred"><span className="num">{u._count.referrals} · {formatHours(balances.get(u.id)?.referralSeconds ?? 0)} submitted</span></Line>
-                    <Line label="Earned"><span className="num">{formatUGX(b.earned)}</span></Line>
-                    <Line label="Paid"><span className="num">{formatUGX(b.paid)}</span></Line>
+                    <Line label={u.role === "USER" ? "From referrals" : "Earned"}><span className="num">{formatUGX(u.role === "USER" ? fromReferrals(u.id) : b.earned)}</span></Line>
+                    {u.role !== "USER" && <Line label="Paid"><span className="num">{formatUGX(b.paid)}</span></Line>}
                   </dl>
                   {names.length > 0 && <p className="text-xs break-words text-slate-500">{names.join(", ")}</p>}
-                  <div className="flex flex-wrap gap-2">
+                  {u.role !== "USER" && <div className="flex flex-wrap gap-2">
                     <PayoutButton userId={u.id} name={u.name} owed={b.owed} payTo={u.payPhone ? `${u.payPhone} (${u.payNetwork})` : null} />
                     <ResetPasswordButton userId={u.id} name={u.name} />
-                  </div>
+                  </div>}
                 </li>
               );
             })}
@@ -145,28 +149,37 @@ export default async function UsersPage() {
                 <tr><th>Referrer</th><th>Pay to</th><th>Referred</th><th className="text-right">Earned</th><th className="text-right">Paid</th><th className="text-right">Owed</th><th><span className="sr-only">Actions</span></th></tr>
               </thead>
               <tbody>
-                {referrers.map((u) => {
+                {referrerList.map((u) => {
                   const b = balances.get(u.id) ?? zero;
                   const names = transcribers.filter((t) => t.referredById === u.id).map((t) => t.name);
                   return (
                     <tr key={u.id}>
-                      <td><UserCell name={u.name} sub={u.email} /></td>
-                      <td><PayTo user={u} /></td>
+                      <td><UserCell name={u.name} sub={u.role === "USER" ? "Transcriber" : u.email} /></td>
+                      <td>{u.role === "USER" ? <span className="text-sm text-slate-400">With transcriber pay</span> : <PayTo user={u} />}</td>
                       <td className="text-slate-600">
                         <div className="min-w-0">
                         <div className="num">{u._count.referrals} referred · {formatHours(balances.get(u.id)?.referralSeconds ?? 0)} submitted</div>
                         {names.length > 0 && <div className="max-w-xs truncate text-xs text-slate-500" title={names.join(", ")}>{names.join(", ")}</div>}
                         </div>
                       </td>
-                      <td className="num text-right">{formatUGX(b.earned)}</td>
-                      <td className="num text-right text-slate-600">{formatUGX(b.paid)}</td>
-                      <td className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
-                      <td >
-                        <div className="flex items-center justify-end gap-1">
-                          <PayoutButton userId={u.id} name={u.name} owed={b.owed} payTo={u.payPhone ? `${u.payPhone} (${u.payNetwork})` : null} />
-                          <ResetPasswordButton userId={u.id} name={u.name} />
-                        </div>
-                      </td>
+                      {u.role === "USER" ? (
+                        <>
+                          <td className="num text-right">{formatUGX(fromReferrals(u.id))}</td>
+                          <td colSpan={3} className="text-right text-xs text-slate-500">Included in their transcriber balance above</td>
+                        </>
+                      ) : (
+                        <>
+                          <td className="num text-right">{formatUGX(b.earned)}</td>
+                          <td className="num text-right text-slate-600">{formatUGX(b.paid)}</td>
+                          <td className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
+                          <td>
+                            <div className="flex items-center justify-end gap-1">
+                              <PayoutButton userId={u.id} name={u.name} owed={b.owed} payTo={u.payPhone ? `${u.payPhone} (${u.payNetwork})` : null} />
+                              <ResetPasswordButton userId={u.id} name={u.name} />
+                            </div>
+                          </td>
+                        </>
+                      )}
                     </tr>
                   );
                 })}

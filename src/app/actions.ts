@@ -52,8 +52,8 @@ export async function createUser(formData: FormData): Promise<FormState> {
   const { name, email, password, role } = parsed.data;
   const referredById = role === "USER" && parsed.data.referredById ? parsed.data.referredById : null;
   if (await db.user.findUnique({ where: { email } })) return { error: "That email is already in use." };
-  if (referredById && !(await db.user.findFirst({ where: { id: referredById, role: "REFERRER" } })))
-    return { error: "Pick a referrer from the list." };
+  const refError = referredById ? await referrerError(null, referredById) : null;
+  if (refError) return { error: refError };
   await db.user.create({ data: { name, email, role, referredById, passwordHash: await bcrypt.hash(password, 10) } });
   revalidatePath("/admin/users");
   return { ok: `Created ${name}.` };
@@ -72,14 +72,31 @@ export async function resetPassword(formData: FormData): Promise<FormState> {
  * Sets who referred a transcriber. Work they've already submitted with no referrer is credited to
  * the new one; work already credited to a referrer stays with them.
  */
+/** Referrers are referrer accounts or other transcribers; nobody refers themselves, directly or round a loop. */
+async function referrerError(userId: string | null, referredById: string): Promise<string | null> {
+  if (referredById === userId) return "Someone can't refer themselves.";
+  const ref = await db.user.findUnique({ where: { id: referredById }, select: { role: true } });
+  if (!ref || (ref.role !== "REFERRER" && ref.role !== "USER")) return "Pick a referrer from the list.";
+  if (userId) {
+    // Walk up from the new referrer; reaching this transcriber would make a loop.
+    let up: string | null = referredById;
+    for (let i = 0; up && i < 50; i++) {
+      const next: { referredById: string | null } | null = await db.user.findUnique({ where: { id: up }, select: { referredById: true } });
+      up = next?.referredById ?? null;
+      if (up === userId) return "That would make them refer each other.";
+    }
+  }
+  return null;
+}
+
 export async function setReferrer(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const userId = String(formData.get("userId"));
   const referredById = String(formData.get("referredById") ?? "") || null;
   const t = await db.user.findUnique({ where: { id: userId } });
   if (!t || t.role !== "USER") return { error: "Only transcribers can have a referrer." };
-  if (referredById && !(await db.user.findFirst({ where: { id: referredById, role: "REFERRER" } })))
-    return { error: "Pick a referrer from the list." };
+  const refError = referredById ? await referrerError(userId, referredById) : null;
+  if (refError) return { error: refError };
   await db.$transaction([
     db.user.update({ where: { id: userId }, data: { referredById } }),
     ...(referredById ? [db.earning.updateMany({ where: { userId, referrerId: null }, data: { referrerId: referredById } })] : []),

@@ -260,7 +260,8 @@ export default function Editor({
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 bg-slate-50/60 px-4 py-2.5 text-xs text-slate-500">
-          <span className="mr-auto">Prefer Word? Download the original, edit it, then upload it to submit.</span>
+          <span className="mr-auto">Prefer working offline? Download the {isVideo ? "video" : "audio"} and the original transcript, then upload your corrected transcript to submit.</span>
+          <a href={`/api/media/${jobId}?download=1`} className="btn-ghost btn-sm"><Download className="size-3.5" /> {isVideo ? "Video" : "Audio"}</a>
           <a href={`/api/jobs/${jobId}/transcript?format=docx&version=original`} className="btn-ghost btn-sm"><Download className="size-3.5" /> Original .docx</a>
           <a href={`/api/jobs/${jobId}/transcript?version=original`} className="btn-ghost btn-sm"><Download className="size-3.5" /> .txt</a>
           <input ref={fileRef} type="file" accept=".docx,.txt" className="sr-only" id={`up-${jobId}`} onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])} />

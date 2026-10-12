@@ -34,10 +34,11 @@ function Brand() {
   );
 }
 
-export default function SideNav({ user }: { user: { name: string; email: string; role: "ADMIN" | "USER" | "REFERRER" } }) {
+export default function SideNav({ user, refers = false }: { user: { name: string; email: string; role: "ADMIN" | "USER" | "REFERRER" }; refers?: boolean }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
-  const links: { href: string; label: string; icon: typeof Wallet; exact?: boolean }[] = LINKS[user.role];
+  const links: { href: string; label: string; icon: typeof Wallet; exact?: boolean }[] =
+    user.role === "USER" && refers ? [...USER_LINKS, ...REFERRER_LINKS] : LINKS[user.role];
 
   const isActive = (l: (typeof links)[number]) =>
     l.exact ? pathname === l.href : pathname === l.href || pathname.startsWith(l.href + "/");

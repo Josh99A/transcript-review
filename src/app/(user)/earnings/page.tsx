@@ -1,4 +1,4 @@
-import { Banknote, CircleCheck, Clock, Wallet } from "lucide-react";
+import { Banknote, CircleCheck, Clock, HandCoins, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, StatCard } from "@/components/ui";
@@ -20,7 +20,7 @@ export default async function EarningsPage() {
     db.payout.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
   ]);
   const [balance, payDate] = await Promise.all([balanceFor(user.id), getNextPayDate()]);
-  const { earned, owed, seconds } = balance;
+  const { earned, owed, seconds, referralPay, referralSeconds } = balance;
   const paid = payouts.reduce((s, p) => s + p.amount, 0);
   const paidPct = earned ? Math.min(100, Math.round((paid / earned) * 100)) : 0;
 
@@ -51,6 +51,11 @@ export default async function EarningsPage() {
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:col-span-2">
           <StatCard icon={CircleCheck} label="Total earned" value={formatUGX(earned)} tone="emerald" hint={`${earnings.length} transcript${earnings.length === 1 ? "" : "s"} submitted`} />
           <StatCard icon={Clock} label="Media completed" value={formatHours(seconds)} tone="slate" hint={`${formatDuration(seconds)} in total`} />
+          {(referralPay > 0 || referralSeconds > 0) && (
+            <div className="col-span-2">
+              <StatCard icon={HandCoins} label="From people you referred" value={formatUGX(referralPay)} tone="brand" hint={<><span className="num">{formatHours(referralSeconds)}</span> submitted by them · <Link href="/referrals" className="font-medium text-brand-600 hover:text-brand-700">See referrals</Link></>} />
+            </div>
+          )}
         </div>
       </div>
 

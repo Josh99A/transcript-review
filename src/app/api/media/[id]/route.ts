@@ -3,6 +3,7 @@ import { db } from "@/lib/db";
 import { mediaUrl } from "@/lib/media";
 
 // Streams a job's media to its admin or assignee from Cloudinary, passing Range through so players can seek.
+// ?download=1 saves it as a file instead of playing it.
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await getCurrentUser();
@@ -25,6 +26,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   if (!upstream.ok || !upstream.body) return new Response("Media file missing", { status: 404 });
 
   const headers: Record<string, string> = { "Content-Type": job.mediaType, "Accept-Ranges": "bytes" };
+  if (new URL(req.url).searchParams.get("download")) {
+    const ext = job.mediaPath.includes(".") ? job.mediaPath.slice(job.mediaPath.lastIndexOf(".")) : "";
+    const name = (job.title.replace(/[^\w\- ]+/g, "").trim() || "media") + ext;
+    headers["Content-Disposition"] = `attachment; filename="${name}"`;
+  }
   for (const h of ["content-length", "content-range"]) {
     const v = upstream.headers.get(h);
     if (v) headers[h] = v;
