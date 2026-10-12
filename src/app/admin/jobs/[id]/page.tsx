@@ -45,7 +45,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
   return (
     <>
       <PageHeader
-        back={<Link href="/admin" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
+        back={job.status === "SUBMITTED" ? <Link href="/admin/reviews" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Reviews</Link> : <Link href="/admin" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
         title={job.title}
         description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={jobBadge(job)} /><span className="num">{formatDuration(job.durationSeconds)} · expected {jobPayLabel(job)}</span></span>}
         actions={
@@ -56,6 +56,12 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
         }
       />
 
+      {job.status === "SUBMITTED" && !job.approvedAt && (
+        <a href="#review" className="mb-4 flex items-center gap-2 rounded-xl bg-sky-50 px-4 py-3 text-sm font-medium text-sky-900 ring-1 ring-sky-600/15 xl:hidden">
+          <MessageSquareWarning className="size-4 shrink-0" /> Waiting for your review. Compare the changes below, then approve or send back.
+          <span className="ml-auto whitespace-nowrap text-brand-700">Go to review</span>
+        </a>
+      )}
       <div className="grid gap-6 xl:grid-cols-[1fr_340px]">
         <div className="min-w-0 space-y-6">
           <section className="card">
@@ -91,7 +97,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
 
         <div className="space-y-6">
           {job.status === "SUBMITTED" && (
-            <section className="card">
+            <section id="review" className="card scroll-mt-4">
               <div className="card-header"><h2 className="card-title">Review</h2></div>
               <div className="card-body space-y-4">
                 {job.approvedAt ? (

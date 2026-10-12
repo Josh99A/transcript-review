@@ -1,6 +1,6 @@
 "use client";
 
-import { AudioLines, ClipboardList, HandCoins, Inbox, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
+import { AudioLines, ClipboardCheck, ClipboardList, HandCoins, Inbox, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -10,6 +10,7 @@ import { Avatar } from "./ui";
 
 const ADMIN_LINKS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { href: "/admin/reviews", label: "Reviews", icon: ClipboardCheck },
   { href: "/admin/requests", label: "Requests", icon: Inbox },
   { href: "/admin/jobs/new", label: "Upload job", icon: Upload },
   { href: "/admin/users", label: "Team & payments", icon: Users },
@@ -34,7 +35,7 @@ function Brand() {
   );
 }
 
-export default function SideNav({ user, refers = false }: { user: { name: string; email: string; role: "ADMIN" | "USER" | "REFERRER" }; refers?: boolean }) {
+export default function SideNav({ user, refers = false, badges = {} }: { user: { name: string; email: string; role: "ADMIN" | "USER" | "REFERRER" }; refers?: boolean; badges?: Record<string, number> }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const links: { href: string; label: string; icon: typeof Wallet; exact?: boolean }[] =
@@ -67,6 +68,9 @@ export default function SideNav({ user, refers = false }: { user: { name: string
             >
               <l.icon className={`size-4.5 ${active ? "text-brand-600" : "text-slate-400"}`} aria-hidden />
               {l.label}
+              {badges[l.href] ? (
+                <span className="num ml-auto rounded-full bg-brand-600 px-2 py-0.5 text-xs font-semibold text-white" aria-label={`${badges[l.href]} waiting`}>{badges[l.href]}</span>
+              ) : null}
             </Link>
           );
         })}

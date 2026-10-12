@@ -339,6 +339,7 @@ export async function reopenJob(formData: FormData): Promise<FormState> {
   });
   if (!count) return { error: "This job changed while you were looking at it. Reload and try again." };
   await notify([job.assigneeId], { title: `Changes needed: ${job.title}`, body: note, href: `/jobs/${jobId}` });
+  revalidatePath("/admin/reviews");
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/jobs");
@@ -353,6 +354,7 @@ export async function approveJob(formData: FormData): Promise<FormState> {
   if (!count) return { error: "Only submitted jobs that aren't approved yet can be approved." };
   const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
   await notify([job.assigneeId], { title: `Approved: ${job.title}`, body: "Your transcript was accepted.", href: `/jobs/${jobId}` });
+  revalidatePath("/admin/reviews");
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/jobs");
@@ -530,6 +532,7 @@ export async function submitJob(jobId: string, text: string, fileName?: string):
   });
   revalidatePath("/jobs");
   revalidatePath("/earnings");
+  revalidatePath("/admin/reviews");
   revalidatePath("/admin");
   redirect("/jobs?submitted=1");
 }
