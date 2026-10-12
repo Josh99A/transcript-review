@@ -1,6 +1,6 @@
 "use client";
 
-import { AudioLines, ClipboardCheck, ClipboardList, HandCoins, Inbox, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
+import { AudioLines, CircleCheckBig, ClipboardCheck, ClipboardList, HandCoins, Inbox, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -12,6 +12,7 @@ const ADMIN_LINKS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
   { href: "/admin/reviews", label: "Reviews", icon: ClipboardCheck },
   { href: "/admin/requests", label: "Requests", icon: Inbox },
+  { href: "/admin/completed", label: "Completed", icon: CircleCheckBig },
   { href: "/admin/jobs/new", label: "Upload job", icon: Upload },
   { href: "/admin/users", label: "Team & payments", icon: Users },
 ];

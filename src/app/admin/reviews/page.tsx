@@ -56,8 +56,8 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Prom
         <Link href="/admin/reviews" role="tab" aria-selected={!showApproved} className={`rounded-full px-3 py-1.5 text-sm font-medium ring-1 ring-inset ${!showApproved ? "bg-brand-50 text-brand-700 ring-brand-600/20" : "text-slate-600 ring-slate-200"}`}>
           Waiting <span className="num">{waiting.length}</span>
         </Link>
-        <Link href="/admin/reviews?show=approved" role="tab" aria-selected={showApproved} className={`rounded-full px-3 py-1.5 text-sm font-medium ring-1 ring-inset ${showApproved ? "bg-brand-50 text-brand-700 ring-brand-600/20" : "text-slate-600 ring-slate-200"}`}>
-          Approved
+        <Link href="/admin/completed" className="rounded-full px-3 py-1.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 ring-inset">
+          Completed
         </Link>
       </div>
 
