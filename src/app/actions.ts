@@ -508,6 +508,7 @@ export async function submitJob(jobId: string, text: string, fileName?: string):
     const job = await lockJob(tx, jobId);
     if (!job || job.assigneeId !== user.id) refuse("This job isn't assigned to you any more.");
     if (job!.status !== "ASSIGNED") refuse("This job has already been submitted.");
+    const resubmission = (await tx.earning.count({ where: { jobId, userId: user.id } })) > 0;
     await tx.job.update({ where: { id: jobId }, data: { editedTranscript: text, status: "SUBMITTED", submittedAt: new Date() } });
     // Credit pay once per job and user; a resubmission after a reopen doesn't pay again.
     await tx.earning.upsert({
@@ -522,12 +523,12 @@ export async function submitJob(jobId: string, text: string, fileName?: string):
       },
       update: {},
     });
-    return job!;
+    return { ...job!, resubmission };
   });
   if (failed(res)) return res;
   await notifyAdmins({
-    title: `${user.name} submitted ${res.title}`,
-    body: [res.revisions > 0 ? "Resubmitted after your changes." : null, fileName ? `Uploaded as a file (${fileName.slice(0, 100)}).` : null, "Ready to review."].filter(Boolean).join(" "),
+    title: `${user.name} ${res.resubmission ? "resubmitted" : "submitted"} ${res.title}`,
+    body: [res.reviewNote ? "Resubmitted after your changes." : res.resubmission ? "Replaced their earlier submission." : null, fileName ? `Uploaded as a file (${fileName.slice(0, 100)}).` : null, "Ready to review."].filter(Boolean).join(" "),
     href: `/admin/jobs/${jobId}`,
   });
   revalidatePath("/jobs");
@@ -535,6 +536,22 @@ export async function submitJob(jobId: string, text: string, fileName?: string):
   revalidatePath("/admin/reviews");
   revalidatePath("/admin");
   redirect("/jobs?submitted=1");
+}
+
+/** Takes back a submission the admin hasn't reviewed yet, so it can be edited and resubmitted. Pay already credited stays. */
+export async function withdrawSubmission(formData: FormData): Promise<FormState> {
+  const user = await requireRole("USER");
+  const jobId = String(formData.get("jobId"));
+  const { count } = await db.job.updateMany({
+    where: { id: jobId, assigneeId: user.id, status: "SUBMITTED", approvedAt: null, mediaRemovedAt: null },
+    data: { status: "ASSIGNED", submittedAt: null },
+  });
+  if (!count) return { error: "This submission can't be changed any more. The admin may have already reviewed it." };
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/jobs");
+  revalidatePath("/admin/reviews");
+  revalidatePath("/admin");
+  return { ok: "You can edit it again. Submit when you're done." };
 }
 
 // ---------- Notifications ----------

@@ -1,7 +1,9 @@
-import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, Languages, MessageSquareWarning, Wallet } from "lucide-react";
+import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, Languages, MessageSquareWarning, Pencil, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { withdrawSubmission } from "@/app/actions";
+import { ActionForm } from "@/components/client";
 import MediaPlayer from "@/components/MediaPlayer";
 import StatusBadge, { jobBadge } from "@/components/StatusBadge";
 import { MediaRemoved, PageHeader } from "@/components/ui";
@@ -64,6 +66,13 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             </span>
             <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary btn-sm ml-auto"><Download className="size-3.5" /> .txt</a>
           </div>
+          {!job.approvedAt && !job.mediaRemovedAt && (
+            <ActionForm action={withdrawSubmission} className="card flex flex-wrap items-center gap-3 px-4 py-3">
+              <input type="hidden" name="jobId" value={job.id} />
+              <p className="min-w-0 flex-1 text-sm text-slate-600">Spotted a mistake? Take the submission back, fix it in the editor or upload a new file, and resubmit before the admin reviews it. You won&apos;t be paid twice.</p>
+              <button className="btn-secondary w-full sm:w-auto"><Pencil className="size-4" /> Edit and resubmit</button>
+            </ActionForm>
+          )}
           {job.mediaRemovedAt ? <MediaRemoved at={job.mediaRemovedAt} /> : <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>}
           <div className="card px-5 py-4">
             <pre className="font-mono text-[15px] leading-7 whitespace-pre-wrap text-slate-800">{job.editedTranscript}</pre>
