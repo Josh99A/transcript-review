@@ -1,4 +1,5 @@
-import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, Languages, LifeBuoy, LogOut, MessageSquareWarning, Pencil, Send, Wallet } from "lucide-react";
+import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, LifeBuoy, LogOut, MessageSquareWarning, Pencil, Send, Wallet } from "lucide-react";
+import JobTags from "@/components/JobTags";
 import RichText from "@/components/RichText";
 import Guidelines from "@/components/Guidelines";
 import { getGuidelines } from "@/lib/guidelines";
@@ -45,7 +46,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             <StatusBadge status={jobBadge(job)} />
             <span className="inline-flex items-center gap-1.5"><Clock className="size-3.5" /> {formatDuration(job.durationSeconds)}</span>
             <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> {jobPayLabel(job)} expected</span>
-            {job.language && <span className="inline-flex items-center gap-1.5"><Languages className="size-3.5" /> {job.language}</span>}
+            <JobTags job={job} />
             {due && <span className={`inline-flex items-center gap-1.5 ${due.overdue ? "text-red-700" : due.soon ? "text-amber-700" : ""}`}><CalendarClock className="size-3.5" /> {due.text}</span>}
           </span>
         }

@@ -244,6 +244,7 @@ const detailsSchema = z.object({
   title: z.string().trim().min(1, "Give the job a title"),
   description: z.string().trim().max(50000).default(""),
   language: z.string().trim().max(60).default(""),
+  project: z.string().trim().max(80).default(""),
   deadline: z.string().trim().regex(/^(\d{4}-\d{2}-\d{2})?$/, "Enter a valid deadline").default(""),
 });
 
@@ -252,14 +253,14 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
   const jobId = String(formData.get("jobId"));
   const parsed = detailsSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  const { title, language, deadline } = parsed.data;
+  const { title, language, project, deadline } = parsed.data;
   const description = cleanRich(parsed.data.description);
   if (richText(description).length > 5000) return { error: "Keep the details under 5,000 characters." };
   const ratePerHour = parseRate(formData.get("ratePerHour"));
   if (ratePerHour === "invalid") return { error: "Enter the rate as a whole number of shillings per hour, or leave it empty." };
   const job = await db.job.update({
     where: { id: jobId },
-    data: { title, description, language: language || null, deadline: parseDeadline(deadline), ratePerHour },
+    data: { title, description, language: language || null, project: project.replace(/\s+/g, " ") || null, deadline: parseDeadline(deadline), ratePerHour },
   });
   // Keep pay already credited for this job in line with its pricing.
   await db.earning.updateMany({

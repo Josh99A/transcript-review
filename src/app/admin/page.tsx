@@ -1,4 +1,5 @@
 import { CircleCheck, FileAudio, FileVideo, Hourglass, Inbox, Search, Upload, Wallet } from "lucide-react";
+import JobTags from "@/components/JobTags";
 import type { Metadata } from "next";
 import Link from "next/link";
 import PayDayCard from "@/components/PayDayCard";
@@ -33,7 +34,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     db.job.findMany({
       where: {
         ...(filter === "ALL" ? {} : { status: filter }),
-        ...(query ? { OR: [{ title: { contains: query, mode: "insensitive" } }, { assignee: { name: { contains: query, mode: "insensitive" } } }] } : {}),
+        ...(query ? { OR: [{ title: { contains: query, mode: "insensitive" } }, { project: { contains: query, mode: "insensitive" } }, { assignee: { name: { contains: query, mode: "insensitive" } } }] } : {}),
       },
       include: { assignee: { select: { name: true } }, earnings: true, _count: { select: { requests: { where: { status: "PENDING" } } } } },
       orderBy: [{ updatedAt: "desc" }],
@@ -93,7 +94,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
             <form className="relative ml-auto w-full sm:w-64" role="search">
               {filter !== "ALL" && <input type="hidden" name="status" value={filter} />}
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
-              <input className="input pl-9" name="q" defaultValue={query} placeholder="Search title or person" aria-label="Search jobs" />
+              <input className="input pl-9" name="q" defaultValue={query} placeholder="Search title, project or person" aria-label="Search jobs" />
             </form>
           </div>
           <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3 sm:px-5" role="tablist">
@@ -137,7 +138,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                     <li key={j.id}>
                       <Link href={`/admin/jobs/${j.id}`} className="block px-4 py-3 active:bg-slate-50">
                         <div className="flex items-start justify-between gap-3">
-                          <span className="min-w-0 font-medium break-words text-slate-900">{j.title}</span>
+                          <span className="min-w-0"><span className="block font-medium break-words text-slate-900">{j.title}</span><JobTags job={j} className="mt-1 flex" /></span>
                           <span className="num shrink-0 text-right text-sm text-slate-600">{formatDuration(j.durationSeconds)}<span className="block text-xs text-slate-400">{jobPayLabel(j)}</span></span>
                         </div>
                         <div className="num mt-0.5 text-xs text-slate-500">
@@ -176,6 +177,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                               <Link href={`/admin/jobs/${j.id}`} className="font-medium text-slate-900 hover:text-brand-700">
                                 {j.title}
                               </Link>
+                              <JobTags job={j} className="mt-1 flex" />
                               <div className="num text-xs text-slate-500">
                                 {j.status === "SUBMITTED" ? `submitted ${formatRelative(j.submittedAt)}` : `updated ${formatRelative(j.updatedAt)}`}
                               </div>

@@ -1,4 +1,5 @@
 import { ArrowRight, Check, CircleCheck, ClipboardCheck, Download } from "lucide-react";
+import JobTags from "@/components/JobTags";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { approveJob } from "@/app/actions";
@@ -77,7 +78,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Prom
               <li key={j.id} className="card p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
                   <div className="min-w-0 flex-1">
-                    <Link href={`/admin/jobs/${j.id}#review`} className="font-medium break-words text-slate-900 hover:text-brand-700">{j.title}</Link>
+                    <Link href={`/admin/jobs/${j.id}#review`} className="font-medium break-words text-slate-900 hover:text-brand-700">{j.title}</Link><JobTags job={j} className="mt-1 flex" />
                     <div className="num mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
                       <span>{formatDuration(j.durationSeconds)}</span>
                       <span>{jobPayLabel(j)}</span>

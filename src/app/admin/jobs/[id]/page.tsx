@@ -2,6 +2,9 @@ import { ArrowLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSqua
 import RichText from "@/components/RichText";
 import RichTextEditor from "@/components/RichTextEditor";
 import Guidelines from "@/components/Guidelines";
+import { LanguageField, ProjectField } from "@/components/JobFields";
+import JobTags from "@/components/JobTags";
+import { projectNames } from "@/lib/projects";
 import { getGuidelines } from "@/lib/guidelines";
 import { richHtml } from "@/lib/richtext";
 import type { Metadata } from "next";
@@ -34,7 +37,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
   await requireAdmin();
   const { id } = await params;
   const guidelines = await getGuidelines();
-  const [job, users] = await Promise.all([
+  const [job, users, projects] = await Promise.all([
     db.job.findUnique({
       where: { id },
       include: {
@@ -45,6 +48,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
       },
     }),
     db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    projectNames(),
   ]);
   if (!job) notFound();
   const due = job.deadline ? formatDeadline(job.deadline) : null;
@@ -55,7 +59,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
       <PageHeader
         back={job.status === "SUBMITTED" ? <Link href="/admin/reviews" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Reviews</Link> : <Link href="/admin" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
         title={job.title}
-        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={jobBadge(job)} /><span className="num">{formatDuration(job.durationSeconds)} · expected {jobPayLabel(job)}</span></span>}
+        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={jobBadge(job)} /><span className="num">{formatDuration(job.durationSeconds)} · expected {jobPayLabel(job)}</span><JobTags job={job} /></span>}
         actions={
           <>
             <a href={`/api/jobs/${job.id}/transcript?format=docx`} className="btn-secondary"><Download className="size-4" /> Word .docx</a>
@@ -77,6 +81,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
             <div className="card-body space-y-3 text-sm">
               {job.description ? <RichText html={job.description} className="text-slate-700" /> : <p className="text-slate-400">No details for transcribers yet.</p>}
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-slate-600">
+                <span>Project: <span className="text-slate-900">{job.project ?? "Not set"}</span></span>
                 <span>Language: <span className="text-slate-900">{job.language ?? "Not set"}</span></span>
                 <span>Deadline: <span className={due?.overdue ? "text-red-700" : "text-slate-900"}>{due?.text ?? "None"}</span></span>
               </div>
@@ -87,7 +92,8 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   <div><label className="label" htmlFor="d-title">Title</label><input className="input" id="d-title" name="title" defaultValue={job.title} required /></div>
                   <div><label className="label" htmlFor="d-desc">Details for transcribers</label><RichTextEditor name="description" id="d-desc" defaultValue={richHtml(job.description)} /></div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div><label className="label" htmlFor="d-lang">Language</label><input className="input" id="d-lang" name="language" defaultValue={job.language ?? ""} /></div>
+                    <div><label className="label" htmlFor="d-project">Project</label><ProjectField id="d-project" projects={projects} defaultValue={job.project ?? ""} /></div>
+                    <div><label className="label" htmlFor="d-lang">Language</label><LanguageField id="d-lang" defaultValue={job.language ?? ""} /></div>
                     <div><label className="label" htmlFor="d-due">Deadline</label><input className="input" id="d-due" name="deadline" type="date" defaultValue={deadlineInput(job.deadline)} /></div>
                     <div><label className="label" htmlFor="d-rate">Custom rate (UGX per hour)</label><input className="input" id="d-rate" name="ratePerHour" inputMode="numeric" defaultValue={job.ratePerHour ?? ""} placeholder="Empty = usual rate" /></div>
                   </div>

@@ -22,6 +22,8 @@ export async function POST(req: Request) {
   const description = cleanRich(String(form.get("description") ?? "").slice(0, 50000));
   if (richText(description).length > 5000) return NextResponse.json({ error: "Keep the details under 5,000 characters." }, { status: 400 });
   const language = String(form.get("language") ?? "").trim().slice(0, 60) || null;
+  if (!language) return NextResponse.json({ error: "Choose the job's language." }, { status: 400 });
+  const project = String(form.get("project") ?? "").trim().replace(/\s+/g, " ").slice(0, 80) || null;
   const deadline = parseDeadline(String(form.get("deadline") ?? ""));
   const ratePerHour = parseRate(form.get("ratePerHour"));
   if (ratePerHour === "invalid") return NextResponse.json({ error: "Enter the rate as a whole number of shillings per hour, or leave it empty." }, { status: 400 });
@@ -68,6 +70,7 @@ export async function POST(req: Request) {
       editedTranscript: transcript,
       description,
       language,
+      project,
       deadline,
       posted: assignTo === "",
       ...(assigneeId ? { assigneeId, status: "ASSIGNED", assignedAt: new Date() } : {}),

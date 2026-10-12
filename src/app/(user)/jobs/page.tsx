@@ -1,4 +1,5 @@
 import { ArrowRight, CircleCheck, Clock, FileAudio, FileVideo, Inbox } from "lucide-react";
+import JobTags from "@/components/JobTags";
 import { richText } from "@/lib/richtext";
 import type { Prisma } from "@prisma/client";
 import type { Metadata } from "next";
@@ -100,7 +101,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
           <ul className="card divide-y divide-slate-100">
             {requests.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 sm:px-6">
-                <span className="min-w-0 font-medium break-words text-slate-900">{r.job.title}</span>
+                <span className="min-w-0"><span className="block font-medium break-words text-slate-900">{r.job.title}</span><JobTags job={r.job} className="mt-1 flex" /></span>
                 <span className="num text-sm text-slate-500">{formatDuration(r.job.durationSeconds)} · {jobPayLabel(r.job)} · asked {formatRelative(r.createdAt)}</span>
               </li>
             ))}
@@ -148,7 +149,7 @@ function JobGroup({ id, title, hint, jobs, action }: { id: string; title: string
                   <Icon className="size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <span className="block min-w-0 font-medium break-words text-slate-900">{j.title}</span>
+                  <span className="block min-w-0 font-medium break-words text-slate-900">{j.title}</span><JobTags job={j} className="mt-1 flex" />
                   {j.reviewNote && <span className="mt-0.5 line-clamp-2 block text-sm text-red-700">{richText(j.reviewNote)}</span>}
                   <div className="num mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
                     <span className="inline-flex items-center gap-1"><Clock className="size-3" /> {formatDuration(j.durationSeconds)}</span>
@@ -180,7 +181,7 @@ function DoneGroup({ id, title, hint, jobs }: { id: string; title: string; hint:
         {jobs.map((j) => (
           <li key={j.id}>
             <Link href={`/jobs/${j.id}`} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 hover:bg-slate-50 sm:px-6">
-              <span className="min-w-0 font-medium break-words text-slate-900">{j.title}</span>
+              <span className="min-w-0"><span className="block font-medium break-words text-slate-900">{j.title}</span><JobTags job={j} className="mt-1 flex" /></span>
               <span className="num flex items-center gap-3 text-sm text-slate-500">
                 <StatusBadge status={jobBadge(j)} />
                 {formatDuration(j.durationSeconds)} · {j.approvedAt ? `approved ${formatRelative(j.approvedAt)}` : `submitted ${formatRelative(j.submittedAt)}`}

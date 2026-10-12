@@ -18,7 +18,7 @@ export default function Filters({ fields, active }: { fields: Field[]; active: b
           </Link>
         )}
       </div>
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
         {fields.map((f) => (
           <label key={f.name} className="min-w-0">
             <span className="mb-1 block text-xs text-slate-500">{f.label}</span>

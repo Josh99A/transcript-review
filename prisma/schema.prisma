@@ -51,6 +51,8 @@ model Job {
   title              String
   // Details shown on the job board and to the transcriber.
   description        String       @default("")
+  // Tells jobs apart, e.g. the client or study a recording belongs to.
+  project            String?
   language           String?
   deadline           DateTime?
   // Unassigned jobs on the board can be requested by transcribers.
