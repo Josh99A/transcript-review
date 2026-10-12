@@ -24,7 +24,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const user = await requireRole("USER");
   const { id } = await params;
   const [job, guidelines, issues] = await Promise.all([
-    db.job.findUnique({ where: { id } }),
+    db.job.findUnique({ where: { id }, include: { earnings: { where: { userId: user.id } } } }),
     getGuidelines(),
     db.issue.findMany({ where: { jobId: id, userId: user.id }, include: issueInclude, orderBy: { createdAt: "desc" } }),
   ]);
@@ -45,7 +45,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <span className="num flex flex-wrap items-center gap-x-4 gap-y-1">
             <StatusBadge status={jobBadge(job)} />
             <span className="inline-flex items-center gap-1.5"><Clock className="size-3.5" /> {formatDuration(job.durationSeconds)}</span>
-            <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> {jobPayLabel(job)} expected</span>
+            <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> {job.status === "SUBMITTED" && job.earnings[0] ? `${formatUGX(job.earnings[0].amount)} earned` : `${jobPayLabel(job)} expected`}</span>
             <JobTags job={job} />
             {due && <span className={`inline-flex items-center gap-1.5 ${due.overdue ? "text-red-700" : due.soon ? "text-amber-700" : ""}`}><CalendarClock className="size-3.5" /> {due.text}</span>}
           </span>
@@ -69,14 +69,18 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
         <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} seconds={job.durationSeconds} ratePerHour={job.ratePerHour} />
       ) : (
         <div className="space-y-4">
-          <div className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm ring-1 ${job.approvedAt ? "bg-emerald-50 text-emerald-800 ring-emerald-600/15" : "bg-sky-50 text-sky-800 ring-sky-600/15"}`}>
+          <div className={`flex flex-wrap items-center gap-3 rounded-xl px-4 py-3 text-sm ring-1 ${job.approvedAt ? "bg-emerald-50 text-emerald-800 ring-emerald-600/15" : "bg-sky-50 text-sky-800 ring-sky-600/15"}`}>
             {job.approvedAt ? <CircleCheck className="size-5 shrink-0" /> : <Hourglass className="size-5 shrink-0" />}
-            <span>
-              {job.approvedAt
-                ? `Approved ${formatRelative(job.approvedAt)}. Nothing more to do.`
-                : `You submitted this on ${formatDate(job.submittedAt)}. It's waiting for the admin's review; you'll see any requested changes here.`}
-            </span>
-            <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary btn-sm ml-auto"><Download className="size-3.5" /> .txt</a>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">{job.approvedAt ? "Approved" : "Submitted, awaiting review"}</p>
+              <p>
+                {job.approvedAt
+                  ? `You submitted this on ${formatDate(job.submittedAt)} and it was approved ${formatRelative(job.approvedAt)}. Nothing more to do.`
+                  : `You submitted this on ${formatDate(job.submittedAt)}. An admin will review it, and you'll be notified if they approve it or ask for changes.`}
+              </p>
+              {job.earnings[0] && <p className="num mt-0.5 text-xs opacity-80">{formatUGX(job.earnings[0].amount)} added to your earnings for this job.</p>}
+            </div>
+            <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary btn-sm"><Download className="size-3.5" /> .txt</a>
           </div>
           {!job.approvedAt && !job.mediaRemovedAt && (
             <ActionForm action={withdrawSubmission} className="card flex flex-wrap items-center gap-3 px-4 py-3" confirm={{ title: "Take this submission back?", description: "It leaves the admin's review list until you submit it again. You keep the pay already credited.", label: "Take it back and edit" }}>
@@ -87,6 +91,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           )}
           {job.mediaRemovedAt ? <MediaRemoved at={job.mediaRemovedAt} /> : <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>}
           <div className="card px-5 py-4">
+            <h2 className="mb-2 text-sm font-semibold text-slate-900">What you submitted <span className="font-normal text-slate-500">(read only)</span></h2>
             <pre className="font-mono text-[15px] leading-7 whitespace-pre-wrap text-slate-800">{job.editedTranscript}</pre>
           </div>
         </div>

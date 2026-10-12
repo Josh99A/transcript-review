@@ -104,3 +104,7 @@ export async function expectedByUser(client: Prisma.TransactionClient = db): Pro
   for (const e of map.values()) e.total = e.transcriptPay + e.referralPay;
   return map;
 }
+
+export async function expectedFor(userId: string): Promise<Expected> {
+  return (await expectedByUser()).get(userId) ?? { jobs: 0, seconds: 0, transcriptPay: 0, referralPay: 0, total: 0 };
+}

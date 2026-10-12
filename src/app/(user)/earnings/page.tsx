@@ -1,11 +1,11 @@
-import { Banknote, CircleCheck, Clock, HandCoins, Wallet } from "lucide-react";
+import { Banknote, CircleCheck, Clock, HandCoins, Hourglass, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, StatCard } from "@/components/ui";
 import PayDateBanner from "@/components/PayDateBanner";
 import PaymentDetails from "@/components/PaymentDetails";
 import { requireRole } from "@/lib/auth";
-import { balanceFor } from "@/lib/earnings";
+import { balanceFor, expectedFor } from "@/lib/earnings";
 import { getNextPayDate } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { formatDate, formatDuration, formatHours, formatUGX } from "@/lib/format";
@@ -19,14 +19,14 @@ export default async function EarningsPage() {
     db.earning.findMany({ where: { userId: user.id }, include: { job: true }, orderBy: { createdAt: "desc" } }),
     db.payout.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
   ]);
-  const [balance, payDate] = await Promise.all([balanceFor(user.id), getNextPayDate()]);
+  const [balance, payDate, expected] = await Promise.all([balanceFor(user.id), getNextPayDate(), expectedFor(user.id)]);
   const { earned, owed, seconds, referralPay, referralSeconds } = balance;
   const paid = payouts.reduce((s, p) => s + p.amount, 0);
   const paidPct = earned ? Math.min(100, Math.round((paid / earned) * 100)) : 0;
 
   return (
     <>
-      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of all your submitted transcripts. Fixed-price jobs pay their set price instead.`} />
+      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of all your submitted transcripts. Jobs with a special rate are paid at that rate instead.`} />
       <div className="mb-6">
         <PayDateBanner payDate={payDate} owed={owed} detail={`Paid on your total of ${formatHours(seconds)} of transcribed media, minus what you've already been paid.`} />
       </div>
@@ -37,6 +37,7 @@ export default async function EarningsPage() {
           <div className="relative">
             <div className="flex items-center gap-2 text-sm text-brand-100"><Wallet className="size-4" /> Waiting to be paid</div>
             <div className="num mt-2 text-4xl font-semibold tracking-tight">{formatUGX(owed)}</div>
+            <p className="mt-1 text-xs text-brand-100">What you&apos;ve earned from submitted work, minus what you&apos;ve been paid.</p>
             <div className="mt-6">
               <div className="flex justify-between text-xs text-brand-100">
                 <span>Paid {formatUGX(paid)}</span>
@@ -49,7 +50,16 @@ export default async function EarningsPage() {
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:col-span-2">
-          <StatCard icon={CircleCheck} label="Total earned" value={formatUGX(earned)} tone="emerald" hint={`${earnings.length} transcript${earnings.length === 1 ? "" : "s"} submitted`} />
+          <div className="col-span-2">
+            <StatCard
+              icon={Hourglass}
+              label="Expected from your current jobs"
+              value={formatUGX(expected.total)}
+              tone="amber"
+              hint={expected.jobs ? <>From {expected.jobs} job{expected.jobs === 1 ? "" : "s"} you haven&apos;t submitted yet{expected.referralPay > 0 ? `, including ${formatUGX(expected.referralPay)} from people you referred` : ""}. <strong className="font-medium text-slate-700">Not earned yet</strong>: it moves to Earned when you submit.</> : "Nothing in progress right now."}
+            />
+          </div>
+          <StatCard icon={CircleCheck} label="Earned from submitted work" value={formatUGX(earned)} tone="emerald" hint={`${earnings.length} transcript${earnings.length === 1 ? "" : "s"} submitted, including any waiting for review`} />
           <StatCard icon={Clock} label="Media completed" value={formatHours(seconds)} tone="slate" hint={`${formatDuration(seconds)} in total`} />
           {(referralPay > 0 || referralSeconds > 0) && (
             <div className="col-span-2">

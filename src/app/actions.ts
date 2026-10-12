@@ -541,7 +541,7 @@ export async function submitJob(jobId: string, text: string, fileName?: string):
   revalidatePath("/earnings");
   revalidatePath("/admin/reviews");
   revalidatePath("/admin");
-  redirect("/jobs?submitted=1");
+  redirect(`/jobs?submitted=${jobId}`);
 }
 
 /** Takes back a submission the admin hasn't reviewed yet, so it can be edited and resubmitted. Pay already credited stays. */
