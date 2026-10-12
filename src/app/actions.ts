@@ -12,7 +12,7 @@ import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatPayDate, parseDeadline } from "@/lib/format";
 import { notify, notifyAdmins } from "@/lib/notify";
-import { earningsFor, parseFixedPay } from "@/lib/pay";
+import { earningsFor, parseRate } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { getNextPayDate, setNextPayDate } from "@/lib/settings";
 import { deleteMedia } from "@/lib/media";
@@ -255,16 +255,16 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
   const { title, language, deadline } = parsed.data;
   const description = cleanRich(parsed.data.description);
   if (richText(description).length > 5000) return { error: "Keep the details under 5,000 characters." };
-  const fixedPay = parseFixedPay(formData.get("fixedPay"));
-  if (fixedPay === "invalid") return { error: "Enter the fixed price as a whole number of shillings, or leave it empty." };
+  const ratePerHour = parseRate(formData.get("ratePerHour"));
+  if (ratePerHour === "invalid") return { error: "Enter the rate as a whole number of shillings per hour, or leave it empty." };
   const job = await db.job.update({
     where: { id: jobId },
-    data: { title, description, language: language || null, deadline: parseDeadline(deadline), fixedPay },
+    data: { title, description, language: language || null, deadline: parseDeadline(deadline), ratePerHour },
   });
   // Keep pay already credited for this job in line with its pricing.
   await db.earning.updateMany({
     where: { jobId },
-    data: { fixed: fixedPay != null, amount: fixedPay ?? earningsFor(job.durationSeconds) },
+    data: { customRate: ratePerHour != null, amount: earningsFor(job.durationSeconds, ratePerHour ?? undefined) },
   });
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
@@ -376,7 +376,7 @@ export async function updateDuration(formData: FormData): Promise<FormState> {
   if (total > 24 * 3600) return { error: "Length can't be more than 24 hours." };
   const job = await db.job.update({ where: { id: jobId }, data: { durationSeconds: total } });
   // Time already credited for this job follows the corrected length.
-  await db.earning.updateMany({ where: { jobId }, data: { seconds: total, ...(job.fixedPay == null ? { amount: earningsFor(total) } : {}) } });
+  await db.earning.updateMany({ where: { jobId }, data: { seconds: total, amount: earningsFor(total, job.ratePerHour ?? undefined) } });
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
   revalidatePath("/admin/users");
@@ -521,9 +521,9 @@ export async function submitJob(jobId: string, text: string, fileName?: string):
       create: {
         jobId,
         userId: user.id,
-        amount: job!.fixedPay ?? earningsFor(job!.durationSeconds),
+        amount: earningsFor(job!.durationSeconds, job!.ratePerHour ?? undefined),
         seconds: job!.durationSeconds,
-        fixed: job!.fixedPay != null,
+        customRate: job!.ratePerHour != null,
         referrerId: user.referredById,
       },
       update: {},

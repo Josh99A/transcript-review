@@ -82,7 +82,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
   const [assigneeId, setAssigneeId] = useState("");
   const [language, setLanguage] = useState("");
   const [deadline, setDeadline] = useState("");
-  const [fixedPay, setFixedPay] = useState("");
+  const [ratePerHour, setRatePerHour] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
@@ -125,7 +125,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
     data.set("description", String(new FormData(e.currentTarget as HTMLFormElement).get("description") ?? ""));
     data.set("language", language);
     data.set("deadline", deadline);
-    data.set("fixedPay", fixedPay);
+    data.set("ratePerHour", ratePerHour);
     if (mode === "file" && transcriptFile) data.set("transcriptFile", transcriptFile);
     else data.set("transcriptText", pasted);
     setProgress(0);
@@ -250,8 +250,8 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
             </div>
           </div>
           <div className="mt-4">
-            <label className="label" htmlFor="fixedPay">Fixed price in UGX <span className="font-normal text-slate-400">(optional)</span></label>
-            <input className="input sm:max-w-60" id="fixedPay" inputMode="numeric" value={fixedPay} onChange={(e) => setFixedPay(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Leave empty to pay by length" />
+            <label className="label" htmlFor="ratePerHour">Custom rate in UGX per hour <span className="font-normal text-slate-400">(optional)</span></label>
+            <input className="input sm:max-w-60" id="ratePerHour" inputMode="numeric" value={ratePerHour} onChange={(e) => setRatePerHour(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Leave empty for the usual rate" />
             <p className="hint">Use this for jobs with their own price. It&apos;s paid as is, instead of by the hour.</p>
           </div>
         </Step>
@@ -304,7 +304,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
           <div className="card-header"><h2 className="card-title">Summary</h2></div>
           <dl className="card-body space-y-3 text-sm">
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Length</dt><dd className="num font-medium">{effectiveDuration > 0 ? formatDuration(effectiveDuration) : "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">Expected pay</dt><dd className="num">{fixedPay ? `${formatUGX(Number(fixedPay))} fixed` : effectiveDuration > 0 ? `~${formatUGX(expectedPayFor(effectiveDuration))}` : "—"}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-slate-500">Expected pay</dt><dd className="num">{effectiveDuration > 0 ? `~${formatUGX(expectedPayFor(effectiveDuration, ratePerHour ? Number(ratePerHour) : null))}` : "—"}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Assigned to</dt><dd className="truncate">{assigneeName ?? (assigneeId === "" ? "Job board" : "Nobody yet")}</dd></div>
           </dl>
           <div className="border-t border-slate-100 p-5">

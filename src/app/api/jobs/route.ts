@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { parseDeadline } from "@/lib/format";
 import { uploadMedia } from "@/lib/media";
 import { mediaTypeOf } from "@/lib/mediaTypes";
-import { parseFixedPay } from "@/lib/pay";
+import { parseRate } from "@/lib/pay";
 import { docxToText } from "@/lib/docx";
 
 export async function POST(req: Request) {
@@ -23,8 +23,8 @@ export async function POST(req: Request) {
   if (richText(description).length > 5000) return NextResponse.json({ error: "Keep the details under 5,000 characters." }, { status: 400 });
   const language = String(form.get("language") ?? "").trim().slice(0, 60) || null;
   const deadline = parseDeadline(String(form.get("deadline") ?? ""));
-  const fixedPay = parseFixedPay(form.get("fixedPay"));
-  if (fixedPay === "invalid") return NextResponse.json({ error: "Enter the fixed price as a whole number of shillings, or leave it empty." }, { status: 400 });
+  const ratePerHour = parseRate(form.get("ratePerHour"));
+  if (ratePerHour === "invalid") return NextResponse.json({ error: "Enter the rate as a whole number of shillings per hour, or leave it empty." }, { status: 400 });
 
   let transcript = String(form.get("transcriptText") ?? "");
   const transcriptFile = form.get("transcriptFile");
@@ -63,7 +63,7 @@ export async function POST(req: Request) {
       mediaBytes: stored.bytes,
       mediaType,
       durationSeconds,
-      fixedPay,
+      ratePerHour,
       originalTranscript: transcript,
       editedTranscript: transcript,
       description,

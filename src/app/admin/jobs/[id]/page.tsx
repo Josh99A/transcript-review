@@ -89,7 +89,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div><label className="label" htmlFor="d-lang">Language</label><input className="input" id="d-lang" name="language" defaultValue={job.language ?? ""} /></div>
                     <div><label className="label" htmlFor="d-due">Deadline</label><input className="input" id="d-due" name="deadline" type="date" defaultValue={deadlineInput(job.deadline)} /></div>
-                    <div><label className="label" htmlFor="d-fixed">Fixed price (UGX)</label><input className="input" id="d-fixed" name="fixedPay" inputMode="numeric" defaultValue={job.fixedPay ?? ""} placeholder="Empty = pay by length" /></div>
+                    <div><label className="label" htmlFor="d-rate">Custom rate (UGX per hour)</label><input className="input" id="d-rate" name="ratePerHour" inputMode="numeric" defaultValue={job.ratePerHour ?? ""} placeholder="Empty = usual rate" /></div>
                   </div>
                   <button className="btn">Save details</button>
                 </ActionForm>

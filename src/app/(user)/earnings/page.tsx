@@ -73,7 +73,7 @@ export default async function EarningsPage() {
                     <tr key={e.id}>
                       <td className="font-medium text-slate-900">{e.job.title}</td>
                       <td data-label="Credited" className="whitespace-nowrap text-slate-600">{formatDate(e.createdAt)}</td>
-                      <td data-label="Adds" className="num text-right font-medium text-emerald-700">{e.fixed ? `${formatUGX(e.amount)} fixed` : `+${formatHours(e.seconds)}`}</td>
+                      <td data-label="Adds" className="num text-right font-medium text-emerald-700">{e.customRate ? `${formatUGX(e.amount)}` : `+${formatHours(e.seconds)}`}{e.customRate && <span className="block text-xs font-normal text-slate-400">special rate</span>}</td>
                     </tr>
                   ))}
                 </tbody>

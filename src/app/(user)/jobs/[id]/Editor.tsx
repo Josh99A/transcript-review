@@ -35,14 +35,14 @@ export default function Editor({
   initial,
   original,
   seconds,
-  fixedPay,
+  ratePerHour,
 }: {
   jobId: string;
   mediaType: string;
   initial: string;
   original: string;
   seconds: number;
-  fixedPay: number | null;
+  ratePerHour: number | null;
 }) {
   const { text, set: setText, undo, redo, canUndo, canRedo } = useUndo(initial);
   const [saved, setSaved] = useState(initial);
@@ -279,8 +279,8 @@ export default function Editor({
         />
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
           <p className="text-xs text-slate-500">
-            {fixedPay != null ? (
-              <>This job pays a fixed <span className="num font-semibold text-slate-700">{formatUGX(fixedPay)}</span> when you submit it.</>
+            {ratePerHour != null ? (
+              <>This job is paid at its own rate: about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds, ratePerHour))}</span> for its <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span>, added when you submit.</>
             ) : (
               <>Submitting adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours (about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds))}</span>). Pay is worked out on your total hours.</>
             )}

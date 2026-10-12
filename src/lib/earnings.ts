@@ -20,27 +20,31 @@ const empty = (): Balance => ({ seconds: 0, transcriptPay: 0, referralSeconds: 0
 /** Earned, paid and owed totals for every user, keyed by user id. */
 export async function balancesByUser(client: Prisma.TransactionClient = db): Promise<Map<string, Balance>> {
   const [earned, referred, paid] = await Promise.all([
-    client.earning.groupBy({ by: ["userId", "fixed"], _sum: { seconds: true, amount: true } }),
-    client.earning.groupBy({ by: ["referrerId"], where: { referrerId: { not: null } }, _sum: { seconds: true } }),
+    client.earning.groupBy({ by: ["userId", "customRate"], _sum: { seconds: true, amount: true } }),
+    client.earning.groupBy({ by: ["referrerId", "customRate"], where: { referrerId: { not: null } }, _sum: { seconds: true, amount: true } }),
     client.payout.groupBy({ by: ["userId"], _sum: { amount: true } }),
   ]);
   const map = new Map<string, Balance>();
   const get = (id: string) => map.get(id) ?? map.set(id, empty()).get(id)!;
-  // Hourly pay is worked out on the total of time-priced work; fixed-price jobs add their price as is.
+  // Usual-rate pay is worked out on the total of that time; jobs with their own rate add their pay as is.
   const hourlySeconds = new Map<string, number>();
-  const fixedPay = new Map<string, number>();
+  const customPay = new Map<string, number>();
   for (const e of earned) {
     const b = get(e.userId);
     b.seconds += e._sum.seconds ?? 0;
-    if (e.fixed) fixedPay.set(e.userId, (fixedPay.get(e.userId) ?? 0) + (e._sum.amount ?? 0));
+    if (e.customRate) customPay.set(e.userId, (customPay.get(e.userId) ?? 0) + (e._sum.amount ?? 0));
     else hourlySeconds.set(e.userId, (hourlySeconds.get(e.userId) ?? 0) + (e._sum.seconds ?? 0));
   }
-  for (const [id, b] of map) b.transcriptPay = earningsFor(hourlySeconds.get(id) ?? 0) + (fixedPay.get(id) ?? 0);
+  for (const [id, b] of map) b.transcriptPay = earningsFor(hourlySeconds.get(id) ?? 0) + (customPay.get(id) ?? 0);
+  const referredUsual = new Map<string, number>();
+  const referredCustom = new Map<string, number>();
   for (const r of referred) {
-    const b = get(r.referrerId!);
-    b.referralSeconds = r._sum.seconds ?? 0;
-    b.referralPay = referralPayFor(b.referralSeconds);
+    const id = r.referrerId!;
+    get(id).referralSeconds += r._sum.seconds ?? 0;
+    if (r.customRate) referredCustom.set(id, (referredCustom.get(id) ?? 0) + (r._sum.amount ?? 0));
+    else referredUsual.set(id, (referredUsual.get(id) ?? 0) + (r._sum.seconds ?? 0));
   }
+  for (const id of new Set([...referredUsual.keys(), ...referredCustom.keys()])) get(id).referralPay = referralPayFor(referredUsual.get(id) ?? 0, referredCustom.get(id) ?? 0);
   for (const p of paid) get(p.userId).paid = p._sum.amount ?? 0;
   for (const b of map.values()) {
     b.earned = b.transcriptPay + b.referralPay;

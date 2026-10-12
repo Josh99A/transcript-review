@@ -20,19 +20,26 @@ export default async function ReferralsPage() {
   const [referrals, credited, payouts, balance, payDate] = await Promise.all([
     db.user.findMany({ where: { referredById: user.id }, orderBy: { createdAt: "desc" } }),
     // Work credited to this referrer, per transcriber.
-    db.earning.groupBy({ by: ["userId"], where: { referrerId: user.id }, _sum: { seconds: true }, _count: true }),
+    db.earning.groupBy({ by: ["userId", "customRate"], where: { referrerId: user.id }, _sum: { seconds: true, amount: true }, _count: true }),
     db.payout.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
     balanceFor(user.id),
     getNextPayDate(),
   ]);
-  const creditFor = (id: string) => credited.find((c) => c.userId === id);
+  // Per transcriber: jobs, time, and what this referrer earned from them (50% of their pay).
+  const creditFor = (id: string) => {
+    const rows = credited.filter((c) => c.userId === id);
+    if (!rows.length) return undefined;
+    const usual = rows.find((c) => !c.customRate)?._sum.seconds ?? 0;
+    const custom = rows.find((c) => c.customRate)?._sum.amount ?? 0;
+    return { _count: rows.reduce((n, c) => n + c._count, 0), _sum: { seconds: rows.reduce((n, c) => n + (c._sum.seconds ?? 0), 0) }, pay: referralPayFor(usual, custom) };
+  };
   const firstName = user.name.split(" ")[0];
 
   return (
     <>
       <PageHeader
         title={`Hi ${firstName}`}
-        description={`You earn ${formatUGX(REFERRAL_RATE_PER_HOUR_UGX)} for every hour of transcript submitted by the people you referred.`}
+        description={`You earn half of what the people you referred are paid: ${formatUGX(REFERRAL_RATE_PER_HOUR_UGX)} for every hour of transcript at the usual rate.`}
       />
       <div className="mb-6">
         <PayDateBanner payDate={payDate} owed={balance.owed} detail={user.role === "USER" ? "Your referral earnings are paid together with your transcription pay." : "Everything you've earned from referrals and not yet been paid is paid on this date."} />
@@ -63,7 +70,7 @@ export default async function ReferralsPage() {
                         <td><UserCell name={r.name} sub={`${c?._count ?? 0} transcript${c?._count === 1 ? "" : "s"} submitted`} /></td>
                         <td data-label="Joined" className="whitespace-nowrap text-slate-600">{formatDate(r.createdAt)}</td>
                         <td data-label="Submitted" className="num whitespace-nowrap text-slate-600">{seconds ? formatHours(seconds) : <span className="text-slate-400">Nothing yet</span>}</td>
-                        <td data-label="You earned" className={`num text-right font-medium ${seconds ? "text-emerald-700" : "text-slate-400"}`}>{formatUGX(referralPayFor(seconds))}</td>
+                        <td data-label="You earned" className={`num text-right font-medium ${seconds ? "text-emerald-700" : "text-slate-400"}`}>{formatUGX(c?.pay ?? 0)}</td>
                       </tr>
                     );
                   })}
