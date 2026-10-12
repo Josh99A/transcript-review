@@ -152,7 +152,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                       <label className="label" htmlFor="review-note">{job.approvedAt ? "Still needs changes?" : "Not satisfactory?"}</label>
                       <RichTextEditor name="note" id="review-note" minHeight="7rem" placeholder="e.g. Speaker names are missing from 02:10 to 04:30, and fix the spelling of Kampala." />
                       <button className="btn-secondary w-full"><Undo2 className="size-4" /> Send back with instructions</button>
-                      <p className="text-xs text-slate-500">{job.assignee?.name ?? "The transcriber"} sees your instructions and can edit again. Pay already credited stays, and resubmitting won&apos;t pay twice.</p>
+                      <p className="text-xs text-slate-500">{job.assignee?.name ?? "The transcriber"} sees your instructions and can edit again. Their pay for it stays on hold until you approve a resubmission.</p>
                     </ActionForm>
                   )}
                 </div>
@@ -282,13 +282,13 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
             <div className="card-header"><h2 className="card-title">Time credited</h2></div>
             <div className="card-body space-y-4">
               {job.earnings.length === 0 ? (
-                <p className="text-sm text-slate-500">Nothing credited yet. When the transcript is submitted, its {formatHours(job.durationSeconds)} are added to the transcriber&apos;s total hours, which their pay is worked out on.</p>
+                <p className="text-sm text-slate-500">Nothing credited yet. When the transcript is submitted its {formatHours(job.durationSeconds)} are recorded here, and they count toward the transcriber&apos;s pay once you approve it.</p>
               ) : (
                 <ul className="space-y-2">
                   {job.earnings.map((e) => (
                     <li key={e.id} className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm">
                       <span className="flex-1 text-emerald-900">{e.user.name}</span>
-                      <span className="num font-semibold text-emerald-900">{formatHours(e.seconds)}</span>
+                      <span className="num font-semibold text-emerald-900">{formatHours(e.seconds)}<span className="block text-right text-xs font-normal">{job.approvedAt ? "approved, counts toward pay" : "not approved yet, not owed"}</span></span>
                       <ConfirmAction
                         action={removeEarning}
                         fields={{ earningId: e.id }}

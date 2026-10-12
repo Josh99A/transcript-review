@@ -6,7 +6,7 @@ import { EmptyState, PageHeader, StatCard, UserCell } from "@/components/ui";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { balanceFor } from "@/lib/earnings";
+import { APPROVED, balanceFor } from "@/lib/earnings";
 import { formatDate, formatHours, formatUGX } from "@/lib/format";
 import { REFERRAL_RATE_PER_HOUR_UGX, referralPayFor } from "@/lib/pay";
 import { getNextPayDate } from "@/lib/settings";
@@ -19,8 +19,8 @@ export default async function ReferralsPage() {
   if (user.role === "ADMIN") redirect("/admin");
   const [referrals, credited, payouts, balance, payDate] = await Promise.all([
     db.user.findMany({ where: { referredById: user.id }, orderBy: { createdAt: "desc" } }),
-    // Work credited to this referrer, per transcriber.
-    db.earning.groupBy({ by: ["userId", "customRate"], where: { referrerId: user.id }, _sum: { seconds: true, amount: true }, _count: true }),
+    // Approved work credited to this referrer, per transcriber.
+    db.earning.groupBy({ by: ["userId", "customRate"], where: { referrerId: user.id, ...APPROVED }, _sum: { seconds: true, amount: true }, _count: true }),
     db.payout.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
     balanceFor(user.id),
     getNextPayDate(),
@@ -60,7 +60,7 @@ export default async function ReferralsPage() {
           ) : (
             <div className="relative overflow-x-auto">
               <table className="table table-stack">
-                <thead><tr><th>Transcriber</th><th>Joined</th><th>Submitted</th><th className="text-right">You earned</th></tr></thead>
+                <thead><tr><th>Transcriber</th><th>Joined</th><th>Approved</th><th className="text-right">You earned</th></tr></thead>
                 <tbody>
                   {referrals.map((r) => {
                     const c = creditFor(r.id);

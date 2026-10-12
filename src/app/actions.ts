@@ -417,7 +417,7 @@ export async function approveJob(formData: FormData): Promise<FormState> {
   const { count } = await db.job.updateMany({ where: { id: jobId, status: "SUBMITTED", approvedAt: null }, data: { approvedAt: new Date(), reviewedAt: new Date() } });
   if (!count) return { error: "Only submitted jobs that aren't approved yet can be approved." };
   const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
-  await notify([job.assigneeId], { title: `Approved: ${job.title}`, body: "Your transcript was accepted.", href: `/jobs/${jobId}`, jobId, kind: "approved" });
+  await notify([job.assigneeId], { title: `Approved: ${job.title}`, body: "Your transcript was accepted, and its pay is now in your earnings.", href: `/jobs/${jobId}`, jobId, kind: "approved" });
   await settleNotices(jobId);
   revalidatePath("/admin/reviews");
   revalidatePath("/admin");

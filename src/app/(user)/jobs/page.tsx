@@ -182,10 +182,7 @@ function JobGroup({ id, title, hint, jobs, action }: { id: string; title: string
 }
 
 function SubmittedBanner({ job }: { job: MyJob }) {
-  const earning = job.earnings[0];
-  const pay = earning?.amount ?? 0;
-  // Pay is credited once per job, so a resubmission finds it already there.
-  const paidBefore = !!earning && !!job.submittedAt && +job.submittedAt - +earning.createdAt > 5000;
+  const pay = job.earnings[0]?.amount ?? 0;
   return (
     <section role="status" className="relative mb-6 rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-600/20 sm:p-5">
       <ClearSubmitted />
@@ -195,19 +192,19 @@ function SubmittedBanner({ job }: { job: MyJob }) {
         <div className="min-w-0 space-y-2 text-sm text-emerald-900">
           <p className="text-base font-semibold">Sent for review: {job.title}</p>
           <p>
-            {paidBefore ? "Your corrected transcript is with the admins again. The pay for this job was already added, so it isn't counted twice." : <>About <span className="num font-semibold">{formatUGX(pay)}</span> has been added to <Link href="/earnings" className="font-medium underline">your earnings</Link> for this job.</>}
+            About <span className="num font-semibold">{formatUGX(pay)}</span> for this job is now <span className="font-medium">awaiting approval</span>. It moves to <Link href="/earnings" className="font-medium underline">your earnings</Link> when an admin approves it, and can only be paid after that.
           </p>
           <div>
             <p className="font-medium">What happens next</p>
             <ul className="mt-1 list-disc space-y-0.5 pl-5">
-              <li>An admin checks your work. You&apos;ll get a notification when they approve it or ask for changes.</li>
+              <li>An admin checks your work. You&apos;ll get a notification when they approve it (and the pay is added) or ask for changes.</li>
               <li>If they ask for changes, the job moves to Needs changes with their notes.</li>
               <li>Made a mistake? You can unsubmit it until it&apos;s reviewed.</li>
             </ul>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href={`/jobs/${job.id}`} className="btn-secondary btn-sm inline-flex"><Eye className="size-3.5" /> View what you submitted</Link>
-            <ActionForm action={withdrawSubmission} redirectTo={`/jobs/${job.id}`} confirm={{ title: "Unsubmit this transcript?", description: `It goes back to In progress with your edits kept. The ${formatUGX(pay)} added for it comes off your earnings until you submit again.`, label: "Unsubmit and edit" }}>
+            <ActionForm action={withdrawSubmission} redirectTo={`/jobs/${job.id}`} confirm={{ title: "Unsubmit this transcript?", description: `It goes back to In progress with your edits kept and leaves the admin's review list. You can submit it again when you're ready.`, label: "Unsubmit and edit" }}>
               <input type="hidden" name="jobId" value={job.id} />
               <button className="btn-secondary btn-sm"><Undo2 className="size-3.5" /> Unsubmit</button>
             </ActionForm>
@@ -230,7 +227,7 @@ function DoneGroup({ id, title, hint, jobs }: { id: string; title: string; hint:
               <span className="num flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
                 <StatusBadge status={jobBadge(j)} />
                 <span>{formatDuration(j.durationSeconds)} · {j.approvedAt ? `approved ${formatRelative(j.approvedAt)}` : `submitted ${formatDate(j.submittedAt)}`}</span>
-                {j.earnings[0] && <span className="font-medium text-emerald-700">{formatUGX(j.earnings[0].amount)} earned</span>}
+                {j.earnings[0] && (j.approvedAt ? <span className="font-medium text-emerald-700">{formatUGX(j.earnings[0].amount)} earned</span> : <span className="font-medium text-sky-700">{formatUGX(j.earnings[0].amount)} awaiting approval</span>)}
                 <span className="inline-flex items-center gap-1 font-medium text-brand-600"><Eye className="size-4" aria-hidden /> View</span>
               </span>
             </Link>

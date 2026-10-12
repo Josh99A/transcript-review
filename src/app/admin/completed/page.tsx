@@ -7,6 +7,7 @@ import Link from "next/link";
 import { EmptyState, PageHeader, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { APPROVED } from "@/lib/earnings";
 import { formatDate, formatDuration, formatUGX } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Completed" };
@@ -32,7 +33,7 @@ export default async function CompletedPage({ searchParams }: { searchParams: Pr
     }),
     db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     db.payout.groupBy({ by: ["userId"], _sum: { amount: true } }),
-    db.earning.findMany({ select: { id: true, userId: true, amount: true }, orderBy: { createdAt: "asc" } }),
+    db.earning.findMany({ where: APPROVED, select: { id: true, userId: true, amount: true }, orderBy: { createdAt: "asc" } }),
   ]);
 
   // Payments aren't tied to jobs, so each person's payments are counted against their jobs oldest first.

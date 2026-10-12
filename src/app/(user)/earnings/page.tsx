@@ -1,4 +1,4 @@
-import { Banknote, CircleCheck, Clock, HandCoins, Hourglass, Wallet } from "lucide-react";
+import { Banknote, CircleCheck, ClipboardCheck, Clock, HandCoins, Hourglass, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, StatCard } from "@/components/ui";
@@ -20,13 +20,14 @@ export default async function EarningsPage() {
     db.payout.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
   ]);
   const [balance, payDate, expected] = await Promise.all([balanceFor(user.id), getNextPayDate(), expectedFor(user.id)]);
-  const { earned, owed, seconds, referralPay, referralSeconds } = balance;
+  const { earned, owed, seconds, referralPay, referralSeconds, awaiting, awaitingJobs } = balance;
+  const approvedCount = earnings.filter((e) => e.job.status === "SUBMITTED" && e.job.approvedAt).length;
   const paid = payouts.reduce((s, p) => s + p.amount, 0);
   const paidPct = earned ? Math.min(100, Math.round((paid / earned) * 100)) : 0;
 
   return (
     <>
-      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of all your submitted transcripts. Jobs with a special rate are paid at that rate instead.`} />
+      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of your approved transcripts. Work counts once an admin approves it. Jobs with a special rate are paid at that rate instead.`} />
       <div className="mb-6">
         <PayDateBanner payDate={payDate} owed={owed} detail={`Paid on your total of ${formatHours(seconds)} of transcribed media, minus what you've already been paid.`} />
       </div>
@@ -37,7 +38,7 @@ export default async function EarningsPage() {
           <div className="relative">
             <div className="flex items-center gap-2 text-sm text-brand-100"><Wallet className="size-4" /> Waiting to be paid</div>
             <div className="num mt-2 text-4xl font-semibold tracking-tight">{formatUGX(owed)}</div>
-            <p className="mt-1 text-xs text-brand-100">What you&apos;ve earned from submitted work, minus what you&apos;ve been paid.</p>
+            <p className="mt-1 text-xs text-brand-100">What you&apos;ve earned from approved work, minus what you&apos;ve been paid.</p>
             <div className="mt-6">
               <div className="flex justify-between text-xs text-brand-100">
                 <span>Paid {formatUGX(paid)}</span>
@@ -56,11 +57,20 @@ export default async function EarningsPage() {
               label="Expected from your current jobs"
               value={formatUGX(expected.total)}
               tone="amber"
-              hint={expected.jobs ? <>From {expected.jobs} job{expected.jobs === 1 ? "" : "s"} you haven&apos;t submitted yet{expected.referralPay > 0 ? `, including ${formatUGX(expected.referralPay)} from people you referred` : ""}. <strong className="font-medium text-slate-700">Not earned yet</strong>: it moves to Earned when you submit.</> : "Nothing in progress right now."}
+              hint={expected.jobs ? <>From {expected.jobs} job{expected.jobs === 1 ? "" : "s"} you haven&apos;t submitted yet{expected.referralPay > 0 ? `, including ${formatUGX(expected.referralPay)} from people you referred` : ""}. <strong className="font-medium text-slate-700">Not earned yet</strong>.</> : "Nothing in progress right now."}
             />
           </div>
-          <StatCard icon={CircleCheck} label="Earned from submitted work" value={formatUGX(earned)} tone="emerald" hint={`${earnings.length} transcript${earnings.length === 1 ? "" : "s"} submitted, including any waiting for review`} />
-          <StatCard icon={Clock} label="Media completed" value={formatHours(seconds)} tone="slate" hint={`${formatDuration(seconds)} in total`} />
+          <div className="col-span-2">
+            <StatCard
+              icon={ClipboardCheck}
+              label="Awaiting approval"
+              value={formatUGX(awaiting)}
+              tone="slate"
+              hint={awaitingJobs ? <>From {awaitingJobs} submitted job{awaitingJobs === 1 ? "" : "s"} waiting for an admin. <strong className="font-medium text-slate-700">Not earned yet</strong>: it moves to Earned when approved.</> : "Nothing waiting for approval."}
+            />
+          </div>
+          <StatCard icon={CircleCheck} label="Earned from approved work" value={formatUGX(earned)} tone="emerald" hint={`${approvedCount} approved transcript${approvedCount === 1 ? "" : "s"}`} />
+          <StatCard icon={Clock} label="Media approved" value={formatHours(seconds)} tone="slate" hint={`${formatDuration(seconds)} in total`} />
           {(referralPay > 0 || referralSeconds > 0) && (
             <div className="col-span-2">
               <StatCard icon={HandCoins} label="From people you referred" value={formatUGX(referralPay)} tone="brand" hint={<><span className="num">{formatHours(referralSeconds)}</span> submitted by them · <Link href="/referrals" className="font-medium text-brand-600 hover:text-brand-700">See referrals</Link></>} />
@@ -77,13 +87,14 @@ export default async function EarningsPage() {
           ) : (
             <div className="relative overflow-x-auto">
               <table className="table table-stack">
-                <thead><tr><th>Job</th><th>Credited</th><th className="text-right">Adds</th></tr></thead>
+                <thead><tr><th>Job</th><th>Submitted</th><th>Status</th><th className="text-right">Adds</th></tr></thead>
                 <tbody>
                   {earnings.map((e) => (
                     <tr key={e.id}>
                       <td className="font-medium text-slate-900">{e.job.title}</td>
-                      <td data-label="Credited" className="whitespace-nowrap text-slate-600">{formatDate(e.createdAt)}</td>
-                      <td data-label="Adds" className="num text-right font-medium text-emerald-700">{e.customRate ? `${formatUGX(e.amount)}` : `+${formatHours(e.seconds)}`}{e.customRate && <span className="block text-xs font-normal text-slate-400">special rate</span>}</td>
+                      <td data-label="Submitted" className="whitespace-nowrap text-slate-600">{formatDate(e.createdAt)}</td>
+                      <td data-label="Status" className="whitespace-nowrap">{e.job.status === "SUBMITTED" && e.job.approvedAt ? <span className="text-emerald-700">Approved</span> : e.job.status === "SUBMITTED" ? <span className="text-sky-700">Awaiting approval</span> : <span className="text-orange-700">Sent back for changes</span>}</td>
+                      <td data-label="Adds" className={`num text-right font-medium ${e.job.approvedAt ? "text-emerald-700" : "text-slate-400"}`}>{e.customRate ? `${formatUGX(e.amount)}` : `+${formatHours(e.seconds)}`}{e.customRate && <span className="block text-xs font-normal text-slate-400">special rate</span>}</td>
                     </tr>
                   ))}
                 </tbody>

@@ -321,9 +321,9 @@ export default function Editor({
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
           <p className="text-xs text-slate-500">
             {ratePerHour != null ? (
-              <>This job is paid at its own rate: about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds, ratePerHour))}</span> for its <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span>, added when you submit.</>
+              <>This job is paid at its own rate: about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds, ratePerHour))}</span> for its <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span>, added to your earnings when an admin approves it.</>
             ) : (
-              <>Submitting adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours (about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds))}</span>). Pay is worked out on your total hours.</>
+              <>Once an admin approves it, this adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours (about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds))}</span>). Pay is worked out on your approved hours.</>
             )}
           </p>
           <button type="button" className="btn ml-auto" onClick={() => setConfirmOpen(true)} disabled={submitting || !plain(text).trim()}>
@@ -336,12 +336,12 @@ export default function Editor({
         open={confirmOpen}
         onClose={() => { if (!submitting) { setConfirmOpen(false); setUploadedFrom(null); } }}
         title={uploadedFrom ? `Submit ${uploadedFrom}?` : "Submit this transcript?"}
-        description={uploadedFrom ? "Your file's text is now in the editor. Check the changes below, then submit. You can't edit it after that unless an admin sends it back." : "Once submitted you can't edit it unless an admin sends it back."}
+        description={uploadedFrom ? "Your file's text is now in the editor. Check the changes below, then submit. You can't edit it after that unless an admin sends it back. Its pay is added to your earnings when an admin approves it." : "Once submitted you can't edit it unless an admin sends it back. Its pay is added to your earnings when an admin approves it."}
       >
         <dl className="mb-5 grid grid-cols-3 gap-3 rounded-lg bg-slate-50 p-4 text-center">
           <div><dt className="text-xs text-slate-500">Words added</dt><dd className="num mt-0.5 font-semibold text-emerald-700">+{changes.added}</dd></div>
           <div><dt className="text-xs text-slate-500">Words removed</dt><dd className="num mt-0.5 font-semibold text-red-700">−{changes.removed}</dd></div>
-          <div><dt className="text-xs text-slate-500">Adds to your hours</dt><dd className="num mt-0.5 font-semibold text-slate-900">{formatHours(seconds)}</dd></div>
+          <div><dt className="text-xs text-slate-500">Adds when approved</dt><dd className="num mt-0.5 font-semibold text-slate-900">{formatHours(seconds)}</dd></div>
         </dl>
         {changes.added + changes.removed === 0 && (
           <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">You haven&apos;t changed anything from the original yet.</p>

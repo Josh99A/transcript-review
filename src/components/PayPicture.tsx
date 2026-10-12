@@ -1,10 +1,10 @@
-import { CircleCheck, Hourglass, Wallet } from "lucide-react";
+import { CircleCheck, ClipboardCheck, Hourglass, Wallet } from "lucide-react";
 import Link from "next/link";
 import type { Balance, Expected } from "@/lib/earnings";
 import { formatHours, formatUGX } from "@/lib/format";
 
 /**
- * The three amounts a transcriber cares about, side by side, each saying what it counts so that
+ * The four amounts a transcriber cares about, side by side, each saying what it counts so that
  * pay still to come from current jobs is never mistaken for pay already earned.
  */
 export default function PayPicture({ expected, balance, earningsLink = true }: { expected: Expected; balance: Balance; earningsLink?: boolean }) {
@@ -15,16 +15,26 @@ export default function PayPicture({ expected, balance, earningsLink = true }: {
       label: "Expected from your current jobs",
       value: formatUGX(expected.total),
       note: expected.jobs
-        ? `${expected.jobs} job${expected.jobs === 1 ? "" : "s"} you haven't submitted yet (${formatHours(expected.seconds)} of media). Not earned yet: it moves to Earned when you submit.`
+        ? `${expected.jobs} job${expected.jobs === 1 ? "" : "s"} you haven't submitted yet (${formatHours(expected.seconds)} of media). Not earned yet.`
         : "Nothing in progress. Pay from jobs you take on shows here until you submit them.",
       extra: expected.referralPay > 0 ? `Includes ${formatUGX(expected.referralPay)} from jobs people you referred are working on.` : null,
     },
     {
+      icon: ClipboardCheck,
+      tone: "bg-sky-50 text-sky-600",
+      label: "Awaiting approval",
+      value: formatUGX(balance.awaiting),
+      note: balance.awaitingJobs
+        ? `${balance.awaitingJobs} submitted job${balance.awaitingJobs === 1 ? "" : "s"} (${formatHours(balance.awaitingSeconds)}) waiting for an admin. Not earned yet: it moves to Earned when approved.`
+        : "Nothing waiting. Work you submit shows here until an admin approves it.",
+      extra: null,
+    },
+    {
       icon: CircleCheck,
       tone: "bg-emerald-50 text-emerald-600",
-      label: "Earned from submitted work",
+      label: "Earned from approved work",
       value: formatUGX(balance.earned),
-      note: `Everything you've submitted so far (${formatHours(balance.seconds)}), including work still waiting for review.`,
+      note: `Work an admin has approved (${formatHours(balance.seconds)}). Only this can be paid.`,
       extra: balance.referralPay > 0 ? `Includes ${formatUGX(balance.referralPay)} from people you referred.` : null,
     },
     {
@@ -32,13 +42,13 @@ export default function PayPicture({ expected, balance, earningsLink = true }: {
       tone: "bg-brand-50 text-brand-600",
       label: "Waiting to be paid",
       value: formatUGX(balance.owed),
-      note: `What you've earned minus the ${formatUGX(balance.paid)} you've already been paid.`,
+      note: `Earned from approved work minus the ${formatUGX(balance.paid)} you've already been paid.`,
       extra: null,
       link: earningsLink,
     },
   ];
   return (
-    <section aria-label="Your pay" className="card divide-y divide-slate-100 md:grid md:grid-cols-3 md:divide-x md:divide-y-0">
+    <section aria-label="Your pay" className="card grid divide-slate-100 max-sm:divide-y sm:grid-cols-2 xl:grid-cols-4 xl:divide-x">
       {items.map((i) => (
         <div key={i.label} className="flex gap-3 p-4 sm:p-5">
           <span className={`flex size-10 shrink-0 items-center justify-center rounded-lg ${i.tone}`}><i.icon className="size-5" aria-hidden /></span>

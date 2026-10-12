@@ -48,7 +48,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <span className="num flex flex-wrap items-center gap-x-4 gap-y-1">
             <StatusBadge status={jobBadge(job)} />
             <span className="inline-flex items-center gap-1.5"><Clock className="size-3.5" /> {formatDuration(job.durationSeconds)}</span>
-            <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> {job.status === "SUBMITTED" && job.earnings[0] ? `${formatUGX(job.earnings[0].amount)} earned` : `${jobPayLabel(job)} expected`}</span>
+            <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> {job.status === "SUBMITTED" && job.earnings[0] ? `${formatUGX(job.earnings[0].amount)} ${job.approvedAt ? "earned" : "awaiting approval"}` : `${jobPayLabel(job)} expected`}</span>
             <JobTags job={job} />
             {due && <span className={`inline-flex items-center gap-1.5 ${due.overdue ? "text-red-700" : due.soon ? "text-amber-700" : ""}`}><CalendarClock className="size-3.5" /> {due.text}</span>}
           </span>
@@ -84,12 +84,12 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
                   ? `You submitted this on ${formatDate(job.submittedAt)} and it was approved ${formatRelative(job.approvedAt)}. Nothing more to do.`
                   : `You submitted this on ${formatDate(job.submittedAt)}. An admin will review it, and you'll be notified if they approve it or ask for changes.`}
               </p>
-              {job.earnings[0] && <p className="num mt-0.5 text-xs opacity-80">{formatUGX(job.earnings[0].amount)} added to your earnings for this job.</p>}
+              {job.earnings[0] && <p className="num mt-0.5 text-xs opacity-80">{job.approvedAt ? `${formatUGX(job.earnings[0].amount)} added to your earnings for this job.` : `${formatUGX(job.earnings[0].amount)} for this job is awaiting approval. It's added to your earnings when an admin approves it.`}</p>}
             </div>
             <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary btn-sm"><Download className="size-3.5" /> .txt</a>
           </div>
           {!job.approvedAt && !job.mediaRemovedAt && (
-            <ActionForm action={withdrawSubmission} className="card flex flex-wrap items-center gap-3 px-4 py-3" confirm={{ title: "Unsubmit this transcript?", description: `It goes back to In progress with your edits kept, and leaves the admin's review list. The ${job.earnings[0] ? formatUGX(job.earnings[0].amount) : "pay"} added for it comes off your earnings until you submit again.`, label: "Unsubmit and edit" }}>
+            <ActionForm action={withdrawSubmission} className="card flex flex-wrap items-center gap-3 px-4 py-3" confirm={{ title: "Unsubmit this transcript?", description: "It goes back to In progress with your edits kept, and leaves the admin's review list. You can submit it again when you're ready.", label: "Unsubmit and edit" }}>
               <input type="hidden" name="jobId" value={job.id} />
               <p className="min-w-0 flex-1 text-sm text-slate-600">Made a mistake? Unsubmit it, fix it in the editor or upload a new file, then submit again. You can do this until an admin reviews it.</p>
               <button className="btn-secondary w-full sm:w-auto"><Undo2 className="size-4" /> Unsubmit</button>

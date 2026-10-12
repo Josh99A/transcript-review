@@ -1,4 +1,4 @@
-import { Banknote, HandCoins, Hourglass, Users, Wallet } from "lucide-react";
+import { Banknote, ClipboardCheck, HandCoins, Hourglass, Users, Wallet } from "lucide-react";
 import PayProblems from "@/components/PayProblems";
 import { payProblems } from "@/lib/payCheck";
 import type { Metadata } from "next";
@@ -26,7 +26,7 @@ export default async function UsersPage() {
     db.job.groupBy({ by: ["assigneeId", "status"], _count: true }),
   ]);
   const jobsFor = (id: string, status: string) => jobCounts.find((c) => c.assigneeId === id && c.status === status)?._count ?? 0;
-  const zero = { earned: 0, paid: 0, owed: 0 };
+  const zero = { earned: 0, paid: 0, owed: 0, awaiting: 0, awaitingJobs: 0 };
   const transcribers = users.filter((u) => u.role === "USER");
   const referrers = users.filter((u) => u.role === "REFERRER");
   const admins = users.filter((u) => u.role === "ADMIN");
@@ -38,7 +38,7 @@ export default async function UsersPage() {
   const totals = [...transcribers, ...referrers].reduce(
     (t, u) => {
       const b = balances.get(u.id) ?? zero;
-      return { earned: t.earned + b.earned, paid: t.paid + b.paid, owed: t.owed + b.owed, expected: t.expected + (expected.get(u.id)?.total ?? 0) };
+      return { earned: t.earned + b.earned, paid: t.paid + b.paid, owed: t.owed + b.owed, awaiting: t.awaiting + b.awaiting, awaitingJobs: t.awaitingJobs + b.awaitingJobs, expected: t.expected + (expected.get(u.id)?.total ?? 0) };
     },
     { ...zero, expected: 0 },
   );
@@ -53,6 +53,7 @@ export default async function UsersPage() {
         stats={[
           { icon: Wallet, label: "Owed now", value: formatUGX(totals.owed), tone: "brand" },
           { icon: Hourglass, label: "In progress (expected)", value: formatUGX(totals.expected), tone: "amber", hint: `From ${inProgress} job${inProgress === 1 ? "" : "s"} not yet submitted` },
+          { icon: ClipboardCheck, label: "Awaiting approval", value: formatUGX(totals.awaiting), tone: "slate", hint: `From ${totals.awaitingJobs} submitted job${totals.awaitingJobs === 1 ? "" : "s"}, not owed until you approve` },
           { icon: Banknote, label: "Paid out", value: formatUGX(totals.paid), tone: "emerald" },
           { icon: Users, label: "Transcribers", value: transcribers.length, tone: "slate", hint: `${referrers.length} referrer${referrers.length === 1 ? "" : "s"}` },
         ]}
@@ -73,8 +74,9 @@ export default async function UsersPage() {
                   <dl className="space-y-1.5 text-sm">
                     <Line label="Pay to"><PayTo user={u} /></Line>
                     <Line label="Jobs"><span className="num">{jobsFor(u.id, "SUBMITTED")} done · {jobsFor(u.id, "ASSIGNED")} in progress</span></Line>
-                    <Line label="Earned"><span className="num">{formatUGX(b.earned)}{fromReferrals(u.id) > 0 && <span className="block text-xs text-slate-500">incl. {formatUGX(fromReferrals(u.id))} from referrals</span>}</span></Line>
-                    <Line label="In progress (expected)"><ExpectedCell e={expected.get(u.id)} credited={jobsFor(u.id, "ASSIGNED") - (expected.get(u.id)?.jobs ?? 0)} /></Line>
+                    <Line label="Awaiting approval"><AwaitingCell b={b} /></Line>
+                    <Line label="Earned (approved)"><span className="num">{formatUGX(b.earned)}{fromReferrals(u.id) > 0 && <span className="block text-xs text-slate-500">incl. {formatUGX(fromReferrals(u.id))} from referrals</span>}</span></Line>
+                    <Line label="In progress (expected)"><ExpectedCell e={expected.get(u.id)} /></Line>
                   </dl>
                   <div>
                     <div className="mb-1 text-xs text-slate-500">Referred by</div>
@@ -91,7 +93,7 @@ export default async function UsersPage() {
           <div className="hidden overflow-x-auto sm:block">
             <table className="table">
               <thead>
-                <tr><th>Person</th><th>Pay to</th><th>Jobs</th><th>Referred by</th><th className="text-right whitespace-nowrap" title="Pay from jobs in progress, not yet submitted">In progress<span className="block text-[10px] font-normal normal-case">expected</span></th><th className="text-right">Earned</th><th className="text-right">Owed</th><th><span className="sr-only">Actions</span></th></tr>
+                <tr><th>Person</th><th>Pay to</th><th>Jobs</th><th>Referred by</th><th className="text-right whitespace-nowrap" title="Pay from jobs in progress, not yet submitted">In progress<span className="block text-[10px] font-normal normal-case">expected</span></th><th className="text-right whitespace-nowrap" title="Submitted, not yet approved. Not owed until approved.">Awaiting<span className="block text-[10px] font-normal normal-case">approval</span></th><th className="text-right whitespace-nowrap">Earned<span className="block text-[10px] font-normal normal-case">approved</span></th><th className="text-right">Owed</th><th><span className="sr-only">Actions</span></th></tr>
               </thead>
               <tbody>
                 {transcribers.map((u) => {
@@ -105,7 +107,8 @@ export default async function UsersPage() {
                         <span className="block text-xs text-slate-500">{jobsFor(u.id, "ASSIGNED")} in progress</span>
                       </td>
                       <td><ReferrerSelect userId={u.id} current={u.referredById} referrers={optionsFor(u.id)} /></td>
-                      <td className="text-right whitespace-nowrap"><ExpectedCell e={expected.get(u.id)} credited={jobsFor(u.id, "ASSIGNED") - (expected.get(u.id)?.jobs ?? 0)} /></td>
+                      <td className="text-right whitespace-nowrap"><ExpectedCell e={expected.get(u.id)} /></td>
+                      <td className="text-right whitespace-nowrap"><AwaitingCell b={b} /></td>
                       <td className="num text-right">{formatUGX(b.earned)}{fromReferrals(u.id) > 0 && <span className="block text-xs text-slate-500">incl. {formatUGX(fromReferrals(u.id))} referrals</span>}</td>
                       <td className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
                       <td >
@@ -265,13 +268,21 @@ function PersonSummary({ user, owed }: { user: { name: string; email: string }; 
   );
 }
 
-function ExpectedCell({ e, credited }: { e?: { jobs: number; transcriptPay: number; referralPay: number; total: number }; credited: number }) {
+function ExpectedCell({ e }: { e?: { jobs: number; transcriptPay: number; referralPay: number; total: number } }) {
   return (
     <span className="num">
       <span className={e?.total ? "text-slate-900" : "text-slate-400"}>{formatUGX(e?.total ?? 0)}</span>
       {e && e.jobs > 0 && <span className="block text-xs text-slate-500">{e.jobs} job{e.jobs === 1 ? "" : "s"} · {formatUGX(e.transcriptPay)}</span>}
       {e && e.referralPay > 0 && <span className="block text-xs text-slate-500">+ {formatUGX(e.referralPay)} referrals</span>}
-      {credited > 0 && <span className="block text-xs text-slate-500">{credited} sent back, already in Earned</span>}
+    </span>
+  );
+}
+
+function AwaitingCell({ b }: { b: { awaiting: number; awaitingJobs: number } }) {
+  return (
+    <span className="num">
+      <span className={b.awaiting ? "text-slate-900" : "text-slate-400"}>{formatUGX(b.awaiting)}</span>
+      {b.awaitingJobs > 0 && <span className="block text-xs text-slate-500">{b.awaitingJobs} to review</span>}
     </span>
   );
 }
