@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "prisma migrate deploy && node scripts/bootstrap-admin.mjs && next start",
+    "start": "prisma migrate deploy && node scripts/bootstrap-admin.mjs && node scripts/reset-work.mjs && next start",
     "lint": "eslint",
     "create-admin": "tsx scripts/create-admin.ts",
     "postinstall": "prisma generate"
