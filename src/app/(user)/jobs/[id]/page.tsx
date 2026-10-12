@@ -1,4 +1,6 @@
+import DocView from "@/components/DocView";
 import TranscriptView from "@/components/TranscriptView";
+import { cleanDoc } from "@/lib/richDoc";
 import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, LifeBuoy, LogOut, MessageSquareWarning, Send, Undo2, Wallet } from "lucide-react";
 import JobTags from "@/components/JobTags";
 import RichText from "@/components/RichText";
@@ -70,7 +72,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       )}
       <Guidelines html={guidelines.html} updatedAt={guidelines.updatedAt} since={job.assignedAt} open={job.status === "ASSIGNED"} />
       {job.status === "ASSIGNED" ? (
-        <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} seconds={job.durationSeconds} ratePerHour={job.ratePerHour} />
+        <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} seconds={job.durationSeconds} ratePerHour={job.ratePerHour} format={job.transcriptFormat} />
       ) : (
         <div className="space-y-4">
           <div className={`flex flex-wrap items-center gap-3 rounded-xl px-4 py-3 text-sm ring-1 ${job.approvedAt ? "bg-emerald-50 text-emerald-800 ring-emerald-600/15" : "bg-sky-50 text-sky-800 ring-sky-600/15"}`}>
@@ -96,7 +98,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           {job.mediaRemovedAt ? <MediaRemoved at={job.mediaRemovedAt} /> : <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>}
           <div className="card px-5 py-4">
             <h2 className="mb-2 text-sm font-semibold text-slate-900">What you submitted <span className="font-normal text-slate-500">(read only)</span></h2>
-            <TranscriptView text={job.editedTranscript} />
+            {job.transcriptFormat === "html" ? <DocView html={cleanDoc(job.editedTranscript)} /> : <TranscriptView text={job.editedTranscript} />}
           </div>
         </div>
       )}

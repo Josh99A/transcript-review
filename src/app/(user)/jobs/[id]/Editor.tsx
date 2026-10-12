@@ -10,7 +10,9 @@ import MediaPlayer, { SKIP_SECONDS, SPEEDS } from "@/components/MediaPlayer";
 import { formatDuration, formatHours, formatUGX } from "@/lib/format";
 import { expectedPayFor } from "@/lib/pay";
 import { countWords, hasTable } from "@/lib/transcriptTables";
+import { docText } from "@/lib/docText";
 import BlockEditor from "./BlockEditor";
+import RichDocEditor, { type DocEditorApi } from "./RichDocEditor";
 import { useUndo } from "./useUndo";
 
 /** Seconds to jump back when resuming with the keyboard, so you re-hear the last words. */
@@ -38,6 +40,7 @@ export default function Editor({
   original,
   seconds,
   ratePerHour,
+  format = "text",
 }: {
   jobId: string;
   mediaType: string;
@@ -45,6 +48,8 @@ export default function Editor({
   original: string;
   seconds: number;
   ratePerHour: number | null;
+  /** "html" for transcripts from Word that keep their formatting. */
+  format?: string;
 }) {
   const { text, set: setText, undo, redo, canUndo, canRedo } = useUndo(initial);
   const [saved, setSaved] = useState(initial);
@@ -60,6 +65,9 @@ export default function Editor({
   const mediaRef = useRef<HTMLMediaElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const editorRef = useRef<HTMLDivElement>(null);
+  const docRef = useRef<DocEditorApi | null>(null);
+  const rich = format === "html";
+  const plain = useCallback((t: string) => (rich ? docText(t) : t), [rich]);
   const textRef = useRef(text);
   useEffect(() => {
     textRef.current = text;
@@ -67,9 +75,9 @@ export default function Editor({
   const isVideo = mediaType.startsWith("video");
 
   const dirty = text !== saved;
-  const words = useMemo(() => countWords(text), [text]);
+  const words = useMemo(() => countWords(plain(text)), [plain, text]);
   // Transcripts with tables get a table editor; everything else keeps the single text box.
-  const withTables = useMemo(() => hasTable(text), [text]);
+  const withTables = useMemo(() => !rich && hasTable(text), [rich, text]);
 
   const save = useCallback(
     async (value: string, manual = false) => {
@@ -105,6 +113,7 @@ export default function Editor({
   }, [dirty]);
 
   const insertAtCursor = useCallback((snippet: string) => {
+    if (docRef.current) return docRef.current.insert(snippet);
     const active = document.activeElement;
     if (active instanceof HTMLTextAreaElement && active !== textareaRef.current && editorRef.current?.contains(active)) {
       // A box in the table editor: set its value the way typing would, so its own change handler updates the transcript.
@@ -195,13 +204,13 @@ export default function Editor({
     if (!confirmOpen) return { added: 0, removed: 0 };
     let added = 0,
       removed = 0;
-    for (const part of diffWords(original, text)) {
+    for (const part of diffWords(plain(original), plain(text))) {
       const n = part.value.trim() ? part.value.trim().split(/\s+/).length : 0;
       if (part.added) added += n;
       else if (part.removed) removed += n;
     }
     return { added, removed };
-  }, [confirmOpen, original, text]);
+  }, [confirmOpen, original, text, plain]);
 
   function submit() {
     startSubmit(async () => {
@@ -265,12 +274,16 @@ export default function Editor({
           <span className="num text-slate-400">{words.toLocaleString()} words</span>
           <div className="ml-auto flex items-center gap-1">
             {/* preventDefault on pointer down keeps the textarea's focus (and the phone keyboard) as it was. */}
+            {!rich && (
+              <>
             <button type="button" className="btn-ghost size-10 px-0 sm:size-8" onPointerDown={(e) => e.preventDefault()} onClick={() => history("undo")} disabled={!canUndo} aria-label="Undo" title="Undo (Ctrl+Z)">
               <Undo2 className="size-4" />
             </button>
             <button type="button" className="btn-ghost size-10 px-0 sm:size-8" onPointerDown={(e) => e.preventDefault()} onClick={() => history("redo")} disabled={!canRedo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">
               <Redo2 className="size-4" />
             </button>
+              </>
+            )}
             <button type="button" className="btn-ghost btn-sm" onClick={() => setRestoreOpen(true)} disabled={text === original}>
               <RotateCcw className="size-3.5" /> Restore original
             </button>
@@ -290,7 +303,9 @@ export default function Editor({
           </button>
         </div>
         <div ref={editorRef} className="flex flex-1 flex-col">
-        {withTables ? (
+        {rich ? (
+          <RichDocEditor value={text} onChange={setText} apiRef={docRef} />
+        ) : withTables ? (
           <BlockEditor text={text} onChange={setText} />
         ) : (
         <textarea
@@ -311,7 +326,7 @@ export default function Editor({
               <>Submitting adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours (about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds))}</span>). Pay is worked out on your total hours.</>
             )}
           </p>
-          <button type="button" className="btn ml-auto" onClick={() => setConfirmOpen(true)} disabled={submitting || !text.trim()}>
+          <button type="button" className="btn ml-auto" onClick={() => setConfirmOpen(true)} disabled={submitting || !plain(text).trim()}>
             <Send className="size-4" /> Submit transcript
           </button>
         </div>

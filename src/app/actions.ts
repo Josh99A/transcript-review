@@ -7,6 +7,8 @@ import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { cleanRich, richText } from "@/lib/richtext";
+import { cleanDoc } from "@/lib/richDoc";
+import { docText } from "@/lib/docText";
 import { getGuidelinesInfo, setGuidelines } from "@/lib/guidelines";
 import { createSession, destroySession, homeFor, requireAdmin, requireRole, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -555,9 +557,16 @@ export async function cancelRequest(formData: FormData): Promise<FormState> {
   return { ok: "Request withdrawn." };
 }
 
-export async function saveDraft(jobId: string, text: string): Promise<FormState> {
+/** Formatted transcripts are cleaned before they are stored; plain ones are kept as typed. */
+async function cleanTranscript(jobId: string, text: string) {
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { transcriptFormat: true } });
+  return job?.transcriptFormat === "html" ? { text: cleanDoc(text), words: docText(text) } : { text, words: text };
+}
+
+export async function saveDraft(jobId: string, raw: string): Promise<FormState> {
   const user = await requireUser();
-  if (text.length > MAX_TRANSCRIPT) return { error: "The transcript is too long to save." };
+  if (raw.length > MAX_TRANSCRIPT) return { error: "The transcript is too long to save." };
+  const { text } = await cleanTranscript(jobId, raw);
   const { count } = await db.job.updateMany({ where: { id: jobId, assigneeId: user.id, status: "ASSIGNED" }, data: { editedTranscript: text } });
   if (!count) return { error: "This job is no longer open for editing. It may have been submitted or moved to someone else." };
   return { ok: "Draft saved." };
@@ -565,10 +574,11 @@ export async function saveDraft(jobId: string, text: string): Promise<FormState>
 
 const MAX_TRANSCRIPT = 2_000_000;
 
-export async function submitJob(jobId: string, text: string, fileName?: string): Promise<FormState> {
+export async function submitJob(jobId: string, raw: string, fileName?: string): Promise<FormState> {
   const user = await requireUser();
-  if (!text.trim()) return { error: "The transcript is empty." };
-  if (text.length > MAX_TRANSCRIPT) return { error: "The transcript is too long to save." };
+  if (raw.length > MAX_TRANSCRIPT) return { error: "The transcript is too long to save." };
+  const { text, words } = await cleanTranscript(jobId, raw);
+  if (!words.trim()) return { error: "The transcript is empty." };
   const res = await guarded(async (tx) => {
     const job = await lockJob(tx, jobId);
     if (!job || job.assigneeId !== user.id) refuse("This job isn't assigned to you any more.");

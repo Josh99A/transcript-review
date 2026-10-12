@@ -1,4 +1,5 @@
 import ReplaceTranscript from "./ReplaceTranscript";
+import { cleanDoc } from "@/lib/richDoc";
 import { ArrowLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, UserMinus, X } from "lucide-react";
 import RichText from "@/components/RichText";
 import RichTextEditor from "@/components/RichTextEditor";
@@ -128,7 +129,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                 )}
                 {job.status === "SUBMITTED" && !job.approvedAt && <span className="ml-auto text-xs text-slate-500">Wrong transcript? Send it back first, then replace it.</span>}
               </div>
-              <TranscriptDiff original={job.originalTranscript} edited={job.editedTranscript} finalLabel={job.status === "SUBMITTED" ? "Submitted" : "Current draft"} />
+              <TranscriptDiff {...(job.transcriptFormat === "html" ? { original: cleanDoc(job.originalTranscript), edited: cleanDoc(job.editedTranscript) } : { original: job.originalTranscript, edited: job.editedTranscript })} format={job.transcriptFormat} finalLabel={job.status === "SUBMITTED" ? "Submitted" : "Current draft"} />
             </section>
             {job.status === "SUBMITTED" && (
               <section className="card">

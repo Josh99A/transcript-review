@@ -2,10 +2,9 @@ import { revalidatePath } from "next/cache";
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { docxToText } from "@/lib/docx";
+import { docText } from "@/lib/docText";
+import { readTranscriptFile } from "@/lib/transcriptUpload";
 import { notify } from "@/lib/notify";
-
-const MAX_BYTES = 10 * 1024 * 1024;
 
 /**
  * Replaces a job's transcript when an admin uploaded the wrong one. The transcriber's edits are based on the
@@ -18,20 +17,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
 
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
-  let text = String(form?.get("text") ?? "");
-  if (file instanceof File && file.size > 0) {
-    if (file.size > MAX_BYTES) return NextResponse.json({ error: "That file is over 10 MB." }, { status: 413 });
-    if (/\.docx$/i.test(file.name)) {
-      try {
-        text = await docxToText(Buffer.from(await file.arrayBuffer()));
-      } catch {
-        return NextResponse.json({ error: "Couldn't read that Word file. Save it as .docx and try again." }, { status: 400 });
-      }
-    } else if (/\.txt$/i.test(file.name)) text = await file.text();
-    else return NextResponse.json({ error: "Upload a Word .docx or a .txt file." }, { status: 400 });
-  }
-  text = text.replace(/\r\n?/g, "\n");
-  if (!text.trim()) return NextResponse.json({ error: "The new transcript has no text in it." }, { status: 400 });
+  if (!(file instanceof File) || file.size === 0) return NextResponse.json({ error: "Choose the correct transcript file." }, { status: 400 });
+  // Word files keep their formatting and tables, like a new upload.
+  const read = await readTranscriptFile(file);
+  if ("error" in read) return NextResponse.json({ error: read.error }, { status: 400 });
+  const text = read.text;
+  if (!(read.format === "html" ? docText(text) : text).trim()) return NextResponse.json({ error: "The new transcript has no text in it." }, { status: 400 });
 
   const job = await db.job.findUnique({ where: { id } });
   if (!job) return NextResponse.json({ error: "This job no longer exists." }, { status: 404 });
@@ -40,7 +31,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   // Conditional on the job still being where it was, so a submit in the meantime isn't overwritten.
   const { count } = await db.job.updateMany({
     where: { id, status: job.status, assigneeId: job.assigneeId },
-    data: { originalTranscript: text, editedTranscript: text },
+    data: { originalTranscript: text, editedTranscript: text, transcriptFormat: read.format },
   });
   if (!count) return NextResponse.json({ error: "This job changed while you were looking at it. Reload and try again." }, { status: 409 });
 

@@ -6,7 +6,8 @@ import { parseDeadline } from "@/lib/format";
 import { uploadMedia } from "@/lib/media";
 import { mediaTypeOf } from "@/lib/mediaTypes";
 import { parseRate } from "@/lib/pay";
-import { docxToText } from "@/lib/docx";
+import { docText, type TranscriptFormat } from "@/lib/docText";
+import { readTranscriptFile } from "@/lib/transcriptUpload";
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -29,15 +30,14 @@ export async function POST(req: Request) {
   if (ratePerHour === "invalid") return NextResponse.json({ error: "Enter the rate as a whole number of shillings per hour, or leave it empty." }, { status: 400 });
 
   let transcript = String(form.get("transcriptText") ?? "");
+  let transcriptFormat: TranscriptFormat = "text";
   const transcriptFile = form.get("transcriptFile");
   if (transcriptFile instanceof File && transcriptFile.size > 0) {
-    if (/\.docx$/i.test(transcriptFile.name)) {
-      try {
-        transcript = await docxToText(Buffer.from(await transcriptFile.arrayBuffer()));
-      } catch {
-        return NextResponse.json({ error: "Couldn't read that Word file. Save it as .docx and try again." }, { status: 400 });
-      }
-    } else transcript = await transcriptFile.text();
+    // Word files keep their formatting and tables.
+    const read = await readTranscriptFile(transcriptFile);
+    if ("error" in read) return NextResponse.json({ error: read.error }, { status: 400 });
+    transcript = read.text;
+    transcriptFormat = read.format;
   }
 
   if (!title) return NextResponse.json({ error: "Give the job a title." }, { status: 400 });
@@ -48,7 +48,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "The media must be an audio or video file." }, { status: 400 });
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0)
     return NextResponse.json({ error: "Couldn't read the media length. Enter it manually." }, { status: 400 });
-  if (!transcript.trim()) return NextResponse.json({ error: "Add a transcript." }, { status: 400 });
+  if (!(transcriptFormat === "html" ? docText(transcript) : transcript).trim()) return NextResponse.json({ error: "Add a transcript." }, { status: 400 });
 
   let stored: Awaited<ReturnType<typeof uploadMedia>>;
   try {
@@ -68,6 +68,7 @@ export async function POST(req: Request) {
       ratePerHour,
       originalTranscript: transcript,
       editedTranscript: transcript,
+      transcriptFormat,
       description,
       language,
       project,

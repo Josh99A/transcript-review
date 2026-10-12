@@ -11,6 +11,7 @@ import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDuration, formatRelative } from "@/lib/format";
 import { jobPayLabel } from "@/lib/pay";
+import { transcriptWords } from "@/lib/docText";
 
 export const metadata: Metadata = { title: "Reviews" };
 
@@ -80,7 +81,7 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Prom
       ) : (
         <ul className="space-y-3">
           {jobs.map((j) => {
-            const c = changedWords(j.originalTranscript, j.editedTranscript);
+            const c = changedWords(transcriptWords(j.originalTranscript, j.transcriptFormat), transcriptWords(j.editedTranscript, j.transcriptFormat));
             return (
               <li key={j.id} className="card p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
