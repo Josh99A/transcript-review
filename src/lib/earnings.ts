@@ -56,3 +56,51 @@ export async function balancesByUser(client: Prisma.TransactionClient = db): Pro
 export async function balanceFor(userId: string): Promise<Balance> {
   return (await balancesByUser()).get(userId) ?? empty();
 }
+
+export type Expected = {
+  /** Jobs held that haven't been credited yet (assigned, not yet submitted). */
+  jobs: number;
+  seconds: number;
+  /** Pay those jobs will bring once submitted. */
+  transcriptPay: number;
+  /** Referral share of jobs the people this user referred are holding. */
+  referralPay: number;
+  total: number;
+};
+
+/**
+ * Pay still to come from jobs people are working on. Only work not yet credited counts, so this never
+ * overlaps Earned: a job adds to Earned when it is submitted, and stays there if it is sent back.
+ */
+export async function expectedByUser(client: Prisma.TransactionClient = db): Promise<Map<string, Expected>> {
+  const jobs = await client.job.findMany({
+    where: { status: "ASSIGNED", assigneeId: { not: null }, earnings: { none: {} } },
+    select: { assigneeId: true, durationSeconds: true, ratePerHour: true, assignee: { select: { referredById: true } } },
+  });
+  const map = new Map<string, Expected>();
+  const get = (id: string) => map.get(id) ?? map.set(id, { jobs: 0, seconds: 0, transcriptPay: 0, referralPay: 0, total: 0 }).get(id)!;
+  const usual = new Map<string, number>();
+  const custom = new Map<string, number>();
+  const refUsual = new Map<string, number>();
+  const refCustom = new Map<string, number>();
+  const add = (m: Map<string, number>, id: string, n: number) => m.set(id, (m.get(id) ?? 0) + n);
+  for (const j of jobs) {
+    const id = j.assigneeId!;
+    const e = get(id);
+    e.jobs += 1;
+    e.seconds += j.durationSeconds;
+    const ref = j.assignee?.referredById;
+    if (j.ratePerHour != null) {
+      const pay = earningsFor(j.durationSeconds, j.ratePerHour);
+      add(custom, id, pay);
+      if (ref) add(refCustom, ref, pay);
+    } else {
+      add(usual, id, j.durationSeconds);
+      if (ref) add(refUsual, ref, j.durationSeconds);
+    }
+  }
+  for (const [id, e] of map) e.transcriptPay = earningsFor(usual.get(id) ?? 0) + (custom.get(id) ?? 0);
+  for (const id of new Set([...refUsual.keys(), ...refCustom.keys()])) get(id).referralPay = referralPayFor(refUsual.get(id) ?? 0, refCustom.get(id) ?? 0);
+  for (const e of map.values()) e.total = e.transcriptPay + e.referralPay;
+  return map;
+}

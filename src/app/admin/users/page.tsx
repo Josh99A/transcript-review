@@ -1,9 +1,9 @@
-import { Banknote, HandCoins, Users, Wallet } from "lucide-react";
+import { Banknote, HandCoins, Hourglass, Users, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import { EmptyState, PageHeader, StatList, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { balancesByUser } from "@/lib/earnings";
+import { balancesByUser, expectedByUser } from "@/lib/earnings";
 import { formatDate, formatHours, formatUGX } from "@/lib/format";
 import { REFERRAL_RATE_PER_HOUR_UGX } from "@/lib/pay";
 import { NewUserButton, PayoutButton, ReferrerSelect, ResetPasswordButton } from "./forms";
@@ -12,12 +12,13 @@ export const metadata: Metadata = { title: "Team & payments" };
 
 export default async function UsersPage() {
   await requireAdmin();
-  const [users, balances, payouts, jobCounts] = await Promise.all([
+  const [users, balances, expected, payouts, jobCounts] = await Promise.all([
     db.user.findMany({
       orderBy: [{ role: "desc" }, { name: "asc" }],
       include: { _count: { select: { referrals: true } } },
     }),
     balancesByUser(),
+    expectedByUser(),
     db.payout.findMany({ orderBy: { createdAt: "desc" }, take: 50, include: { user: { select: { name: true } } } }),
     db.job.groupBy({ by: ["assigneeId", "status"], _count: true }),
   ]);
@@ -34,10 +35,11 @@ export default async function UsersPage() {
   const totals = [...transcribers, ...referrers].reduce(
     (t, u) => {
       const b = balances.get(u.id) ?? zero;
-      return { earned: t.earned + b.earned, paid: t.paid + b.paid, owed: t.owed + b.owed };
+      return { earned: t.earned + b.earned, paid: t.paid + b.paid, owed: t.owed + b.owed, expected: t.expected + (expected.get(u.id)?.total ?? 0) };
     },
-    { ...zero },
+    { ...zero, expected: 0 },
   );
+  const inProgress = [...expected.values()].reduce((n, e) => n + e.jobs, 0);
 
   return (
     <>
@@ -46,6 +48,7 @@ export default async function UsersPage() {
       <StatList
         stats={[
           { icon: Wallet, label: "Owed now", value: formatUGX(totals.owed), tone: "brand" },
+          { icon: Hourglass, label: "In progress (expected)", value: formatUGX(totals.expected), tone: "amber", hint: `From ${inProgress} job${inProgress === 1 ? "" : "s"} not yet submitted` },
           { icon: Banknote, label: "Paid out", value: formatUGX(totals.paid), tone: "emerald" },
           { icon: Users, label: "Transcribers", value: transcribers.length, tone: "slate", hint: `${referrers.length} referrer${referrers.length === 1 ? "" : "s"}` },
         ]}
@@ -67,6 +70,7 @@ export default async function UsersPage() {
                     <Line label="Pay to"><PayTo user={u} /></Line>
                     <Line label="Jobs"><span className="num">{jobsFor(u.id, "SUBMITTED")} done · {jobsFor(u.id, "ASSIGNED")} in progress</span></Line>
                     <Line label="Earned"><span className="num">{formatUGX(b.earned)}{fromReferrals(u.id) > 0 && <span className="block text-xs text-slate-500">incl. {formatUGX(fromReferrals(u.id))} from referrals</span>}</span></Line>
+                    <Line label="In progress (expected)"><ExpectedCell e={expected.get(u.id)} credited={jobsFor(u.id, "ASSIGNED") - (expected.get(u.id)?.jobs ?? 0)} /></Line>
                   </dl>
                   <div>
                     <div className="mb-1 text-xs text-slate-500">Referred by</div>
@@ -83,7 +87,7 @@ export default async function UsersPage() {
           <div className="hidden overflow-x-auto sm:block">
             <table className="table">
               <thead>
-                <tr><th>Person</th><th>Pay to</th><th>Jobs</th><th>Referred by</th><th className="text-right">Earned</th><th className="text-right">Owed</th><th><span className="sr-only">Actions</span></th></tr>
+                <tr><th>Person</th><th>Pay to</th><th>Jobs</th><th>Referred by</th><th className="text-right whitespace-nowrap" title="Pay from jobs in progress, not yet submitted">In progress<span className="block text-[10px] font-normal normal-case">expected</span></th><th className="text-right">Earned</th><th className="text-right">Owed</th><th><span className="sr-only">Actions</span></th></tr>
               </thead>
               <tbody>
                 {transcribers.map((u) => {
@@ -97,6 +101,7 @@ export default async function UsersPage() {
                         <span className="block text-xs text-slate-500">{jobsFor(u.id, "ASSIGNED")} in progress</span>
                       </td>
                       <td><ReferrerSelect userId={u.id} current={u.referredById} referrers={optionsFor(u.id)} /></td>
+                      <td className="text-right whitespace-nowrap"><ExpectedCell e={expected.get(u.id)} credited={jobsFor(u.id, "ASSIGNED") - (expected.get(u.id)?.jobs ?? 0)} /></td>
                       <td className="num text-right">{formatUGX(b.earned)}{fromReferrals(u.id) > 0 && <span className="block text-xs text-slate-500">incl. {formatUGX(fromReferrals(u.id))} referrals</span>}</td>
                       <td className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
                       <td >
@@ -132,6 +137,7 @@ export default async function UsersPage() {
                     {u.role !== "USER" && <Line label="Pay to"><PayTo user={u} /></Line>}
                     <Line label="Referred"><span className="num">{u._count.referrals} · {formatHours(balances.get(u.id)?.referralSeconds ?? 0)} submitted</span></Line>
                     <Line label={u.role === "USER" ? "From referrals" : "Earned"}><span className="num">{formatUGX(u.role === "USER" ? fromReferrals(u.id) : b.earned)}</span></Line>
+                    <Line label="In progress (expected)"><span className="num">{formatUGX(expected.get(u.id)?.referralPay ?? 0)}</span></Line>
                     {u.role !== "USER" && <Line label="Paid"><span className="num">{formatUGX(b.paid)}</span></Line>}
                   </dl>
                   {names.length > 0 && <p className="text-xs break-words text-slate-500">{names.join(", ")}</p>}
@@ -164,12 +170,12 @@ export default async function UsersPage() {
                       </td>
                       {u.role === "USER" ? (
                         <>
-                          <td className="num text-right">{formatUGX(fromReferrals(u.id))}</td>
+                          <td className="num text-right">{formatUGX(fromReferrals(u.id))}<RefExpected n={expected.get(u.id)?.referralPay ?? 0} /></td>
                           <td colSpan={3} className="text-right text-xs text-slate-500">Included in their transcriber balance above</td>
                         </>
                       ) : (
                         <>
-                          <td className="num text-right">{formatUGX(b.earned)}</td>
+                          <td className="num text-right">{formatUGX(b.earned)}<RefExpected n={expected.get(u.id)?.referralPay ?? 0} /></td>
                           <td className="num text-right text-slate-600">{formatUGX(b.paid)}</td>
                           <td className={`num text-right font-semibold ${b.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>{formatUGX(b.owed)}</td>
                           <td>
@@ -253,6 +259,22 @@ function PersonSummary({ user, owed }: { user: { name: string; email: string }; 
       </div>
     </div>
   );
+}
+
+function ExpectedCell({ e, credited }: { e?: { jobs: number; transcriptPay: number; referralPay: number; total: number }; credited: number }) {
+  return (
+    <span className="num">
+      <span className={e?.total ? "text-slate-900" : "text-slate-400"}>{formatUGX(e?.total ?? 0)}</span>
+      {e && e.jobs > 0 && <span className="block text-xs text-slate-500">{e.jobs} job{e.jobs === 1 ? "" : "s"} · {formatUGX(e.transcriptPay)}</span>}
+      {e && e.referralPay > 0 && <span className="block text-xs text-slate-500">+ {formatUGX(e.referralPay)} referrals</span>}
+      {credited > 0 && <span className="block text-xs text-slate-500">{credited} sent back, already in Earned</span>}
+    </span>
+  );
+}
+
+function RefExpected({ n }: { n: number }) {
+  if (n === 0) return null;
+  return <span className="block text-xs font-normal text-slate-500">+ {formatUGX(n)} expected from jobs in progress</span>;
 }
 
 function Line({ label, children }: { label: string; children: React.ReactNode }) {

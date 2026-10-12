@@ -7,7 +7,7 @@ import StorageCard from "@/components/StorageCard";
 import { Avatar, EmptyState, PageHeader, StatList, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { balancesByUser } from "@/lib/earnings";
+import { balancesByUser, expectedByUser } from "@/lib/earnings";
 import { formatDuration, formatRelative, formatUGX } from "@/lib/format";
 import { getNextPayDate } from "@/lib/settings";
 import { jobPayLabel } from "@/lib/pay";
@@ -29,7 +29,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const filter: Filter = FILTERS.includes(status as Filter) ? (status as Filter) : "ALL";
   const query = q.trim();
 
-  const [jobs, users, balances, counts, payDate, stored, pendingRequests] = await Promise.all([
+  const [jobs, users, balances, expected, counts, payDate, stored, pendingRequests] = await Promise.all([
     db.job.findMany({
       where: {
         ...(filter === "ALL" ? {} : { status: filter }),
@@ -40,6 +40,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     }),
     db.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, orderBy: { name: "asc" } }),
     balancesByUser(),
+    expectedByUser(),
     db.job.groupBy({ by: ["status"], _count: true }),
     getNextPayDate(),
     db.job.findMany({ where: { mediaRemovedAt: null }, select: { mediaBytes: true, status: true } }),
@@ -53,6 +54,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const owing = users
     .map((u) => ({ user: u, balance: balances.get(u.id) ?? { earned: 0, paid: 0, owed: 0 } }))
     .sort((a, b) => b.balance.owed - a.balance.owed);
+  const totalExpected = [...expected.values()].reduce((sum, e) => sum + e.total, 0);
   const totalOwed = owing.reduce((sum, o) => sum + Math.max(o.balance.owed, 0), 0);
   const peopleOwed = owing.filter((o) => o.balance.owed > 0).length;
   const href = (f: Filter) => {
@@ -78,7 +80,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
       <StatList
         stats={[
           { icon: Inbox, label: "Waiting to assign", value: count("UNASSIGNED"), tone: "slate", hint: pendingRequests ? <Link href="/admin/requests" className="font-medium text-brand-600 hover:text-brand-700">{pendingRequests} request{pendingRequests === 1 ? "" : "s"} to review</Link> : undefined },
-          { icon: Hourglass, label: "In progress", value: count("ASSIGNED"), tone: "amber" },
+          { icon: Hourglass, label: "In progress", value: count("ASSIGNED"), tone: "amber", hint: <Link href="/admin/users" className="hover:text-slate-700">{formatUGX(totalExpected)} expected pay</Link> },
           { icon: CircleCheck, label: "Submitted", value: count("SUBMITTED"), tone: "emerald" },
           { icon: Wallet, label: "Owed to team", value: formatUGX(totalOwed), tone: "brand", hint: waitingHint(peopleOwed) },
         ]}
