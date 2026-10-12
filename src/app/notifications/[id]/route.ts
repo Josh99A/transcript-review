@@ -4,7 +4,7 @@ import { db } from "@/lib/db";
 // Relative Location headers: behind Render's proxy the request URL is the internal localhost address.
 const go = (path: string) => new Response(null, { status: 303, headers: { Location: path } });
 
-/** Marks one notification read and takes its owner to what it's about. */
+/** Marks one notification read and takes its owner to what it's about, as things stand now. */
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const user = await getCurrentUser();
@@ -13,5 +13,25 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   if (!n) return go("/notifications");
   if (!n.readAt) await db.notification.update({ where: { id }, data: { readAt: new Date() } });
   // Only ever an in-app path.
-  return go(n.href.startsWith("/") && !n.href.startsWith("//") ? n.href : "/notifications");
+  if (!n.href.startsWith("/") || n.href.startsWith("//")) return go("/notifications");
+  return go(await resolve(n.href, user));
+}
+
+/** Job links are checked against the job's current state, so an old notice never lands on a dead end. */
+async function resolve(href: string, user: { id: string; role: string }) {
+  const admin = href.match(/^\/admin\/jobs\/([^/#?]+)/);
+  if (admin) {
+    if (user.role !== "ADMIN") return "/notifications";
+    const job = await db.job.findUnique({ where: { id: admin[1] }, select: { status: true, approvedAt: true } });
+    if (!job) return "/admin";
+    // A submission waiting for review opens straight at the review controls.
+    return job.status === "SUBMITTED" && !job.approvedAt ? `/admin/jobs/${admin[1]}#review` : `/admin/jobs/${admin[1]}`;
+  }
+  const mine = href.match(/^\/jobs\/([^/#?]+)/);
+  if (mine) {
+    const job = await db.job.findUnique({ where: { id: mine[1] }, select: { assigneeId: true } });
+    return job?.assigneeId === user.id ? `/jobs/${mine[1]}` : "/jobs";
+  }
+  if (href.startsWith("/admin") && user.role !== "ADMIN") return "/notifications";
+  return href;
 }

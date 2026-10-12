@@ -529,7 +529,7 @@ export async function submitJob(jobId: string, text: string, fileName?: string):
   await notifyAdmins({
     title: `${user.name} ${res.resubmission ? "resubmitted" : "submitted"} ${res.title}`,
     body: [res.reviewNote ? "Resubmitted after your changes." : res.resubmission ? "Replaced their earlier submission." : null, fileName ? `Uploaded as a file (${fileName.slice(0, 100)}).` : null, "Ready to review."].filter(Boolean).join(" "),
-    href: `/admin/jobs/${jobId}`,
+    href: `/admin/jobs/${jobId}#review`,
   });
   revalidatePath("/jobs");
   revalidatePath("/earnings");
