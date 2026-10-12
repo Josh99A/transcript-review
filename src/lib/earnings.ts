@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { db } from "./db";
 import { earningsFor, referralPayFor } from "./pay";
 
@@ -17,11 +18,11 @@ export type Balance = {
 const empty = (): Balance => ({ seconds: 0, transcriptPay: 0, referralSeconds: 0, referralPay: 0, earned: 0, paid: 0, owed: 0 });
 
 /** Earned, paid and owed totals for every user, keyed by user id. */
-export async function balancesByUser(): Promise<Map<string, Balance>> {
+export async function balancesByUser(client: Prisma.TransactionClient = db): Promise<Map<string, Balance>> {
   const [earned, referred, paid] = await Promise.all([
-    db.earning.groupBy({ by: ["userId", "fixed"], _sum: { seconds: true, amount: true } }),
-    db.earning.groupBy({ by: ["referrerId"], where: { referrerId: { not: null } }, _sum: { seconds: true } }),
-    db.payout.groupBy({ by: ["userId"], _sum: { amount: true } }),
+    client.earning.groupBy({ by: ["userId", "fixed"], _sum: { seconds: true, amount: true } }),
+    client.earning.groupBy({ by: ["referrerId"], where: { referrerId: { not: null } }, _sum: { seconds: true } }),
+    client.payout.groupBy({ by: ["userId"], _sum: { amount: true } }),
   ]);
   const map = new Map<string, Balance>();
   const get = (id: string) => map.get(id) ?? map.set(id, empty()).get(id)!;
