@@ -20,16 +20,17 @@ enum JobStatus {
 }
 
 model User {
-  id           String       @id @default(cuid())
-  name         String
-  email        String       @unique
-  passwordHash String
-  role         Role         @default(USER)
-  createdAt    DateTime     @default(now())
-  jobs         Job[]
-  earnings     Earning[]    @relation("Earnings")
-  payouts      Payout[]
-  jobRequests  JobRequest[]
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  passwordHash  String
+  role          Role           @default(USER)
+  createdAt     DateTime       @default(now())
+  jobs          Job[]
+  earnings      Earning[]      @relation("Earnings")
+  payouts       Payout[]
+  jobRequests   JobRequest[]
+  notifications Notification[]
 
   // Where payments go, entered by the person themselves (or an admin).
   payNetwork String?
@@ -133,4 +134,19 @@ model JobRequest {
   createdAt DateTime      @default(now())
 
   @@unique([jobId, userId])
+}
+
+/// An in-app notice for one person, shown under the bell until they read it.
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  body      String?
+  href      String
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
 }

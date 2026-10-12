@@ -77,7 +77,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
 
       <StatList
         stats={[
-          { icon: Inbox, label: "Waiting to assign", value: count("UNASSIGNED"), tone: "slate", hint: pendingRequests ? `${pendingRequests} request${pendingRequests === 1 ? "" : "s"} to review` : undefined },
+          { icon: Inbox, label: "Waiting to assign", value: count("UNASSIGNED"), tone: "slate", hint: pendingRequests ? <Link href="/admin/requests" className="font-medium text-brand-600 hover:text-brand-700">{pendingRequests} request{pendingRequests === 1 ? "" : "s"} to review</Link> : undefined },
           { icon: Hourglass, label: "In progress", value: count("ASSIGNED"), tone: "amber" },
           { icon: CircleCheck, label: "Submitted", value: count("SUBMITTED"), tone: "emerald" },
           { icon: Wallet, label: "Owed to team", value: formatUGX(totalOwed), tone: "brand", hint: waitingHint(peopleOwed) },

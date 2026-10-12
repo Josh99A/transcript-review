@@ -1,14 +1,16 @@
 "use client";
 
-import { AudioLines, ClipboardList, HandCoins, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
+import { AudioLines, ClipboardList, HandCoins, Inbox, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { logout } from "@/app/actions";
+import Bell from "./Bell";
 import { Avatar } from "./ui";
 
 const ADMIN_LINKS = [
   { href: "/admin", label: "Dashboard", icon: LayoutDashboard, exact: true },
+  { href: "/admin/requests", label: "Requests", icon: Inbox },
   { href: "/admin/jobs/new", label: "Upload job", icon: Upload },
   { href: "/admin/users", label: "Team & payments", icon: Users },
 ];
@@ -44,6 +46,7 @@ export default function SideNav({ user }: { user: { name: string; email: string;
     <div className="flex h-full flex-col">
       <div className="flex h-16 items-center px-5">
         <Brand />
+        <span className="ml-auto hidden lg:block"><Bell /></span>
       </div>
       <div className="px-3 pt-2 text-[11px] font-medium tracking-wider text-slate-400 uppercase">
         {ROLE_LABELS[user.role]}
@@ -93,6 +96,7 @@ export default function SideNav({ user }: { user: { name: string; email: string;
           <Menu className="size-5" />
         </button>
         <Brand />
+        <span className="ml-auto"><Bell /></span>
       </header>
 
       {open && (

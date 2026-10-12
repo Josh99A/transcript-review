@@ -8,6 +8,7 @@ import { createSession, destroySession, homeFor, requireAdmin, requireRole, requ
 import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatPayDate, parseDeadline } from "@/lib/format";
+import { notify, notifyAdmins } from "@/lib/notify";
 import { earningsFor, parseFixedPay } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { getNextPayDate, setNextPayDate } from "@/lib/settings";
@@ -131,6 +132,7 @@ export async function payEveryone(): Promise<FormState> {
     .filter((p) => p.amount > 0);
   if (payouts.length === 0) return { error: "Nobody is owed anything right now." };
   await db.payout.createMany({ data: payouts });
+  await Promise.all(payouts.map((p) => notify([p.userId], { title: `You were paid UGX ${p.amount.toLocaleString("en-US")}`, body: note, href: "/earnings" })));
   revalidatePath("/", "layout");
   const total = payouts.reduce((s, p) => s + p.amount, 0);
   return { ok: `Recorded ${payouts.length} payment${payouts.length === 1 ? "" : "s"} totalling UGX ${total.toLocaleString("en-US")}.` };
@@ -158,6 +160,7 @@ export async function assignJob(formData: FormData): Promise<FormState> {
       : { assigneeId: null, status: "UNASSIGNED", assignedAt: null },
   });
   if (assigneeId) await settleRequests(jobId, assigneeId);
+  if (assigneeId && assigneeId !== job.assigneeId) await notify([assigneeId], { title: `New job assigned: ${job.title}`, href: `/jobs/${jobId}` });
   revalidatePath("/admin");
   revalidatePath("/board");
   revalidatePath(`/admin/jobs/${jobId}`);
@@ -166,6 +169,11 @@ export async function assignJob(formData: FormData): Promise<FormState> {
 
 /** Once a job is assigned, the assignee's request (if any) is approved and the rest declined. */
 async function settleRequests(jobId: string, assigneeId: string) {
+  const [declined, job] = await Promise.all([
+    db.jobRequest.findMany({ where: { jobId, userId: { not: assigneeId }, status: "PENDING" }, select: { userId: true } }),
+    db.job.findUniqueOrThrow({ where: { id: jobId }, select: { title: true } }),
+  ]);
+  await notify(declined.map((r) => r.userId), { title: `${job.title} went to someone else`, body: "Thanks for asking. Check Find work for other jobs.", href: "/board" });
   await db.$transaction([
     db.jobRequest.updateMany({ where: { jobId, userId: assigneeId }, data: { status: "APPROVED" } }),
     db.jobRequest.updateMany({ where: { jobId, userId: { not: assigneeId }, status: "PENDING" }, data: { status: "DECLINED" } }),
@@ -226,17 +234,21 @@ export async function approveRequest(formData: FormData): Promise<FormState> {
     data: { assigneeId: request.userId, status: "ASSIGNED", assignedAt: new Date(), posted: false },
   });
   await settleRequests(request.jobId, request.userId);
+  await notify([request.userId], { title: `Your request was approved: ${request.job.title}`, body: "It's now in My jobs.", href: `/jobs/${request.jobId}` });
   revalidatePath(`/admin/jobs/${request.jobId}`);
   revalidatePath("/admin");
   revalidatePath("/board");
+  revalidatePath("/admin/requests");
   return { ok: `Assigned to ${request.user.name}.` };
 }
 
 export async function declineRequest(formData: FormData): Promise<FormState> {
   await requireAdmin();
-  const request = await db.jobRequest.update({ where: { id: String(formData.get("requestId")) }, data: { status: "DECLINED" } });
+  const request = await db.jobRequest.update({ where: { id: String(formData.get("requestId")) }, data: { status: "DECLINED" }, include: { job: { select: { title: true } } } });
+  await notify([request.userId], { title: `Your request wasn't approved: ${request.job.title}`, body: "Check Find work for other jobs.", href: "/board" });
   revalidatePath(`/admin/jobs/${request.jobId}`);
   revalidatePath("/admin");
+  revalidatePath("/admin/requests");
   return { ok: "Request declined." };
 }
 
@@ -260,6 +272,7 @@ export async function reopenJob(formData: FormData): Promise<FormState> {
       revisions: { increment: 1 },
     },
   });
+  await notify([job.assigneeId], { title: `Changes needed: ${job.title}`, body: note, href: `/jobs/${jobId}` });
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/jobs");
@@ -273,6 +286,7 @@ export async function approveJob(formData: FormData): Promise<FormState> {
   const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
   if (job.status !== "SUBMITTED") return { error: "Only submitted jobs can be approved." };
   await db.job.update({ where: { id: jobId }, data: { approvedAt: new Date(), reviewedAt: new Date() } });
+  await notify([job.assigneeId], { title: `Approved: ${job.title}`, body: "Your transcript was accepted.", href: `/jobs/${jobId}` });
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/jobs");
@@ -346,6 +360,7 @@ export async function recordPayout(formData: FormData): Promise<FormState> {
   const note = String(formData.get("note") ?? "").trim() || null;
   if (!Number.isFinite(amount) || amount <= 0) return { error: "Enter an amount greater than zero." };
   await db.payout.create({ data: { userId, amount, note } });
+  await notify([userId], { title: `You were paid UGX ${amount.toLocaleString("en-US")}`, body: note, href: "/earnings" });
   revalidatePath("/admin/users");
   revalidatePath("/admin");
   return { ok: "Payment recorded." };
@@ -365,7 +380,9 @@ export async function requestJob(formData: FormData): Promise<FormState> {
     create: { jobId, userId: user.id, note },
     update: { note, status: "PENDING" },
   });
+  await notifyAdmins({ title: `${user.name} requested ${job.title}`, body: note, href: "/admin/requests" });
   revalidatePath("/board");
+  revalidatePath("/admin/requests");
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
   return { ok: "Request sent. You'll find the job in My jobs once an admin approves it." };
@@ -376,6 +393,7 @@ export async function cancelRequest(formData: FormData): Promise<FormState> {
   const jobId = String(formData.get("jobId"));
   await db.jobRequest.deleteMany({ where: { jobId, userId: user.id, status: "PENDING" } });
   revalidatePath("/board");
+  revalidatePath("/admin/requests");
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
   return { ok: "Request withdrawn." };
@@ -427,8 +445,22 @@ export async function submitJob(jobId: string, text: string): Promise<FormState>
       update: {},
     }),
   ]);
+  await notifyAdmins({
+    title: `${user.name} submitted ${job.title}`,
+    body: job.revisions > 0 ? "Resubmitted after your changes. Ready to review." : "Ready to review.",
+    href: `/admin/jobs/${jobId}`,
+  });
   revalidatePath("/jobs");
   revalidatePath("/earnings");
   revalidatePath("/admin");
   redirect("/jobs?submitted=1");
+}
+
+// ---------- Notifications ----------
+
+export async function markAllNotificationsRead(): Promise<FormState> {
+  const user = await requireUser();
+  await db.notification.updateMany({ where: { userId: user.id, readAt: null }, data: { readAt: new Date() } });
+  revalidatePath("/notifications");
+  return { ok: "All caught up." };
 }
