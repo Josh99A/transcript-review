@@ -81,6 +81,7 @@ model Job {
   revisions          Int          @default(0)
   earnings           Earning[]
   issues             Issue[]
+  notifications      Notification[]
   createdAt          DateTime     @default(now())
   updatedAt          DateTime     @updatedAt
 }
@@ -149,10 +150,15 @@ model Notification {
   title     String
   body      String?
   href      String
+  // The job it's about and what happened, so the list can tell when it's been overtaken by events.
+  jobId     String?
+  job       Job?      @relation(fields: [jobId], references: [id], onDelete: SetNull)
+  kind      String?
   readAt    DateTime?
   createdAt DateTime  @default(now())
 
   @@index([userId, readAt])
+  @@index([jobId])
   @@index([userId, createdAt])
 }
 
