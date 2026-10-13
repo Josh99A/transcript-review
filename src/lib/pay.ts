@@ -7,15 +7,15 @@ export function earningsFor(durationSeconds: number, ratePerHour: number = RATE_
   return Math.round((durationSeconds * ratePerHour) / 3600);
 }
 
-/**
- * Referral pay: the referral rate on time paid at the usual rate, plus half of what jobs with their
- * own rate paid. Both are 50% of what the referred transcriber earned.
- */
 /** One credit's amount: a special rate, else the usual rate it was approved at, else today's usual rate. */
 export function creditAmount(seconds: number, jobRate: number | null | undefined, lockedRate: number | null | undefined): number {
   return earningsFor(seconds, jobRate ?? lockedRate ?? RATE_PER_HOUR_UGX);
 }
 
+/**
+ * Referral pay: the referral rate on time paid at the usual rate, plus half of what jobs with their
+ * own rate paid. Both are 50% of what the referred transcriber earned.
+ */
 export function referralPayFor(usualSeconds: number, customRatePay = 0): number {
   return Math.round((usualSeconds * REFERRAL_RATE_PER_HOUR_UGX) / 3600) + Math.round(customRatePay / 2);
 }
@@ -28,9 +28,17 @@ export function expectedPayFor(durationSeconds: number, ratePerHour?: number | n
   return Math.round(earningsFor(durationSeconds, ratePerHour ?? undefined) / 100) * 100;
 }
 
-/** Expected pay label for a job, from its length and its own rate if it has one. */
-export function jobPayLabel(job: { durationSeconds: number; ratePerHour: number | null }): string {
-  return `~UGX ${expectedPayFor(job.durationSeconds, job.ratePerHour).toLocaleString("en-US")}`;
+type PricedJob = { durationSeconds: number; ratePerHour: number | null; approvedAt?: Date | null; earnings?: { amount: number }[] };
+
+/** What an approved job was credited, which keeps the rate it was approved at; null while it isn't approved. */
+export function approvedPay(job: PricedJob): number | null {
+  return job.approvedAt && job.earnings?.length ? job.earnings[0].amount : null;
+}
+
+/** Pay label for a job: what it was credited once approved, else the expected pay from its length and rate. */
+export function jobPayLabel(job: PricedJob): string {
+  const paid = approvedPay(job);
+  return paid != null ? `UGX ${paid.toLocaleString("en-US")}` : `~UGX ${expectedPayFor(job.durationSeconds, job.ratePerHour).toLocaleString("en-US")}`;
 }
 
 /** Parses an admin-entered hourly rate; empty means the usual rate. */

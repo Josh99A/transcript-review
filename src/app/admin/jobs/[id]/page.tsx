@@ -22,7 +22,7 @@ import { MediaRemoved, PageHeader, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { deadlineInput, formatBytes, formatDate, formatDeadline, formatDuration, formatHours, formatRelative, formatUGX } from "@/lib/format";
-import { jobPayLabel } from "@/lib/pay";
+import { approvedPay, jobPayLabel } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "Job" };
 
@@ -61,7 +61,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
       <PageHeader
         back={job.status === "SUBMITTED" ? <Link href="/admin/reviews" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Reviews</Link> : <Link href="/admin" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
         title={job.title}
-        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={jobBadge(job)} /><span className="num">{formatDuration(job.durationSeconds)} · expected {jobPayLabel(job)}</span><JobTags job={job} /></span>}
+        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={jobBadge(job)} /><span className="num">{formatDuration(job.durationSeconds)} · {approvedPay(job) != null ? "earned" : "expected"} {jobPayLabel(job)}</span><JobTags job={job} /></span>}
         actions={
           <>
             <a href={`/api/jobs/${job.id}/transcript?format=docx`} className="btn-secondary"><Download className="size-4" /> Word .docx</a>

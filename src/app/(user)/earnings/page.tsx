@@ -23,11 +23,12 @@ export default async function EarningsPage() {
   const { earned, owed, seconds, referralPay, referralSeconds, awaitingJobs } = balance;
   const approvedCount = earnings.filter((e) => e.job.status === "SUBMITTED" && e.job.approvedAt).length;
   const paid = payouts.reduce((s, p) => s + p.amount, 0);
+  const earlierRate = earnings.some((e) => e.lockedRate != null && e.lockedRate !== RATE_PER_HOUR_UGX);
   const paidPct = earned ? Math.min(100, Math.round((paid / earned) * 100)) : 0;
 
   return (
     <>
-      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of your approved transcripts. Work counts once an admin approves it. Jobs with a special rate are paid at that rate instead.`} />
+      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of your approved transcripts. Work counts once an admin approves it. Jobs with a special rate are paid at that rate instead.${earlierRate ? " Jobs approved before the rate changed keep the rate they were approved at." : ""}`} />
       <div className="mb-6">
         <PayDateBanner payDate={payDate} owed={owed} detail={`Paid on your total of ${formatHours(seconds)} of transcribed media, minus what you've already been paid.`} />
       </div>
