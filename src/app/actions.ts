@@ -15,7 +15,7 @@ import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatPayDate, parseDeadline } from "@/lib/format";
 import { notify, notifyAdmins, settleNotices } from "@/lib/notify";
-import { earningsFor, parseRate } from "@/lib/pay";
+import { creditAmount, earningsFor, parseRate, RATE_PER_HOUR_UGX } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { getNextPayDate, setNextPayDate } from "@/lib/settings";
 import { deleteMedia } from "@/lib/media";
@@ -295,10 +295,9 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
     });
   }
   // Keep pay already credited for this job in line with its pricing.
-  await db.earning.updateMany({
-    where: { jobId },
-    data: { customRate: ratePerHour != null, amount: earningsFor(job.durationSeconds, ratePerHour ?? undefined) },
-  });
+  for (const e of await db.earning.findMany({ where: { jobId } })) {
+    await db.earning.update({ where: { id: e.id }, data: { customRate: ratePerHour != null, amount: creditAmount(job.durationSeconds, ratePerHour, e.lockedRate) } });
+  }
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
   revalidatePath("/board");
@@ -378,6 +377,8 @@ export async function reopenJob(formData: FormData): Promise<FormState> {
     data: { status: "ASSIGNED", submittedAt: null, approvedAt: null, reviewNote: note, reviewedAt: new Date(), reviewNoteEditedAt: null, revisions: { increment: 1 } },
   });
   if (!count) return { error: "This job changed while you were looking at it. Reload and try again." };
+  // No longer approved, so its pay goes back to today's rate until it's approved again.
+  await db.earning.updateMany({ where: { jobId, customRate: false }, data: { lockedRate: null, amount: earningsFor(job.durationSeconds) } });
   await notify([job.assigneeId], { title: `Changes needed: ${job.title}`, body: richText(note).slice(0, 500), href: `/jobs/${jobId}`, jobId, kind: "sent-back" });
   await settleNotices(jobId);
   revalidatePath("/admin/reviews");
@@ -417,6 +418,8 @@ export async function approveJob(formData: FormData): Promise<FormState> {
   const { count } = await db.job.updateMany({ where: { id: jobId, status: "SUBMITTED", approvedAt: null }, data: { approvedAt: new Date(), reviewedAt: new Date() } });
   if (!count) return { error: "Only submitted jobs that aren't approved yet can be approved." };
   const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
+  // Approved pay keeps today's usual rate even if the rate changes later.
+  await db.earning.updateMany({ where: { jobId, customRate: false }, data: { lockedRate: RATE_PER_HOUR_UGX, amount: earningsFor(job.durationSeconds) } });
   await notify([job.assigneeId], { title: `Approved: ${job.title}`, body: "Your transcript was accepted, and its pay is now in your earnings.", href: `/jobs/${jobId}`, jobId, kind: "approved" });
   await settleNotices(jobId);
   revalidatePath("/admin/reviews");
@@ -436,7 +439,9 @@ export async function updateDuration(formData: FormData): Promise<FormState> {
   if (total > 24 * 3600) return { error: "Length can't be more than 24 hours." };
   const job = await db.job.update({ where: { id: jobId }, data: { durationSeconds: total } });
   // Time already credited for this job follows the corrected length.
-  await db.earning.updateMany({ where: { jobId }, data: { seconds: total, amount: earningsFor(total, job.ratePerHour ?? undefined) } });
+  for (const e of await db.earning.findMany({ where: { jobId } })) {
+    await db.earning.update({ where: { id: e.id }, data: { seconds: total, amount: creditAmount(total, job.ratePerHour, e.lockedRate) } });
+  }
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
   revalidatePath("/admin/users");

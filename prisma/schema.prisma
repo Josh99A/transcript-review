@@ -116,6 +116,8 @@ model Earning {
   seconds    Int      @default(0)
   // Paid at the job's own hourly rate: amount is paid as is, and these seconds don't count toward hourly pay.
   customRate Boolean  @default(false)
+  // Usual hourly rate fixed when the job was approved, so a later rate change doesn't alter approved pay. Null: today's rate.
+  lockedRate Int?
   createdAt  DateTime @default(now())
 
   @@unique([jobId, userId])

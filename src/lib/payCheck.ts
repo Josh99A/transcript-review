@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "./db";
-import { earningsFor } from "./pay";
+import { creditAmount } from "./pay";
 
 export type PayProblem = { userId: string; userName: string; jobId: string; jobTitle: string; problem: string };
 
@@ -17,7 +17,7 @@ export async function payProblems(client: Prisma.TransactionClient = db): Promis
     const add = (problem: string) => problems.push({ userId: e.userId, userName: e.user.name, jobId: j.id, jobTitle: j.title, problem });
     if (j.assigneeId !== e.userId) add("Pay is credited to someone who is no longer on this job.");
     else if (j.status !== "SUBMITTED" && !(j.status === "ASSIGNED" && j.reviewNote)) add("Pay is credited but the job hasn't been submitted.");
-    if (e.seconds !== j.durationSeconds || e.customRate !== (j.ratePerHour != null) || e.amount !== earningsFor(j.durationSeconds, j.ratePerHour ?? undefined)) {
+    if (e.seconds !== j.durationSeconds || e.customRate !== (j.ratePerHour != null) || e.amount !== creditAmount(j.durationSeconds, j.ratePerHour, e.lockedRate)) {
       add("The credited amount doesn't match the job's length and rate.");
     }
   }

@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "./db";
-import { earningsFor, referralPayFor } from "./pay";
+import { earningsFor, RATE_PER_HOUR_UGX, referralPayFor } from "./pay";
 
 /** Only work an admin has approved counts as earned. */
 export const APPROVED: Prisma.EarningWhereInput = { job: { status: "SUBMITTED", approvedAt: { not: null } } };
@@ -26,26 +26,31 @@ export type Balance = {
 
 const empty = (): Balance => ({ seconds: 0, transcriptPay: 0, referralSeconds: 0, referralPay: 0, earned: 0, paid: 0, owed: 0, awaiting: 0, awaitingSeconds: 0, awaitingJobs: 0 });
 
-type Sums = { usual: number; custom: number; seconds: number; jobs: number };
-const sums = () => ({ usual: 0, custom: 0, seconds: 0, jobs: 0 });
+/** usual: usual-rate seconds by the hourly rate they're paid at (approved work keeps the rate it was approved at). */
+type Sums = { usual: Map<number, number>; custom: number; seconds: number; jobs: number };
+const sums = (): Sums => ({ usual: new Map(), custom: 0, seconds: 0, jobs: 0 });
+const usualSeconds = (t: Sums) => [...t.usual.values()].reduce((a, b) => a + b, 0);
 
 /** Per person: usual-rate seconds and special-rate pay of the earnings matching `where`, as transcriber and as referrer. */
 async function totals(client: Prisma.TransactionClient, where: Prisma.EarningWhereInput) {
   const [own, referred] = await Promise.all([
-    client.earning.groupBy({ by: ["userId", "customRate"], where, _sum: { seconds: true, amount: true }, _count: true }),
-    client.earning.groupBy({ by: ["referrerId", "customRate"], where: { ...where, referrerId: { not: null } }, _sum: { seconds: true, amount: true } }),
+    client.earning.groupBy({ by: ["userId", "customRate", "lockedRate"], where, _sum: { seconds: true, amount: true }, _count: true }),
+    client.earning.groupBy({ by: ["referrerId", "customRate", "lockedRate"], where: { ...where, referrerId: { not: null } }, _sum: { seconds: true, amount: true } }),
   ]);
   const mine = new Map<string, Sums>();
   const refs = new Map<string, Sums>();
-  const add = (m: Map<string, Sums>, id: string, custom: boolean, seconds: number, amount: number, jobs = 0) => {
+  const add = (m: Map<string, Sums>, id: string, custom: boolean, rate: number | null, seconds: number, amount: number, jobs = 0) => {
     const t = m.get(id) ?? m.set(id, sums()).get(id)!;
     t.seconds += seconds;
     t.jobs += jobs;
     if (custom) t.custom += amount;
-    else t.usual += seconds;
+    else {
+      const r = rate ?? RATE_PER_HOUR_UGX;
+      t.usual.set(r, (t.usual.get(r) ?? 0) + seconds);
+    }
   };
-  for (const e of own) add(mine, e.userId, e.customRate, e._sum.seconds ?? 0, e._sum.amount ?? 0, e._count);
-  for (const e of referred) add(refs, e.referrerId!, e.customRate, e._sum.seconds ?? 0, e._sum.amount ?? 0);
+  for (const e of own) add(mine, e.userId, e.customRate, e.lockedRate, e._sum.seconds ?? 0, e._sum.amount ?? 0, e._count);
+  for (const e of referred) add(refs, e.referrerId!, e.customRate, e.lockedRate, e._sum.seconds ?? 0, e._sum.amount ?? 0);
   return { mine, refs };
 }
 
@@ -58,10 +63,14 @@ export async function balancesByUser(client: Prisma.TransactionClient = db): Pro
   ]);
   const map = new Map<string, Balance>();
   const get = (id: string) => map.get(id) ?? map.set(id, empty()).get(id)!;
-  // Usual-rate pay is worked out on the total of that time; jobs with their own rate add their pay as is.
-  const pay = (t?: Sums) => (t ? earningsFor(t.usual) + t.custom : 0);
-  const refPay = (t?: Sums) => (t ? referralPayFor(t.usual, t.custom) : 0);
-  const plus = (a: Sums | undefined, b: Sums | undefined): Sums => ({ usual: (a?.usual ?? 0) + (b?.usual ?? 0), custom: (a?.custom ?? 0) + (b?.custom ?? 0), seconds: 0, jobs: 0 });
+  // Usual-rate pay is worked out on the total of that time at each rate; jobs with their own rate add their pay as is.
+  const pay = (t?: Sums) => (t ? [...t.usual].reduce((a, [rate, secs]) => a + earningsFor(secs, rate), 0) + t.custom : 0);
+  const refPay = (t?: Sums) => (t ? referralPayFor(usualSeconds(t), t.custom) : 0);
+  const plus = (a: Sums | undefined, b: Sums | undefined): Sums => {
+    const usual = new Map(a?.usual);
+    for (const [r, secs] of b?.usual ?? []) usual.set(r, (usual.get(r) ?? 0) + secs);
+    return { usual, custom: (a?.custom ?? 0) + (b?.custom ?? 0), seconds: 0, jobs: 0 };
+  };
   const ids = new Set([...approved.mine.keys(), ...approved.refs.keys(), ...waiting.mine.keys(), ...waiting.refs.keys()]);
   for (const id of ids) {
     const b = get(id);

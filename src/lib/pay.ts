@@ -1,4 +1,4 @@
-export const RATE_PER_HOUR_UGX = 20_000;
+export const RATE_PER_HOUR_UGX = 30_000;
 /** What a referrer earns per hour of transcript submitted by the people they referred. */
 export const REFERRAL_RATE_PER_HOUR_UGX = 10_000;
 
@@ -11,6 +11,11 @@ export function earningsFor(durationSeconds: number, ratePerHour: number = RATE_
  * Referral pay: the referral rate on time paid at the usual rate, plus half of what jobs with their
  * own rate paid. Both are 50% of what the referred transcriber earned.
  */
+/** One credit's amount: a special rate, else the usual rate it was approved at, else today's usual rate. */
+export function creditAmount(seconds: number, jobRate: number | null | undefined, lockedRate: number | null | undefined): number {
+  return earningsFor(seconds, jobRate ?? lockedRate ?? RATE_PER_HOUR_UGX);
+}
+
 export function referralPayFor(usualSeconds: number, customRatePay = 0): number {
   return Math.round((usualSeconds * REFERRAL_RATE_PER_HOUR_UGX) / 3600) + Math.round(customRatePay / 2);
 }
