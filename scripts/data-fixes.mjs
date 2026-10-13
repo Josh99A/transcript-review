@@ -13,6 +13,16 @@ const FIXES = [
       return `removed ${count} credit`;
     },
   },
+  {
+    // The usual rate rose to 30,000 per hour and the admins asked for already-approved jobs to be paid at it too.
+    // No payments had been recorded. The old amounts are kept in the result for the record.
+    key: "fix:2026-10-13-approved-at-30000",
+    async run(tx) {
+      const old = await tx.earning.findMany({ where: { customRate: false, lockedRate: 20000 }, include: { job: { select: { title: true } } } });
+      for (const e of old) await tx.earning.update({ where: { id: e.id }, data: { lockedRate: 30000, amount: Math.round((e.seconds * 30000) / 3600) } });
+      return `re-priced ${old.length}: ` + old.map((e) => `${e.job.title.slice(0, 20)} was ${e.amount}`).join("; ");
+    },
+  },
 ];
 
 const db = new PrismaClient();
