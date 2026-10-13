@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { db } from "./db";
-import { earningsFor, RATE_PER_HOUR_UGX, referralPayFor } from "./pay";
+import { earningsFor, ownPay, RATE_PER_HOUR_UGX, referralPayFor } from "./pay";
 
 /** Only work an admin has approved counts as earned. */
 export const APPROVED: Prisma.EarningWhereInput = { job: { status: "SUBMITTED", approvedAt: { not: null } } };
@@ -117,7 +117,7 @@ export type Expected = {
 export async function expectedByUser(client: Prisma.TransactionClient = db): Promise<Map<string, Expected>> {
   const jobs = await client.job.findMany({
     where: { status: "ASSIGNED", assigneeId: { not: null } },
-    select: { assigneeId: true, durationSeconds: true, ratePerHour: true, assignee: { select: { referredById: true } } },
+    select: { assigneeId: true, durationSeconds: true, ratePerHour: true, fixedPay: true, assignee: { select: { referredById: true } } },
   });
   const map = new Map<string, Expected>();
   const get = (id: string) => map.get(id) ?? map.set(id, { jobs: 0, seconds: 0, transcriptPay: 0, referralPay: 0, total: 0 }).get(id)!;
@@ -132,8 +132,8 @@ export async function expectedByUser(client: Prisma.TransactionClient = db): Pro
     e.jobs += 1;
     e.seconds += j.durationSeconds;
     const ref = j.assignee?.referredById;
-    if (j.ratePerHour != null) {
-      const pay = earningsFor(j.durationSeconds, j.ratePerHour);
+    const pay = ownPay(j.durationSeconds, j);
+    if (pay != null) {
       add(custom, id, pay);
       if (ref) add(refCustom, ref, pay);
     } else {

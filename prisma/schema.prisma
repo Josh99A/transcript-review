@@ -67,6 +67,8 @@ model Job {
   durationSeconds       Int
   // Special jobs paid at their own hourly rate (UGX per hour) instead of the usual one.
   ratePerHour           Int?
+  // Paid this amount as is, whatever the length or the usual rate. Never set together with ratePerHour.
+  fixedPay              Int?
   // "html" for transcripts that came from Word with their formatting; "text" for plain ones.
   transcriptFormat      String         @default("text")
   originalTranscript    String

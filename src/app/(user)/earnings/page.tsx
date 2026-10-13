@@ -28,7 +28,7 @@ export default async function EarningsPage() {
 
   return (
     <>
-      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of your approved transcripts. Work counts once an admin approves it. Jobs with a special rate are paid at that rate instead.${earlierRate ? " Jobs approved before the rate changed keep the rate they were approved at." : ""}`} />
+      <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of your approved transcripts. Work counts once an admin approves it. Jobs with a special rate or a fixed price are paid that instead.${earlierRate ? " Jobs approved before the rate changed keep the rate they were approved at." : ""}`} />
       <div className="mb-6">
         <PayDateBanner payDate={payDate} owed={owed} detail={`Paid on your total of ${formatHours(seconds)} of transcribed media, minus what you've already been paid.`} />
       </div>
@@ -95,7 +95,7 @@ export default async function EarningsPage() {
                       <td className="font-medium text-slate-900">{e.job.title}</td>
                       <td data-label="Submitted" className="whitespace-nowrap text-slate-600">{formatDate(e.createdAt)}</td>
                       <td data-label="Status" className="whitespace-nowrap">{e.job.status === "SUBMITTED" && e.job.approvedAt ? <span className="text-emerald-700">Approved</span> : e.job.status === "SUBMITTED" ? <span className="text-sky-700">Awaiting review</span> : <span className="text-orange-700">Sent back for changes</span>}</td>
-                      <td data-label="Adds" className={`num text-right font-medium ${e.job.approvedAt ? "text-emerald-700" : "text-slate-400"}`}>{!e.job.approvedAt ? <span className="font-normal">After approval</span> : <>{e.customRate ? `${formatUGX(e.amount)}` : `+${formatHours(e.seconds)}`}{e.customRate && <span className="block text-xs font-normal text-slate-400">special rate</span>}</>}</td>
+                      <td data-label="Adds" className={`num text-right font-medium ${e.job.approvedAt ? "text-emerald-700" : "text-slate-400"}`}>{!e.job.approvedAt ? <span className="font-normal">After approval</span> : <>{e.customRate ? `${formatUGX(e.amount)}` : `+${formatHours(e.seconds)}`}{e.customRate && <span className="block text-xs font-normal text-slate-400">{e.job.fixedPay != null ? "fixed price" : "special rate"}</span>}</>}</td>
                     </tr>
                   ))}
                 </tbody>

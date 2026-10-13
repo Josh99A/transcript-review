@@ -15,7 +15,7 @@ import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatPayDate, parseDeadline } from "@/lib/format";
 import { notify, notifyAdmins, settleNotices } from "@/lib/notify";
-import { creditAmount, earningsFor, parseRate, RATE_PER_HOUR_UGX } from "@/lib/pay";
+import { creditAmount, earningsFor, hasOwnPay, parsePricing, RATE_PER_HOUR_UGX } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { getNextPayDate, setNextPayDate } from "@/lib/settings";
 import { deleteMedia } from "@/lib/media";
@@ -270,15 +270,16 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
   const { title, language, project, deadline } = parsed.data;
   const description = cleanRich(parsed.data.description);
   if (richText(description).length > 5000) return { error: "Keep the details under 5,000 characters." };
-  const ratePerHour = parseRate(formData.get("ratePerHour"));
-  if (ratePerHour === "invalid") return { error: "Enter the rate as a whole number of shillings per hour, or leave it empty." };
+  const pricing = parsePricing(formData);
+  if ("error" in pricing) return { error: pricing.error };
+  const { ratePerHour, fixedPay } = pricing;
   const before = await db.job.findUnique({ where: { id: jobId }, select: { description: true } });
   if (!before) return { error: "This job no longer exists." };
   const instructionsChanged = before.description !== description;
   const job = await db.job.update({
     where: { id: jobId },
     data: {
-      title, description, language: language || null, project: project.replace(/\s+/g, " ") || null, deadline: parseDeadline(deadline), ratePerHour,
+      title, description, language: language || null, project: project.replace(/\s+/g, " ") || null, deadline: parseDeadline(deadline), ratePerHour, fixedPay,
       ...(instructionsChanged ? { instructionsUpdatedAt: new Date() } : {}),
     },
     include: { assignee: { select: { name: true } } },
@@ -296,7 +297,7 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
   }
   // Keep pay already credited for this job in line with its pricing.
   for (const e of await db.earning.findMany({ where: { jobId } })) {
-    await db.earning.update({ where: { id: e.id }, data: { customRate: ratePerHour != null, amount: creditAmount(job.durationSeconds, ratePerHour, e.lockedRate) } });
+    await db.earning.update({ where: { id: e.id }, data: { customRate: hasOwnPay(job), amount: creditAmount(job.durationSeconds, job, e.lockedRate) } });
   }
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
@@ -440,7 +441,7 @@ export async function updateDuration(formData: FormData): Promise<FormState> {
   const job = await db.job.update({ where: { id: jobId }, data: { durationSeconds: total } });
   // Time already credited for this job follows the corrected length.
   for (const e of await db.earning.findMany({ where: { jobId } })) {
-    await db.earning.update({ where: { id: e.id }, data: { seconds: total, amount: creditAmount(total, job.ratePerHour, e.lockedRate) } });
+    await db.earning.update({ where: { id: e.id }, data: { seconds: total, amount: creditAmount(total, job, e.lockedRate) } });
   }
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
@@ -596,9 +597,9 @@ export async function submitJob(jobId: string, raw: string, fileName?: string): 
       create: {
         jobId,
         userId: user.id,
-        amount: earningsFor(job!.durationSeconds, job!.ratePerHour ?? undefined),
+        amount: creditAmount(job!.durationSeconds, job!, null),
         seconds: job!.durationSeconds,
-        customRate: job!.ratePerHour != null,
+        customRate: hasOwnPay(job!),
         referrerId: user.referredById,
       },
       update: {},

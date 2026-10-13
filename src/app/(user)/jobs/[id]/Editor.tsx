@@ -40,6 +40,7 @@ export default function Editor({
   original,
   seconds,
   ratePerHour,
+  fixedPay = null,
   format = "text",
 }: {
   jobId: string;
@@ -48,6 +49,7 @@ export default function Editor({
   original: string;
   seconds: number;
   ratePerHour: number | null;
+  fixedPay?: number | null;
   /** "html" for transcripts from Word that keep their formatting. */
   format?: string;
 }) {
@@ -320,7 +322,9 @@ export default function Editor({
         </div>
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
           <p className="text-xs text-slate-500">
-            {ratePerHour != null ? (
+            {fixedPay != null ? (
+              <>This job has a fixed price of <span className="num font-semibold text-slate-700">{formatUGX(fixedPay)}</span>, added to your earnings when an admin approves it.</>
+            ) : ratePerHour != null ? (
               <>This job is paid at its own rate: about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds, ratePerHour))}</span> for its <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span>, added to your earnings when an admin approves it.</>
             ) : (
               <>Once an admin approves it, this adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours (about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds))}</span>). Pay is worked out on your approved hours.</>

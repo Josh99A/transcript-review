@@ -97,8 +97,10 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                     <div><label className="label" htmlFor="d-project">Project</label><ProjectField id="d-project" projects={projects} defaultValue={job.project ?? ""} /></div>
                     <div><label className="label" htmlFor="d-lang">Language</label><LanguageField id="d-lang" defaultValue={job.language ?? ""} /></div>
                     <div><label className="label" htmlFor="d-due">Deadline</label><input className="input" id="d-due" name="deadline" type="date" defaultValue={deadlineInput(job.deadline)} /></div>
-                    <div><label className="label" htmlFor="d-rate">Custom rate (UGX per hour)</label><input className="input" id="d-rate" name="ratePerHour" inputMode="numeric" defaultValue={job.ratePerHour ?? ""} placeholder="Empty = usual rate" /></div>
+                    <div><label className="label" htmlFor="d-rate">Special rate (UGX per hour)</label><input className="input" id="d-rate" name="ratePerHour" inputMode="numeric" defaultValue={job.ratePerHour ?? ""} placeholder="Empty = usual rate" /></div>
+                    <div><label className="label" htmlFor="d-fixed">Or a fixed price (UGX)</label><input className="input" id="d-fixed" name="fixedPay" inputMode="numeric" defaultValue={job.fixedPay ?? ""} placeholder="Paid as is, whatever the length" /></div>
                   </div>
+                  <p className="hint">Fill in one of these, or leave both empty for the usual rate.</p>
                   <button className="btn">Save details</button>
                 </ActionForm>
               </details>

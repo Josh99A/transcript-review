@@ -1,5 +1,5 @@
 import { cookies } from "next/headers";
-import { approvedPay, earningsFor } from "./pay";
+import { approvedPay, earningsFor, ownPay } from "./pay";
 
 type Sortable = {
   createdAt: Date;
@@ -10,12 +10,13 @@ type Sortable = {
   deadline: Date | null;
   durationSeconds: number;
   ratePerHour: number | null;
+  fixedPay?: number | null;
   title: string;
   earnings?: { amount: number }[];
 };
 
 const time = (d: Date | null | undefined) => (d ? d.getTime() : null);
-const pay = (j: Sortable) => approvedPay(j) ?? earningsFor(j.durationSeconds, j.ratePerHour ?? undefined);
+const pay = (j: Sortable) => approvedPay(j) ?? ownPay(j.durationSeconds, j) ?? earningsFor(j.durationSeconds);
 
 export const SORTS = {
   updated: { label: "Recently updated", key: (j: Sortable) => time(j.updatedAt), dir: -1 },

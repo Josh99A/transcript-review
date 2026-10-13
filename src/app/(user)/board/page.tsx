@@ -50,7 +50,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
       ...(type ? { mediaType: { startsWith: type } } : {}),
       ...(language ? { language } : {}),
       ...(project ? { project } : {}),
-      ...(rate === "usual" ? { ratePerHour: null } : rate === "custom" ? { ratePerHour: { not: null } } : {}),
+      ...(rate === "usual" ? { ratePerHour: null, fixedPay: null } : rate === "custom" ? { OR: [{ ratePerHour: { not: null } }, { fixedPay: { not: null } }] } : {}),
     },
     include: { requests: { where: { userId: user.id } } },
   });
@@ -66,7 +66,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
     { name: "length", label: "Length", value: length, options: [any, ...Object.entries(LENGTHS).map(([value, l]) => ({ value, label: l.label }))] },
     { name: "type", label: "Media", value: type, options: [any, { value: "audio", label: "Audio" }, { value: "video", label: "Video" }] },
     ...(languageList.length > 0 ? [{ name: "language", label: "Language", value: language, options: [any, ...languageList.map((l) => ({ value: l, label: l }))] }] : []),
-    { name: "rate", label: "Rate", value: rate, options: [any, { value: "usual", label: "Usual rate" }, { value: "custom", label: "Special rate" }] },
+    { name: "rate", label: "Rate", value: rate, options: [any, { value: "usual", label: "Usual rate" }, { value: "custom", label: "Special rate or fixed price" }] },
   ];
 
   return (

@@ -213,7 +213,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                         </td>
                         <td className="whitespace-nowrap"><StatusBadge status={jobBadge(j)} /></td>
                         <td className="num text-right whitespace-nowrap text-slate-600">{formatDuration(j.durationSeconds)}</td>
-                        <td className="num text-right whitespace-nowrap text-slate-600">{jobPayLabel(j)}{j.ratePerHour != null && <span className="block text-xs text-slate-400">special rate</span>}</td>
+                        <td className="num text-right whitespace-nowrap text-slate-600">{jobPayLabel(j)}{j.fixedPay != null ? <span className="block text-xs text-slate-400">fixed price</span> : j.ratePerHour != null && <span className="block text-xs text-slate-400">special rate</span>}</td>
                       </tr>
                     );
                   })}

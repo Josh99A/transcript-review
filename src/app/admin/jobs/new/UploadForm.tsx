@@ -85,6 +85,7 @@ export default function UploadForm({ users, projects }: { users: { id: string; n
   const [project, setProject] = useState("");
   const [deadline, setDeadline] = useState("");
   const [ratePerHour, setRatePerHour] = useState("");
+  const [fixedPay, setFixedPay] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
@@ -129,6 +130,7 @@ export default function UploadForm({ users, projects }: { users: { id: string; n
     data.set("project", project.trim());
     data.set("deadline", deadline);
     data.set("ratePerHour", ratePerHour);
+    data.set("fixedPay", fixedPay);
     if (mode === "file" && transcriptFile) data.set("transcriptFile", transcriptFile);
     else data.set("transcriptText", pasted);
     setProgress(0);
@@ -257,10 +259,16 @@ export default function UploadForm({ users, projects }: { users: { id: string; n
               <input className="input" id="deadline" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
             </div>
           </div>
-          <div className="mt-4">
-            <label className="label" htmlFor="ratePerHour">Custom rate in UGX per hour <span className="font-normal text-slate-400">(optional)</span></label>
-            <input className="input sm:max-w-60" id="ratePerHour" inputMode="numeric" value={ratePerHour} onChange={(e) => setRatePerHour(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Leave empty for the usual rate" />
-            <p className="hint">Use this for jobs with their own price. It&apos;s paid as is, instead of by the hour.</p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="ratePerHour">Special rate in UGX per hour <span className="font-normal text-slate-400">(optional)</span></label>
+              <input className="input" id="ratePerHour" inputMode="numeric" value={ratePerHour} disabled={!!fixedPay} onChange={(e) => setRatePerHour(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Leave empty for the usual rate" />
+            </div>
+            <div>
+              <label className="label" htmlFor="fixedPay">Or a fixed price in UGX <span className="font-normal text-slate-400">(optional)</span></label>
+              <input className="input" id="fixedPay" inputMode="numeric" value={fixedPay} disabled={!!ratePerHour} onChange={(e) => setFixedPay(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Paid as is, whatever the length" />
+            </div>
+            <p className="hint sm:col-span-2">Leave both empty to pay the usual rate. A fixed price stays the same whatever the length or the usual rate.</p>
           </div>
         </Step>
 
@@ -312,7 +320,7 @@ export default function UploadForm({ users, projects }: { users: { id: string; n
           <div className="card-header"><h2 className="card-title">Summary</h2></div>
           <dl className="card-body space-y-3 text-sm">
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Length</dt><dd className="num font-medium">{effectiveDuration > 0 ? formatDuration(effectiveDuration) : "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">Expected pay</dt><dd className="num">{effectiveDuration > 0 ? `~${formatUGX(expectedPayFor(effectiveDuration, ratePerHour ? Number(ratePerHour) : null))}` : "—"}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-slate-500">Expected pay</dt><dd className="num">{fixedPay ? formatUGX(Number(fixedPay)) : effectiveDuration > 0 ? `~${formatUGX(expectedPayFor(effectiveDuration, ratePerHour ? Number(ratePerHour) : null))}` : "—"}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Assigned to</dt><dd className="truncate">{assigneeName ?? (assigneeId === "" ? "Job board" : "Nobody yet")}</dd></div>
           </dl>
           <div className="border-t border-slate-100 p-5">

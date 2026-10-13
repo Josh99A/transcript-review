@@ -107,7 +107,7 @@ export default async function CompletedPage({ searchParams }: { searchParams: Pr
                     <td><UserCell name={j.assignee?.name ?? "Unknown"} /></td>
                     <td className="whitespace-nowrap text-slate-600">{formatDate(j.approvedAt)}</td>
                     <td className="num">{formatDuration(j.durationSeconds)}</td>
-                    <td className="num text-right">{formatUGX(amount)}{j.ratePerHour != null && <span className="block text-xs text-slate-400">{formatUGX(j.ratePerHour)}/hr</span>}</td>
+                    <td className="num text-right">{formatUGX(amount)}{j.fixedPay != null ? <span className="block text-xs text-slate-400">fixed price</span> : j.ratePerHour != null && <span className="block text-xs text-slate-400">{formatUGX(j.ratePerHour)}/hr</span>}</td>
                     <td><span className={`rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ring-1 ring-inset ${PAY_TONE[state]}`}>{state}</span></td>
                     <td className="text-right"><a href={`/api/jobs/${j.id}/transcript?format=docx`} className="btn-ghost btn-sm"><Download className="size-3.5" /> .docx</a></td>
                   </tr>

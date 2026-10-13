@@ -72,7 +72,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
       )}
       <Guidelines html={guidelines.html} updatedAt={guidelines.updatedAt} since={job.assignedAt} open={job.status === "ASSIGNED"} />
       {job.status === "ASSIGNED" ? (
-        <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} seconds={job.durationSeconds} ratePerHour={job.ratePerHour} format={job.transcriptFormat} />
+        <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} seconds={job.durationSeconds} ratePerHour={job.ratePerHour} fixedPay={job.fixedPay} format={job.transcriptFormat} />
       ) : (
         <div className="space-y-4">
           <div className={`flex flex-wrap items-center gap-3 rounded-xl px-4 py-3 text-sm ring-1 ${job.approvedAt ? "bg-emerald-50 text-emerald-800 ring-emerald-600/15" : "bg-sky-50 text-sky-800 ring-sky-600/15"}`}>

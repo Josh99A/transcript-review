@@ -5,7 +5,7 @@ import { db } from "@/lib/db";
 import { parseDeadline } from "@/lib/format";
 import { uploadMedia } from "@/lib/media";
 import { mediaTypeOf } from "@/lib/mediaTypes";
-import { parseRate } from "@/lib/pay";
+import { parsePricing } from "@/lib/pay";
 import { docText, type TranscriptFormat } from "@/lib/docText";
 import { readTranscriptFile } from "@/lib/transcriptUpload";
 
@@ -26,8 +26,9 @@ export async function POST(req: Request) {
   if (!language) return NextResponse.json({ error: "Choose the job's language." }, { status: 400 });
   const project = String(form.get("project") ?? "").trim().replace(/\s+/g, " ").slice(0, 80) || null;
   const deadline = parseDeadline(String(form.get("deadline") ?? ""));
-  const ratePerHour = parseRate(form.get("ratePerHour"));
-  if (ratePerHour === "invalid") return NextResponse.json({ error: "Enter the rate as a whole number of shillings per hour, or leave it empty." }, { status: 400 });
+  const pricing = parsePricing(form);
+  if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
+  const { ratePerHour, fixedPay } = pricing;
 
   let transcript = String(form.get("transcriptText") ?? "");
   let transcriptFormat: TranscriptFormat = "text";
@@ -66,6 +67,7 @@ export async function POST(req: Request) {
       mediaType,
       durationSeconds,
       ratePerHour,
+      fixedPay,
       originalTranscript: transcript,
       editedTranscript: transcript,
       transcriptFormat,
