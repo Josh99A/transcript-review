@@ -12,7 +12,7 @@ type Details = { payNetwork: string | null; payPhone: string | null; payName: st
 export default function PaymentDetails({ details }: { details: Details }) {
   const [editing, setEditing] = useState(!details.payPhone);
   return (
-    <section className={`card ${details.payPhone ? "" : "border-amber-300"}`}>
+    <section id="pay" className={`card scroll-mt-6 ${details.payPhone ? "" : "border-amber-300"}`}>
       <div className="card-header">
         <Smartphone className="size-4.5 text-brand-600" />
         <h2 className="card-title">Where to pay you</h2>
