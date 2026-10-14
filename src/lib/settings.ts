@@ -35,3 +35,13 @@ export async function setLanguages(list: string[]) {
   const value = JSON.stringify(list);
   await db.setting.upsert({ where: { key: LANGUAGES }, create: { key: LANGUAGES, value }, update: { value } });
 }
+
+/** The admins' list plus the languages of jobs on the job board, so transcribers can pick what's being posted. */
+export async function languageOptions(): Promise<string[]> {
+  const [list, posted] = await Promise.all([
+    getLanguages(),
+    db.job.findMany({ where: { posted: true, status: "UNASSIGNED", language: { not: null } }, select: { language: true }, distinct: ["language"], orderBy: { language: "asc" } }),
+  ]);
+  const extra = posted.map((j) => j.language!.trim()).filter((l) => l && !list.some((x) => x.toLowerCase() === l.toLowerCase()));
+  return [...list, ...extra];
+}

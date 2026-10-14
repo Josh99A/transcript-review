@@ -25,7 +25,7 @@ import { deadlineInput, formatBytes, formatDate, formatDeadline, formatDuration,
 import { approvedPay, jobPayLabel } from "@/lib/pay";
 import { payStates } from "@/lib/earnings";
 import { speaks } from "@/lib/jobFields";
-import { getLanguages } from "@/lib/settings";
+import { languageOptions } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Job" };
 
@@ -55,7 +55,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
     db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true, languages: true }, orderBy: { name: "asc" } }),
     projectNames(),
     payStates(),
-    getLanguages(),
+    languageOptions(),
   ]);
   if (!job) notFound();
   const credit = job.earnings.find((e) => e.userId === job.assigneeId);

@@ -18,7 +18,7 @@ import { notify, notifyAdmins, settleNotices } from "@/lib/notify";
 import { creditAmount, earningsFor, hasOwnPay, parsePricing, RATE_PER_HOUR_UGX } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { cleanLanguages } from "@/lib/jobFields";
-import { getLanguages, getNextPayDate, setLanguages, setNextPayDate } from "@/lib/settings";
+import { getLanguages, getNextPayDate, languageOptions, setLanguages, setNextPayDate } from "@/lib/settings";
 import { deleteMedia } from "@/lib/media";
 
 export type FormState = { error?: string; ok?: string; email?: string } | undefined;
@@ -134,7 +134,7 @@ export async function savePaymentDetails(formData: FormData): Promise<FormState>
 /** The languages a transcriber can work in. */
 export async function saveLanguages(formData: FormData): Promise<FormState> {
   const me = await requireRole("USER");
-  const languages = cleanLanguages([...formData.getAll("languages").map(String), String(formData.get("other") ?? "")], await getLanguages());
+  const languages = cleanLanguages([...formData.getAll("languages").map(String), String(formData.get("other") ?? "")], await languageOptions());
   await db.user.update({ where: { id: me.id }, data: { languages } });
   revalidatePath("/", "layout");
   return { ok: languages.length ? "Languages saved." : "Languages cleared." };

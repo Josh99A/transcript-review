@@ -5,7 +5,7 @@ import { PageHeader } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { projectNames } from "@/lib/projects";
-import { getLanguages } from "@/lib/settings";
+import { languageOptions } from "@/lib/settings";
 import UploadForm from "./UploadForm";
 
 export const metadata: Metadata = { title: "Upload job" };
@@ -15,7 +15,7 @@ export default async function NewJobPage() {
   const [users, projects, languages] = await Promise.all([
     db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     projectNames(),
-    getLanguages(),
+    languageOptions(),
   ]);
   return (
     <>

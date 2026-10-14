@@ -9,7 +9,7 @@ export default function LanguageSettings({ languages }: { languages: string[] })
       <div className="card-header">
         <Languages className="size-4.5 text-brand-600" />
         <h2 className="card-title">Languages</h2>
-        <span className="text-xs text-slate-500">Offered when uploading jobs and for transcribers to tick</span>
+        <span className="text-xs text-slate-500">Offered when uploading jobs and for transcribers to tick, along with the languages of jobs on the board</span>
       </div>
       <div className="card-body space-y-4">
         <ul className="flex flex-wrap gap-2">

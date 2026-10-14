@@ -5,7 +5,7 @@ import { EmptyState, PageHeader, StatCard } from "@/components/ui";
 import PayDateBanner from "@/components/PayDateBanner";
 import PaymentDetails from "@/components/PaymentDetails";
 import MyLanguages from "@/components/MyLanguages";
-import { getLanguages } from "@/lib/settings";
+import { languageOptions } from "@/lib/settings";
 import { requireRole } from "@/lib/auth";
 import { balanceFor, expectedFor } from "@/lib/earnings";
 import { getNextPayDate } from "@/lib/settings";
@@ -108,7 +108,7 @@ export default async function EarningsPage() {
 
         <div className="h-fit space-y-6">
         <PaymentDetails details={user} />
-        <MyLanguages languages={user.languages} options={await getLanguages()} />
+        <MyLanguages languages={user.languages} options={await languageOptions()} />
         <section className="card overflow-hidden">
           <div className="card-header"><h2 className="card-title">Payments received</h2></div>
           {payouts.length === 0 ? (
