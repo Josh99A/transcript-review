@@ -1,13 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { LANGUAGES } from "@/lib/jobFields";
 
 const OTHER = "__other";
 
 /** Language picker with common choices and an "Other" box; posts the chosen language as `name`. */
-export function LanguageField({ id, name = "language", defaultValue = "", required, onChange }: { id: string; name?: string; defaultValue?: string; required?: boolean; onChange?: (v: string) => void }) {
-  const known = (LANGUAGES as readonly string[]).includes(defaultValue);
+export function LanguageField({ id, languages, name = "language", defaultValue = "", required, onChange }: { id: string; languages: string[]; name?: string; defaultValue?: string; required?: boolean; onChange?: (v: string) => void }) {
+  const known = languages.includes(defaultValue);
   const [choice, setChoice] = useState(defaultValue ? (known ? defaultValue : OTHER) : "");
   const [other, setOther] = useState(known ? "" : defaultValue);
   const value = choice === OTHER ? other.trim() : choice;
@@ -16,7 +15,7 @@ export function LanguageField({ id, name = "language", defaultValue = "", requir
     <div className="space-y-2">
       <select id={id} className="input" value={choice} required={required} onChange={(e) => { setChoice(e.target.value); update(e.target.value, other); }}>
         <option value="">{required ? "Choose a language" : "Not set"}</option>
-        {LANGUAGES.map((l) => <option key={l} value={l}>{l}</option>)}
+        {languages.map((l) => <option key={l} value={l}>{l}</option>)}
         <option value={OTHER}>Other…</option>
       </select>
       {choice === OTHER && (

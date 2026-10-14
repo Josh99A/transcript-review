@@ -25,6 +25,7 @@ import { deadlineInput, formatBytes, formatDate, formatDeadline, formatDuration,
 import { approvedPay, jobPayLabel } from "@/lib/pay";
 import { payStates } from "@/lib/earnings";
 import { speaks } from "@/lib/jobFields";
+import { getLanguages } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Job" };
 
@@ -41,7 +42,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
   await requireAdmin();
   const { id } = await params;
   const guidelines = await getGuidelines();
-  const [job, users, projects, paidStates] = await Promise.all([
+  const [job, users, projects, paidStates, languageList] = await Promise.all([
     db.job.findUnique({
       where: { id },
       include: {
@@ -54,6 +55,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
     db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true, languages: true }, orderBy: { name: "asc" } }),
     projectNames(),
     payStates(),
+    getLanguages(),
   ]);
   if (!job) notFound();
   const credit = job.earnings.find((e) => e.userId === job.assigneeId);
@@ -114,7 +116,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   <div><label className="label" htmlFor="d-desc">Details for transcribers</label><RichTextEditor name="description" id="d-desc" defaultValue={richHtml(job.description)} /><p className="hint mt-1">You can add to these at any time. {job.assignee && !job.approvedAt ? `${job.assignee.name} sees the change right away and is told about it.` : "Whoever takes the job sees them."}</p></div>
                   <div className="grid gap-3 sm:grid-cols-2">
                     <div><label className="label" htmlFor="d-project">Project</label><ProjectField id="d-project" projects={projects} defaultValue={job.project ?? ""} /></div>
-                    <div><label className="label" htmlFor="d-lang">Language</label><LanguageField id="d-lang" defaultValue={job.language ?? ""} /></div>
+                    <div><label className="label" htmlFor="d-lang">Language</label><LanguageField id="d-lang" languages={languageList} defaultValue={job.language ?? ""} /></div>
                     <div><label className="label" htmlFor="d-due">Deadline</label><input className="input" id="d-due" name="deadline" type="date" defaultValue={deadlineInput(job.deadline)} /></div>
                     <div><label className="label" htmlFor="d-rate">Special rate (UGX per hour)</label><input className="input" id="d-rate" name="ratePerHour" inputMode="numeric" defaultValue={job.ratePerHour ?? ""} placeholder="Empty = usual rate" /></div>
                     <div><label className="label" htmlFor="d-fixed">Or a fixed price (UGX)</label><input className="input" id="d-fixed" name="fixedPay" inputMode="numeric" defaultValue={job.fixedPay ?? ""} placeholder="Paid as is, whatever the length" /></div>

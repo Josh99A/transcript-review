@@ -66,7 +66,7 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
-export default function UploadForm({ users, projects }: { users: { id: string; name: string }[]; projects: string[] }) {
+export default function UploadForm({ users, projects, languages }: { users: { id: string; name: string }[]; projects: string[]; languages: string[] }) {
   const router = useRouter();
   const mediaInput = useRef<HTMLInputElement>(null);
   const [media, setMedia] = useState<File | null>(null);
@@ -252,7 +252,7 @@ export default function UploadForm({ users, projects }: { users: { id: string; n
             </div>
             <div>
               <label className="label" htmlFor="language">Language</label>
-              <LanguageField id="language" required onChange={setLanguage} />
+              <LanguageField id="language" languages={languages} required onChange={setLanguage} />
             </div>
             <div>
               <label className="label" htmlFor="deadline">Deadline <span className="font-normal text-slate-400">(optional)</span></label>

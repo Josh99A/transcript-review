@@ -11,6 +11,7 @@ import JobTags from "@/components/JobTags";
 import { projectNames } from "@/lib/projects";
 import { requireRole } from "@/lib/auth";
 import MyLanguages from "@/components/MyLanguages";
+import { getLanguages } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { formatDeadline, formatDuration, formatRelative, formatUGX } from "@/lib/format";
 import RequestButton from "./RequestButton";
@@ -82,7 +83,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
           ]}
         />
       </div>
-      <div className="mb-4"><MyLanguages languages={user.languages} /></div>
+      <div className="mb-4"><MyLanguages languages={user.languages} options={await getLanguages()} /></div>
       {posted > 0 && <Filters fields={fields} active={filtered} sort={<SortSelect page="board" value={sort} options={sortOptions(BOARD_SORTS)} />} />}
       {filtered && jobs.length > 0 && <p className="mb-3 text-sm text-slate-500">Showing {jobs.length} of {posted} open job{posted === 1 ? "" : "s"}</p>}
       {jobs.length === 0 ? (

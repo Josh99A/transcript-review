@@ -9,6 +9,8 @@ import { balancesByUser, expectedByUser } from "@/lib/earnings";
 import { formatDate, formatHours, formatUGX } from "@/lib/format";
 import { REFERRAL_RATE_PER_HOUR_UGX } from "@/lib/pay";
 import { NewUserButton, PayoutButton, ReferrerSelect, ResetPasswordButton } from "./forms";
+import LanguageSettings from "./LanguageSettings";
+import { getLanguages } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Team & payments" };
 
@@ -127,6 +129,8 @@ export default async function UsersPage() {
           </>
         )}
       </section>
+
+      <LanguageSettings languages={await getLanguages()} />
 
       <section className="card mt-6 overflow-hidden">
         <div className="card-header"><h2 className="card-title">Referrers</h2><span className="text-xs text-slate-500">Earn half of what the people they referred are paid ({formatUGX(REFERRAL_RATE_PER_HOUR_UGX)} per hour at the usual rate)</span></div>

@@ -18,7 +18,7 @@ import { notify, notifyAdmins, settleNotices } from "@/lib/notify";
 import { creditAmount, earningsFor, hasOwnPay, parsePricing, RATE_PER_HOUR_UGX } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { cleanLanguages } from "@/lib/jobFields";
-import { getNextPayDate, setNextPayDate } from "@/lib/settings";
+import { getLanguages, getNextPayDate, setLanguages, setNextPayDate } from "@/lib/settings";
 import { deleteMedia } from "@/lib/media";
 
 export type FormState = { error?: string; ok?: string; email?: string } | undefined;
@@ -134,10 +134,31 @@ export async function savePaymentDetails(formData: FormData): Promise<FormState>
 /** The languages a transcriber can work in. */
 export async function saveLanguages(formData: FormData): Promise<FormState> {
   const me = await requireRole("USER");
-  const languages = cleanLanguages([...formData.getAll("languages").map(String), String(formData.get("other") ?? "")]);
+  const languages = cleanLanguages([...formData.getAll("languages").map(String), String(formData.get("other") ?? "")], await getLanguages());
   await db.user.update({ where: { id: me.id }, data: { languages } });
   revalidatePath("/", "layout");
   return { ok: languages.length ? "Languages saved." : "Languages cleared." };
+}
+
+/** Admins add a language to the list offered on jobs and to transcribers. */
+export async function addLanguage(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const list = await getLanguages();
+  const [name] = cleanLanguages([String(formData.get("language") ?? "")], list);
+  if (!name) return { error: "Type the language to add." };
+  if (list.includes(name)) return { error: `${name} is already on the list.` };
+  await setLanguages([...list, name]);
+  revalidatePath("/", "layout");
+  return { ok: `${name} added.` };
+}
+
+/** Takes a language off the list. People who listed it keep it, and jobs in it keep their language. */
+export async function removeLanguage(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const name = String(formData.get("language") ?? "");
+  await setLanguages((await getLanguages()).filter((l) => l !== name));
+  revalidatePath("/", "layout");
+  return { ok: `${name} removed from the list.` };
 }
 
 // ---------- Admin: pay dates ----------

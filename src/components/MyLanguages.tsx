@@ -3,13 +3,12 @@
 import { Languages, Pencil } from "lucide-react";
 import { useState } from "react";
 import { saveLanguages } from "@/app/actions";
-import { LANGUAGES } from "@/lib/jobFields";
 import { ActionForm } from "./client";
 
 /** Card where transcribers list the languages they can work in, so admins can match them to jobs. */
-export default function MyLanguages({ languages }: { languages: string[] }) {
+export default function MyLanguages({ languages, options }: { languages: string[]; options: string[] }) {
   const [editing, setEditing] = useState(languages.length === 0);
-  const extra = languages.filter((l) => !(LANGUAGES as readonly string[]).includes(l));
+  const extra = languages.filter((l) => !options.includes(l));
   return (
     <section className={`card ${languages.length ? "" : "border-amber-300"}`}>
       <div className="card-header">
@@ -28,7 +27,7 @@ export default function MyLanguages({ languages }: { languages: string[] }) {
           <ActionForm action={saveLanguages} onDone={() => setEditing(false)} className="space-y-3">
             <p className="text-sm text-slate-600">Tick every language you can work in. Admins see this when they give out jobs.</p>
             <div className="flex flex-wrap gap-2">
-              {LANGUAGES.map((l) => (
+              {options.map((l) => (
                 <label key={l} className="cursor-pointer">
                   <input type="checkbox" name="languages" value={l} defaultChecked={languages.includes(l)} className="peer sr-only" />
                   <span className="inline-flex min-h-9 items-center rounded-full px-3 text-sm font-medium text-slate-700 ring-1 ring-slate-200 ring-inset peer-checked:bg-brand-600 peer-checked:text-white peer-checked:ring-brand-600 peer-focus-visible:outline-2 peer-focus-visible:outline-brand-500">{l}</span>
@@ -36,7 +35,7 @@ export default function MyLanguages({ languages }: { languages: string[] }) {
               ))}
             </div>
             <div>
-              <label className="label" htmlFor="other-languages">Others <span className="font-normal text-slate-400">(optional, separate with commas)</span></label>
+              <label className="label" htmlFor="other-languages">Any others <span className="font-normal text-slate-400">(optional, separate with commas)</span></label>
               <input className="input" id="other-languages" name="other" defaultValue={extra.join(", ")} maxLength={300} placeholder="e.g. Luo, French" />
             </div>
             <div className="flex justify-end gap-2">
