@@ -246,6 +246,40 @@ export async function assignJob(formData: FormData): Promise<FormState> {
   return { ok: assigneeId ? "Assignment saved." : "Job unassigned." };
 }
 
+/**
+ * Moves a submitted or approved job, with its pay, to another transcriber as if they had done it. The previous
+ * transcriber loses the job, its pay and its notices; payments already made to them stay recorded as they were.
+ */
+export async function transferJob(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const jobId = String(formData.get("jobId"));
+  const toId = String(formData.get("toId") ?? "");
+  const res = await guarded(async (tx) => {
+    await lockPayments(tx);
+    const job = (await lockJob(tx, jobId)) ?? refuse("This job no longer exists.");
+    if (job.status !== "SUBMITTED" || !job.assigneeId) refuse("Only submitted or completed jobs can be transferred.");
+    if (toId === job.assigneeId) refuse("It's already theirs.");
+    const to = await tx.user.findUnique({ where: { id: toId }, select: { id: true, name: true, role: true, referredById: true } });
+    if (to?.role !== "USER") refuse("Pick a transcriber to transfer it to.");
+    const from = job.assigneeId!;
+    // Any old credit of theirs on this job is replaced by the transferred one.
+    await tx.earning.deleteMany({ where: { jobId, userId: to!.id } });
+    // The pay moves as is (same amount and rate), and the new person's referrer gets the referral share.
+    await tx.earning.updateMany({ where: { jobId, userId: from }, data: { userId: to!.id, referrerId: to!.referredById } });
+    await tx.job.update({ where: { id: jobId }, data: { assigneeId: to!.id } });
+    await tx.jobRequest.deleteMany({ where: { jobId, userId: from } });
+    await tx.notification.deleteMany({ where: { jobId, userId: from } });
+    return { job, from, to: to! };
+  });
+  if (failed(res)) return res;
+  const { job, from, to } = res;
+  const done = job.approvedAt ? "It's approved, and its pay is now in your earnings." : "It's waiting for review. Its pay is added to your earnings once it's approved.";
+  await notify([to.id], { title: `${job.title} was transferred to you`, body: done, href: `/jobs/${jobId}`, jobId });
+  await notify([from], { title: `${job.title} was moved to someone else`, body: "An admin transferred this job and its pay to another transcriber.", href: "/jobs" });
+  revalidatePath("/", "layout");
+  return { ok: `Transferred to ${to.name}.` };
+}
+
 /** Once a job is assigned, the assignee's request (if any) is approved and the rest declined. Returns who was declined. */
 async function settleRequests(tx: Prisma.TransactionClient, jobId: string, assigneeId: string) {
   const declined = await tx.jobRequest.findMany({ where: { jobId, userId: { not: assigneeId }, status: "PENDING" }, select: { userId: true } });

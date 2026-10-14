@@ -150,3 +150,21 @@ export async function expectedByUser(client: Prisma.TransactionClient = db): Pro
 export async function expectedFor(userId: string): Promise<Expected> {
   return (await expectedByUser()).get(userId) ?? { jobs: 0, seconds: 0, transcriptPay: 0, referralPay: 0, total: 0 };
 }
+
+export type PayState = "Paid" | "Part paid" | "Unpaid";
+
+/** Payments aren't tied to jobs, so each person's payments are counted against their approved credits oldest first. */
+export async function payStates(client: Prisma.TransactionClient = db): Promise<Map<string, PayState>> {
+  const [paid, earnings] = await Promise.all([
+    client.payout.groupBy({ by: ["userId"], _sum: { amount: true } }),
+    client.earning.findMany({ where: APPROVED, select: { id: true, userId: true, amount: true }, orderBy: { createdAt: "asc" } }),
+  ]);
+  const left = new Map(paid.map((p) => [p.userId, p._sum.amount ?? 0]));
+  const states = new Map<string, PayState>();
+  for (const e of earnings) {
+    const cover = left.get(e.userId) ?? 0;
+    states.set(e.id, cover >= e.amount ? "Paid" : cover > 0 ? "Part paid" : "Unpaid");
+    left.set(e.userId, Math.max(0, cover - e.amount));
+  }
+  return states;
+}

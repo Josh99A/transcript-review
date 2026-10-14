@@ -1,6 +1,6 @@
 import ReplaceTranscript from "./ReplaceTranscript";
 import { cleanDoc } from "@/lib/richDoc";
-import { ArrowLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, UserMinus, X } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, UserMinus, X } from "lucide-react";
 import RichText from "@/components/RichText";
 import RichTextEditor from "@/components/RichTextEditor";
 import Guidelines from "@/components/Guidelines";
@@ -12,7 +12,7 @@ import { richHtml } from "@/lib/richtext";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { approveJob, approveRequest, assignJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, unassignJob, updateReviewNote, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
+import { approveJob, approveRequest, assignJob, transferJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, unassignJob, updateReviewNote, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
 import { IssueStatus } from "@/components/IssueThread";
 import { ActionForm, ConfirmAction } from "@/components/client";
 import MediaPlayer from "@/components/MediaPlayer";
@@ -23,6 +23,7 @@ import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { deadlineInput, formatBytes, formatDate, formatDeadline, formatDuration, formatHours, formatRelative, formatUGX } from "@/lib/format";
 import { approvedPay, jobPayLabel } from "@/lib/pay";
+import { payStates } from "@/lib/earnings";
 
 export const metadata: Metadata = { title: "Job" };
 
@@ -39,7 +40,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
   await requireAdmin();
   const { id } = await params;
   const guidelines = await getGuidelines();
-  const [job, users, projects] = await Promise.all([
+  const [job, users, projects, paidStates] = await Promise.all([
     db.job.findUnique({
       where: { id },
       include: {
@@ -51,8 +52,12 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
     }),
     db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     projectNames(),
+    payStates(),
   ]);
   if (!job) notFound();
+  const credit = job.earnings.find((e) => e.userId === job.assigneeId);
+  const creditPaid = credit ? paidStates.get(credit.id) : undefined;
+  const others = users.filter((u) => u.id !== job.assigneeId);
   const due = job.deadline ? formatDeadline(job.deadline) : null;
   const pending = job.requests.filter((r) => r.status === "PENDING");
 
@@ -242,6 +247,30 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                     </select>
                     <button className="btn shrink-0">Save</button>
                   </div>
+                </ActionForm>
+              )}
+              {job.status === "SUBMITTED" && job.assignee && others.length > 0 && (
+                <ActionForm
+                  action={transferJob}
+                  className="space-y-2"
+                  confirm={{
+                    title: `Transfer this job from ${job.assignee.name}?`,
+                    description: `The person you picked gets the job${credit ? ` and its ${formatUGX(credit.amount)} pay` : ""} as if they had done it, and both are told. ${job.assignee.name} loses the job, its pay and its notices.${creditPaid && creditPaid !== "Unpaid" ? ` ${job.assignee.name} was already ${creditPaid === "Paid" ? "paid" : "partly paid"} for this job, so their balance will show they were overpaid. Recover that from them or take it off a later payment.` : ""}`,
+                    label: "Transfer",
+                    danger: !!creditPaid && creditPaid !== "Unpaid",
+                    ...(creditPaid && creditPaid !== "Unpaid" ? { tick: `I understand ${job.assignee.name} was already paid for this job.` } : {}),
+                  }}
+                >
+                  <input type="hidden" name="jobId" value={job.id} />
+                  <label className="label" htmlFor="toId">Transfer to another transcriber</label>
+                  <div className="flex gap-2">
+                    <select className="input" id="toId" name="toId" required defaultValue="">
+                      <option value="" disabled>Choose a transcriber</option>
+                      {others.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                    </select>
+                    <button className="btn-secondary shrink-0"><ArrowRightLeft className="size-4" /> Transfer</button>
+                  </div>
+                  <p className="hint">Moves the job and its pay to them, and removes both from {job.assignee.name.split(" ")[0]}.</p>
                 </ActionForm>
               )}
               {job.assignee && !(job.status === "SUBMITTED" && job.approvedAt) && !job.mediaRemovedAt && (

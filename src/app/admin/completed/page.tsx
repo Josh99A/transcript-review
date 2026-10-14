@@ -7,12 +7,11 @@ import Link from "next/link";
 import { EmptyState, PageHeader, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { APPROVED } from "@/lib/earnings";
+import { payStates, type PayState } from "@/lib/earnings";
 import { formatDate, formatDuration, formatUGX } from "@/lib/format";
 
 export const metadata: Metadata = { title: "Completed" };
 
-type PayState = "Paid" | "Part paid" | "Unpaid";
 const PAY_TONE: Record<PayState, string> = {
   Paid: "bg-emerald-50 text-emerald-800 ring-emerald-600/20",
   "Part paid": "bg-amber-50 text-amber-800 ring-amber-600/20",
@@ -25,25 +24,15 @@ export default async function CompletedPage({ searchParams }: { searchParams: Pr
   await requireAdmin();
   const { unpaid, who, sort: sortParam } = await searchParams;
   const sort = await pickSort("completed", sortParam, DONE_SORTS, "approved_new");
-  const [jobs, people, paid, earnings] = await Promise.all([
+  const [jobs, people, payState] = await Promise.all([
     db.job.findMany({
       where: { status: "SUBMITTED", approvedAt: { not: null } },
       include: { assignee: { select: { id: true, name: true } }, earnings: true },
       orderBy: { approvedAt: "desc" },
     }),
     db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
-    db.payout.groupBy({ by: ["userId"], _sum: { amount: true } }),
-    db.earning.findMany({ where: APPROVED, select: { id: true, userId: true, amount: true }, orderBy: { createdAt: "asc" } }),
+    payStates(),
   ]);
-
-  // Payments aren't tied to jobs, so each person's payments are counted against their jobs oldest first.
-  const left = new Map(paid.map((p) => [p.userId, p._sum.amount ?? 0]));
-  const payState = new Map<string, PayState>();
-  for (const e of earnings) {
-    const cover = left.get(e.userId) ?? 0;
-    payState.set(e.id, cover >= e.amount ? "Paid" : cover > 0 ? "Part paid" : "Unpaid");
-    left.set(e.userId, Math.max(0, cover - e.amount));
-  }
   const rows = sortJobs([...jobs], sort)
     .map((j) => {
       const e = j.earnings.find((x) => x.userId === j.assigneeId) ?? j.earnings[0];
