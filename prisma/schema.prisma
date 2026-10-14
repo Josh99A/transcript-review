@@ -38,6 +38,8 @@ model User {
   payNetwork String?
   payPhone   String?
   payName    String?
+  // Languages a transcriber says they can work in, so admins can match them to jobs.
+  languages  String[] @default([])
 
   // Who brought this transcriber in. The referrer earns per hour of transcript this person submits.
   referredById     String?

@@ -24,6 +24,7 @@ import { db } from "@/lib/db";
 import { deadlineInput, formatBytes, formatDate, formatDeadline, formatDuration, formatHours, formatRelative, formatUGX } from "@/lib/format";
 import { approvedPay, jobPayLabel } from "@/lib/pay";
 import { payStates } from "@/lib/earnings";
+import { speaks } from "@/lib/jobFields";
 
 export const metadata: Metadata = { title: "Job" };
 
@@ -46,11 +47,11 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
       include: {
         assignee: true,
         earnings: { include: { user: { select: { name: true } } } },
-        requests: { include: { user: { select: { name: true, email: true } } }, orderBy: { createdAt: "asc" } },
+        requests: { include: { user: { select: { name: true, email: true, languages: true } } }, orderBy: { createdAt: "asc" } },
         issues: { include: { user: { select: { name: true } }, _count: { select: { messages: true } } }, orderBy: { updatedAt: "desc" } },
       },
     }),
-    db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true, languages: true }, orderBy: { name: "asc" } }),
     projectNames(),
     payStates(),
   ]);
@@ -58,6 +59,19 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
   const credit = job.earnings.find((e) => e.userId === job.assigneeId);
   const creditPaid = credit ? paidStates.get(credit.id) : undefined;
   const others = users.filter((u) => u.id !== job.assigneeId);
+  // People who listed the job's language come first when picking someone.
+  const matching = users.filter((u) => speaks(u.languages, job.language));
+  const rest = users.filter((u) => !speaks(u.languages, job.language));
+  const label = (u: { name: string; languages: string[] }) => (u.languages.length ? `${u.name} (${u.languages.join(", ")})` : `${u.name} (no languages listed)`);
+  const userOptions = (list: typeof users) =>
+    job.language && matching.length ? (
+      <>
+        <optgroup label={`Listed ${job.language}`}>{list.filter((u) => matching.includes(u)).map((u) => <option key={u.id} value={u.id}>{label(u)}</option>)}</optgroup>
+        <optgroup label="Others">{list.filter((u) => rest.includes(u)).map((u) => <option key={u.id} value={u.id}>{label(u)}</option>)}</optgroup>
+      </>
+    ) : (
+      list.map((u) => <option key={u.id} value={u.id}>{label(u)}</option>)
+    );
   const due = job.deadline ? formatDeadline(job.deadline) : null;
   const pending = job.requests.filter((r) => r.status === "PENDING");
 
@@ -207,7 +221,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                       {job.requests.map((r) => (
                         <li key={r.id} className="space-y-2 py-3">
                           <div className="flex items-center gap-2">
-                            <div className="min-w-0 flex-1"><UserCell name={r.user.name} sub={`Asked ${formatRelative(r.createdAt)}`} /></div>
+                            <div className="min-w-0 flex-1"><UserCell name={r.user.name} sub={`Asked ${formatRelative(r.createdAt)} · ${r.user.languages.length ? r.user.languages.join(", ") : "no languages listed"}${speaks(r.user.languages, job.language) ? "" : job.language && r.user.languages.length ? ` (not ${job.language})` : ""}`} /></div>
                             {r.status === "DECLINED" && <span className="text-xs text-slate-400">Declined</span>}
                           </div>
                           {r.note && <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">“{r.note}”</p>}
@@ -243,7 +257,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   <div className="flex gap-2">
                     <select className="input" id="assigneeId" name="assigneeId" defaultValue={job.assigneeId ?? ""}>
                       <option value="">Nobody</option>
-                      {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      {userOptions(users)}
                     </select>
                     <button className="btn shrink-0">Save</button>
                   </div>
@@ -266,7 +280,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   <div className="flex gap-2">
                     <select className="input" id="toId" name="toId" required defaultValue="">
                       <option value="" disabled>Choose a transcriber</option>
-                      {others.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      {userOptions(others)}
                     </select>
                     <button className="btn-secondary shrink-0"><ArrowRightLeft className="size-4" /> Transfer</button>
                   </div>

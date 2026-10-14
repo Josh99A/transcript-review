@@ -19,7 +19,7 @@ export default async function RequestsPage() {
     include: {
       requests: {
         where: { status: "PENDING" },
-        include: { user: { select: { name: true, email: true, _count: { select: { jobs: { where: { status: "ASSIGNED" } } } } } } },
+        include: { user: { select: { name: true, email: true, languages: true, _count: { select: { jobs: { where: { status: "ASSIGNED" } } } } } } },
         orderBy: { createdAt: "asc" },
       },
     },
@@ -51,7 +51,7 @@ export default async function RequestsPage() {
                   <li key={r.id} className="space-y-2 px-4 py-3 sm:px-6">
                     <UserCell
                       name={r.user.name}
-                      sub={`Asked ${formatRelative(r.createdAt)} · ${r.user._count.jobs ? `${r.user._count.jobs} job${r.user._count.jobs === 1 ? "" : "s"} in progress` : "No jobs in progress"}`}
+                      sub={`Asked ${formatRelative(r.createdAt)} · ${r.user._count.jobs ? `${r.user._count.jobs} job${r.user._count.jobs === 1 ? "" : "s"} in progress` : "No jobs in progress"} · ${r.user.languages.length ? r.user.languages.join(", ") : "no languages listed"}`}
                     />
                     {r.note && <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">“{r.note}”</p>}
                     <div className="flex gap-2">

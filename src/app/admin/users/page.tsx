@@ -71,6 +71,7 @@ export default async function UsersPage() {
               return (
                 <li key={u.id} className="space-y-3 px-4 py-4">
                   <PersonSummary user={u} owed={b.owed} />
+                  <LanguageList languages={u.languages} />
                   <dl className="space-y-1.5 text-sm">
                     <Line label="Pay to"><PayTo user={u} /></Line>
                     <Line label="Jobs"><span className="num">{jobsFor(u.id, "SUBMITTED")} done · {jobsFor(u.id, "ASSIGNED")} in progress</span></Line>
@@ -100,7 +101,7 @@ export default async function UsersPage() {
                   const b = balances.get(u.id) ?? zero;
                   return (
                     <tr key={u.id}>
-                      <td><UserCell name={u.name} sub={u.email} /></td>
+                      <td><UserCell name={u.name} sub={u.email} /><LanguageList languages={u.languages} className="mt-1.5 max-w-64" /></td>
                       <td><PayTo user={u} /></td>
                       <td className="num text-sm whitespace-nowrap text-slate-600">
                         <span className="block">{jobsFor(u.id, "SUBMITTED")} done</span>
@@ -298,6 +299,15 @@ function Line({ label, children }: { label: string; children: React.ReactNode })
       <dt className="shrink-0 text-slate-500">{label}</dt>
       <dd className="min-w-0 text-right text-slate-900">{children}</dd>
     </div>
+  );
+}
+
+function LanguageList({ languages, className = "" }: { languages: string[]; className?: string }) {
+  if (!languages.length) return <p className={`text-xs text-slate-400 ${className}`}>No languages listed</p>;
+  return (
+    <ul className={`flex flex-wrap gap-1 ${className}`} aria-label="Languages">
+      {languages.map((l) => <li key={l} className="rounded-full bg-slate-100 px-2 py-0.5 text-xs text-slate-700">{l}</li>)}
+    </ul>
   );
 }
 
