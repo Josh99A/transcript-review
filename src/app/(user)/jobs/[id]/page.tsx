@@ -1,3 +1,4 @@
+import ClampedText from "@/components/ClampedText";
 import DocView from "@/components/DocView";
 import TranscriptView from "@/components/TranscriptView";
 import { cleanDoc } from "@/lib/richDoc";
@@ -60,7 +61,7 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
             Notes from the admin
             {job.instructionsUpdatedAt && job.assignedAt && job.instructionsUpdatedAt > job.assignedAt && <UpdatedTag at={job.instructionsUpdatedAt} />}
           </p>
-          <RichText html={job.description} className="mt-1" />
+          <ClampedText html={job.description} lines={6} className="mt-1" />
         </div>
       )}
       {job.status === "ASSIGNED" && job.reviewNote && (

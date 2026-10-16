@@ -11,6 +11,7 @@ import JobTags from "@/components/JobTags";
 import { projectNames } from "@/lib/projects";
 import { requireRole } from "@/lib/auth";
 import MyLanguages from "@/components/MyLanguages";
+import ClampedText from "@/components/ClampedText";
 import { languageOptions } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { formatDeadline, formatDuration, formatRelative, formatUGX } from "@/lib/format";
@@ -118,7 +119,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
                     </div>
                   )}
                 </dl>
-                {j.description && <RichText html={j.description} className="mt-3 text-sm text-slate-700" />}
+                {j.description && <ClampedText html={j.description} lines={3} className="mt-3 text-sm text-slate-700" />}
                 <div className="mt-auto pt-4">
                   <RequestButton jobId={j.id} title={j.title} status={j.requests[0]?.status ?? null} />
                 </div>

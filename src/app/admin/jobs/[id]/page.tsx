@@ -2,6 +2,7 @@ import ReplaceTranscript from "./ReplaceTranscript";
 import { cleanDoc } from "@/lib/richDoc";
 import { ArrowLeft, ArrowRightLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, UserMinus, X } from "lucide-react";
 import RichText from "@/components/RichText";
+import ClampedText from "@/components/ClampedText";
 import RichTextEditor from "@/components/RichTextEditor";
 import Guidelines from "@/components/Guidelines";
 import { LanguageField, ProjectField } from "@/components/JobFields";
@@ -102,7 +103,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
           <section className="card">
             <div className="card-header"><h2 className="card-title">Details</h2></div>
             <div className="card-body space-y-3 text-sm">
-              {job.description ? <RichText html={job.description} className="text-slate-700" /> : <p className="text-slate-400">No details for transcribers yet.</p>}
+              {job.description ? <ClampedText html={job.description} lines={6} className="text-slate-700" /> : <p className="text-slate-400">No details for transcribers yet.</p>}
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-slate-600">
                 <span>Project: <span className="text-slate-900">{job.project ?? "Not set"}</span></span>
                 <span>Language: <span className="text-slate-900">{job.language ?? "Not set"}</span></span>
