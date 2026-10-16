@@ -43,7 +43,7 @@ export default async function RequestsPage() {
           {jobs.map((j) => (
             <section key={j.id} className="card">
               <div className="card-header flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                <Link href={`/admin/jobs/${j.id}`} className="card-title min-w-0 hover:text-brand-700">{j.title}</Link><JobTags job={j} />
+                <Link href={`/admin/jobs/${j.id}`} className="card-title title-clamp hover:text-brand-700" title={j.title}>{j.title}</Link><JobTags job={j} />
                 <span className="num text-sm text-slate-500">{formatDuration(j.durationSeconds)} · {jobPayLabel(j)}</span>
               </div>
               <ul className="divide-y divide-slate-100">

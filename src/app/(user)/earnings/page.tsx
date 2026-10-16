@@ -94,7 +94,7 @@ export default async function EarningsPage() {
                 <tbody>
                   {earnings.map((e) => (
                     <tr key={e.id}>
-                      <td className="font-medium text-slate-900">{e.job.title}</td>
+                      <td className="title-wrap max-w-80 font-medium text-slate-900">{e.job.title}</td>
                       <td data-label="Submitted" className="whitespace-nowrap text-slate-600">{formatDate(e.createdAt)}</td>
                       <td data-label="Status" className="whitespace-nowrap">{e.job.status === "SUBMITTED" && e.job.approvedAt ? <span className="text-emerald-700">Approved</span> : e.job.status === "SUBMITTED" ? <span className="text-sky-700">Awaiting review</span> : <span className="text-orange-700">Sent back for changes</span>}</td>
                       <td data-label="Adds" className={`num text-right font-medium ${e.job.approvedAt ? "text-emerald-700" : "text-slate-400"}`}>{!e.job.approvedAt ? <span className="font-normal">After approval</span> : <>{e.customRate ? `${formatUGX(e.amount)}` : `+${formatHours(e.seconds)}`}{e.customRate && <span className="block text-xs font-normal text-slate-400">{e.job.fixedPay != null ? "fixed price" : "special rate"}</span>}</>}</td>

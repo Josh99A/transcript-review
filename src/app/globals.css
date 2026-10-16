@@ -221,3 +221,18 @@
   }
   .doc-scroll { @apply overflow-x-auto; }
 }
+
+/* Job titles are often long file names with no spaces; let them break anywhere so they stay inside their box. */
+@utility title-wrap {
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+/* In lists and cards, long titles stop after two lines with "…"; the job page shows them in full. */
+@utility title-clamp {
+  overflow-wrap: anywhere;
+  min-width: 0;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}

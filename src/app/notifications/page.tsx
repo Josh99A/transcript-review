@@ -46,7 +46,7 @@ export default async function NotificationsPage() {
                 <a href={`/notifications/${n.id}`} className={`flex gap-3 px-4 py-3.5 hover:bg-slate-50 sm:px-6 ${n.readAt ? "" : "bg-brand-50/50"}`}>
                   <span className={`mt-1.5 size-2 shrink-0 rounded-full ${n.readAt ? "bg-transparent" : "bg-brand-600"}`} aria-hidden />
                   <span className="min-w-0 flex-1">
-                    <span className={`block text-sm ${outdated(n) ? "text-slate-500" : n.readAt ? "text-slate-700" : "font-medium text-slate-900"}`}>{n.title}</span>
+                    <span className={`title-wrap block text-sm ${outdated(n) ? "text-slate-500" : n.readAt ? "text-slate-700" : "font-medium text-slate-900"}`}>{n.title}</span>
                     {outdated(n) && (
                       <span className="mt-1 inline-flex flex-wrap items-center gap-1.5 text-xs">
                         <span className="rounded-full bg-amber-50 px-2 py-0.5 font-medium text-amber-800 ring-1 ring-amber-600/20 ring-inset">Out of date</span>

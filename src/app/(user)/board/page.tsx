@@ -105,7 +105,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
                 <div className="flex items-start gap-3">
                   <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600"><Icon className="size-5" /></span>
                   <div className="min-w-0 flex-1">
-                    <h2 className="font-semibold text-slate-900">{j.title}</h2>
+                    <h2 className="title-wrap font-semibold text-slate-900">{j.title}</h2>
                     <p className="text-xs text-slate-500">Posted {formatRelative(j.createdAt)}</p>
                     <JobTags job={j} className="mt-2 flex" />
                   </div>

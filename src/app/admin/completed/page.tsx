@@ -76,7 +76,7 @@ export default async function CompletedPage({ searchParams }: { searchParams: Pr
           <ul className="space-y-3 sm:hidden">
             {rows.map(({ job: j, amount, state }) => (
               <li key={j.id} className="card p-4">
-                <Link href={`/admin/jobs/${j.id}`} className="font-medium break-words text-slate-900 hover:text-brand-700">{j.title}</Link><JobTags job={j} className="mt-1 flex" />
+                <Link href={`/admin/jobs/${j.id}`} className="title-clamp font-medium text-slate-900 hover:text-brand-700" title={j.title}>{j.title}</Link><JobTags job={j} className="mt-1 flex" />
                 <div className="num mt-1 text-xs text-slate-500">{j.assignee?.name ?? "Unknown"} · approved {formatDate(j.approvedAt)} · {formatDuration(j.durationSeconds)}</div>
                 <div className="mt-3 flex items-center gap-2">
                   <span className="num font-medium text-slate-900">{formatUGX(amount)}</span>
@@ -92,7 +92,7 @@ export default async function CompletedPage({ searchParams }: { searchParams: Pr
               <tbody>
                 {rows.map(({ job: j, amount, state }) => (
                   <tr key={j.id}>
-                    <td><Link href={`/admin/jobs/${j.id}`} className="font-medium text-slate-900 hover:text-brand-700">{j.title}</Link><JobTags job={j} className="mt-1 flex" /></td>
+                    <td className="max-w-80"><Link href={`/admin/jobs/${j.id}`} className="title-clamp font-medium text-slate-900 hover:text-brand-700" title={j.title}>{j.title}</Link><JobTags job={j} className="mt-1 flex" /></td>
                     <td><UserCell name={j.assignee?.name ?? "Unknown"} /></td>
                     <td className="whitespace-nowrap text-slate-600">{formatDate(j.approvedAt)}</td>
                     <td className="num">{formatDuration(j.durationSeconds)}</td>

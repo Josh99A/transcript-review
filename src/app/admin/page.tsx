@@ -148,7 +148,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                     <li key={j.id}>
                       <Link href={`/admin/jobs/${j.id}`} className="block px-4 py-3 active:bg-slate-50">
                         <div className="flex items-start justify-between gap-3">
-                          <span className="min-w-0"><span className="block font-medium break-words text-slate-900">{j.title}</span><JobTags job={j} className="mt-1 flex" /></span>
+                          <span className="min-w-0"><span className="title-clamp font-medium text-slate-900" title={j.title}>{j.title}</span><JobTags job={j} className="mt-1 flex" /></span>
                           <span className="num shrink-0 text-right text-sm text-slate-600">{formatDuration(j.durationSeconds)}<span className="block text-xs text-slate-400">{jobPayLabel(j)}</span></span>
                         </div>
                         <div className="num mt-0.5 text-xs text-slate-500">
@@ -185,7 +185,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                               <Icon className="size-4.5" aria-hidden />
                             </span>
                             <div className="min-w-0">
-                              <Link href={`/admin/jobs/${j.id}`} className="block font-medium break-words text-slate-900 hover:text-brand-700">
+                              <Link href={`/admin/jobs/${j.id}`} className="title-clamp font-medium text-slate-900 hover:text-brand-700" title={j.title}>
                                 {j.title}
                               </Link>
                               <JobTags job={j} className="mt-1 flex" />

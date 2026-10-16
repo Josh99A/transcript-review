@@ -109,7 +109,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
           <ul className="card divide-y divide-slate-100">
             {requests.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 sm:px-6">
-                <span className="min-w-0"><span className="block font-medium break-words text-slate-900">{r.job.title}</span><JobTags job={r.job} className="mt-1 flex" /></span>
+                <span className="min-w-0"><span className="title-clamp font-medium text-slate-900" title={r.job.title}>{r.job.title}</span><JobTags job={r.job} className="mt-1 flex" /></span>
                 <span className="num text-sm text-slate-500">{formatDuration(r.job.durationSeconds)} · {jobPayLabel(r.job)} · asked {formatRelative(r.createdAt)}</span>
               </li>
             ))}
@@ -157,7 +157,7 @@ function JobGroup({ id, title, hint, jobs, action }: { id: string; title: string
                   <Icon className="size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <span className="block min-w-0 font-medium break-words text-slate-900">{j.title}</span><JobTags job={j} className="mt-1 flex" />
+                  <span className="title-clamp font-medium text-slate-900" title={j.title}>{j.title}</span><JobTags job={j} className="mt-1 flex" />
                   {j.reviewNote && <span className="mt-0.5 line-clamp-2 block text-sm text-red-700">{richText(j.reviewNote)}</span>}
                   <div className="num mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
                     <span className="inline-flex items-center gap-1"><Clock className="size-3" /> {formatDuration(j.durationSeconds)}</span>
@@ -189,7 +189,7 @@ function SubmittedBanner({ job }: { job: MyJob }) {
       <div className="flex gap-3 pr-6">
         <CircleCheck className="mt-0.5 size-6 shrink-0 text-emerald-600" aria-hidden />
         <div className="min-w-0 space-y-2 text-sm text-emerald-900">
-          <p className="text-base font-semibold">Sent for review: {job.title}</p>
+          <p className="title-wrap text-base font-semibold">Sent for review: {job.title}</p>
           <p>
             It&apos;s now <span className="font-medium">awaiting review</span>. Its pay is added to <Link href="/earnings" className="font-medium underline">your earnings</Link> once an admin approves it.
           </p>
@@ -222,7 +222,7 @@ function DoneGroup({ id, title, hint, jobs }: { id: string; title: string; hint:
         {jobs.map((j) => (
           <li key={j.id}>
             <Link href={`/jobs/${j.id}`} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 hover:bg-slate-50 sm:px-6">
-              <span className="min-w-0"><span className="block font-medium break-words text-slate-900">{j.title}</span><JobTags job={j} className="mt-1 flex" /></span>
+              <span className="min-w-0"><span className="title-clamp font-medium text-slate-900" title={j.title}>{j.title}</span><JobTags job={j} className="mt-1 flex" /></span>
               <span className="num flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
                 <StatusBadge status={jobBadge(j)} />
                 <span>{formatDuration(j.durationSeconds)} · {j.approvedAt ? `approved ${formatRelative(j.approvedAt)}` : `submitted ${formatDate(j.submittedAt)}`}</span>

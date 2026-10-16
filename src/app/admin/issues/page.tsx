@@ -55,7 +55,7 @@ export default async function IssuesPage({ searchParams }: { searchParams: Promi
                   {waiting && <span className="text-xs font-medium text-amber-700">Needs your reply</span>}
                   <span className="ml-auto text-xs text-slate-500">{formatRelative(i.updatedAt)}</span>
                 </div>
-                <p className="mt-0.5 text-sm text-slate-500">{i.user.name} · {i.job.title}</p>
+                <p className="title-wrap mt-0.5 text-sm text-slate-500">{i.user.name} · {i.job.title}</p>
                 {last && (
                   <p className="mt-1 line-clamp-2 flex gap-1.5 text-sm text-slate-700">
                     <MessageSquare className="mt-0.5 size-3.5 shrink-0 text-slate-400" />
