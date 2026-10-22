@@ -1,7 +1,12 @@
-import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, Languages, LifeBuoy, LogOut, MessageSquareWarning, Pencil, Send, Wallet } from "lucide-react";
+import ClampedText from "@/components/ClampedText";
+import DocView from "@/components/DocView";
+import TranscriptView from "@/components/TranscriptView";
+import { cleanDoc } from "@/lib/richDoc";
+import { ArrowLeft, CalendarClock, CircleCheck, Clock, Download, Hourglass, LifeBuoy, LogOut, MessageSquareWarning, Send, Undo2, Wallet } from "lucide-react";
+import JobTags from "@/components/JobTags";
 import RichText from "@/components/RichText";
-import Guidelines from "@/components/Guidelines";
-import { getGuidelines } from "@/lib/guidelines";
+import Guidelines, { UpdatedTag } from "@/components/Guidelines";
+import { getGuidelinesInfo } from "@/lib/guidelines";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -23,8 +28,8 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
   const user = await requireRole("USER");
   const { id } = await params;
   const [job, guidelines, issues] = await Promise.all([
-    db.job.findUnique({ where: { id } }),
-    getGuidelines(),
+    db.job.findUnique({ where: { id }, include: { earnings: { where: { userId: user.id } } } }),
+    getGuidelinesInfo(),
     db.issue.findMany({ where: { jobId: id, userId: user.id }, include: issueInclude, orderBy: { createdAt: "desc" } }),
   ]);
   if (!job || job.assigneeId !== user.id) notFound();
@@ -44,49 +49,57 @@ export default async function JobPage({ params }: { params: Promise<{ id: string
           <span className="num flex flex-wrap items-center gap-x-4 gap-y-1">
             <StatusBadge status={jobBadge(job)} />
             <span className="inline-flex items-center gap-1.5"><Clock className="size-3.5" /> {formatDuration(job.durationSeconds)}</span>
-            <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> {jobPayLabel(job)}{job.fixedPay == null ? " expected" : ""}</span>
-            {job.language && <span className="inline-flex items-center gap-1.5"><Languages className="size-3.5" /> {job.language}</span>}
+            <span className="inline-flex items-center gap-1.5"><Wallet className="size-3.5" /> {job.status === "SUBMITTED" ? (job.approvedAt && job.earnings[0] ? `${formatUGX(job.earnings[0].amount)} earned` : "Pay added once approved") : `${jobPayLabel(job)} expected`}</span>
+            <JobTags job={job} />
             {due && <span className={`inline-flex items-center gap-1.5 ${due.overdue ? "text-red-700" : due.soon ? "text-amber-700" : ""}`}><CalendarClock className="size-3.5" /> {due.text}</span>}
           </span>
         }
       />
       {job.description && (
-        <div className="mb-4 rounded-xl bg-brand-50/60 px-4 py-3 text-sm text-slate-700 ring-1 ring-brand-600/10">
-          <p className="font-medium text-slate-900">Notes from the admin</p>
-          <RichText html={job.description} className="mt-1" />
+        <div id="instructions" className="mb-4 rounded-xl bg-brand-50/60 px-4 py-3 text-sm text-slate-700 ring-1 ring-brand-600/10">
+          <p className="flex flex-wrap items-center gap-2 font-medium text-slate-900">
+            Notes from the admin
+            {job.instructionsUpdatedAt && job.assignedAt && job.instructionsUpdatedAt > job.assignedAt && <UpdatedTag at={job.instructionsUpdatedAt} />}
+          </p>
+          <ClampedText html={job.description} lines={6} className="mt-1" />
         </div>
       )}
       {job.status === "ASSIGNED" && job.reviewNote && (
         <div className="mb-4 rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-900 ring-1 ring-orange-600/15">
-          <p className="flex items-center gap-2 font-medium"><MessageSquareWarning className="size-4 shrink-0" /> The admin reviewed this {formatRelative(job.reviewedAt)} and asked for changes:</p>
+          <p className="flex items-center gap-2 font-medium"><MessageSquareWarning className="size-4 shrink-0" /> The admin reviewed this {formatRelative(job.reviewedAt)} and asked for changes:{job.reviewNoteEditedAt && <UpdatedTag at={job.reviewNoteEditedAt} />}</p>
           <RichText html={job.reviewNote} className="mt-1" />
           <p className="mt-2 text-xs text-orange-800">Make the changes below and submit again.</p>
         </div>
       )}
-      <Guidelines html={guidelines} open={job.status === "ASSIGNED"} />
+      <Guidelines html={guidelines.html} updatedAt={guidelines.updatedAt} since={job.assignedAt} open={job.status === "ASSIGNED"} />
       {job.status === "ASSIGNED" ? (
-        <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} seconds={job.durationSeconds} fixedPay={job.fixedPay} />
+        <Editor jobId={job.id} mediaType={job.mediaType} initial={job.editedTranscript} original={job.originalTranscript} seconds={job.durationSeconds} ratePerHour={job.ratePerHour} fixedPay={job.fixedPay} format={job.transcriptFormat} />
       ) : (
         <div className="space-y-4">
-          <div className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm ring-1 ${job.approvedAt ? "bg-emerald-50 text-emerald-800 ring-emerald-600/15" : "bg-sky-50 text-sky-800 ring-sky-600/15"}`}>
+          <div className={`flex flex-wrap items-center gap-3 rounded-xl px-4 py-3 text-sm ring-1 ${job.approvedAt ? "bg-emerald-50 text-emerald-800 ring-emerald-600/15" : "bg-sky-50 text-sky-800 ring-sky-600/15"}`}>
             {job.approvedAt ? <CircleCheck className="size-5 shrink-0" /> : <Hourglass className="size-5 shrink-0" />}
-            <span>
-              {job.approvedAt
-                ? `Approved ${formatRelative(job.approvedAt)}. Nothing more to do.`
-                : `You submitted this on ${formatDate(job.submittedAt)}. It's waiting for the admin's review; you'll see any requested changes here.`}
-            </span>
-            <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary btn-sm ml-auto"><Download className="size-3.5" /> .txt</a>
+            <div className="min-w-0 flex-1">
+              <p className="font-semibold">{job.approvedAt ? "Approved" : "Submitted, awaiting review"}</p>
+              <p>
+                {job.approvedAt
+                  ? `You submitted this on ${formatDate(job.submittedAt)} and it was approved ${formatRelative(job.approvedAt)}. Nothing more to do.`
+                  : `You submitted this on ${formatDate(job.submittedAt)}. An admin will review it, and you'll be notified if they approve it or ask for changes.`}
+              </p>
+              {job.earnings[0] && <p className="num mt-0.5 text-xs opacity-80">{job.approvedAt ? `${formatUGX(job.earnings[0].amount)} added to your earnings for this job.` : "Its pay is added to your earnings when an admin approves it."}</p>}
+            </div>
+            <a href={`/api/jobs/${job.id}/transcript`} className="btn-secondary btn-sm"><Download className="size-3.5" /> .txt</a>
           </div>
           {!job.approvedAt && !job.mediaRemovedAt && (
-            <ActionForm action={withdrawSubmission} className="card flex flex-wrap items-center gap-3 px-4 py-3" confirm={{ title: "Take this submission back?", description: "It leaves the admin's review list until you submit it again. You keep the pay already credited.", label: "Take it back and edit" }}>
+            <ActionForm action={withdrawSubmission} className="card flex flex-wrap items-center gap-3 px-4 py-3" confirm={{ title: "Unsubmit this transcript?", description: "It goes back to In progress with your edits kept, and leaves the admin's review list. You can submit it again when you're ready.", label: "Unsubmit and edit" }}>
               <input type="hidden" name="jobId" value={job.id} />
-              <p className="min-w-0 flex-1 text-sm text-slate-600">Spotted a mistake? Take the submission back, fix it in the editor or upload a new file, and resubmit before the admin reviews it. You won&apos;t be paid twice.</p>
-              <button className="btn-secondary w-full sm:w-auto"><Pencil className="size-4" /> Edit and resubmit</button>
+              <p className="min-w-0 flex-1 text-sm text-slate-600">Made a mistake? Unsubmit it, fix it in the editor or upload a new file, then submit again. You can do this until an admin reviews it.</p>
+              <button className="btn-secondary w-full sm:w-auto"><Undo2 className="size-4" /> Unsubmit</button>
             </ActionForm>
           )}
           {job.mediaRemovedAt ? <MediaRemoved at={job.mediaRemovedAt} /> : <div className="card p-4"><MediaPlayer jobId={job.id} mediaType={job.mediaType} /></div>}
           <div className="card px-5 py-4">
-            <pre className="font-mono text-[15px] leading-7 whitespace-pre-wrap text-slate-800">{job.editedTranscript}</pre>
+            <h2 className="mb-2 text-sm font-semibold text-slate-900">What you submitted <span className="font-normal text-slate-500">(read only)</span></h2>
+            {job.transcriptFormat === "html" ? <DocView html={cleanDoc(job.editedTranscript)} /> : <TranscriptView text={job.editedTranscript} />}
           </div>
         </div>
       )}

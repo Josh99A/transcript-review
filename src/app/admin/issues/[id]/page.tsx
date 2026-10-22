@@ -39,7 +39,7 @@ export default async function IssuePage({ params }: { params: Promise<{ id: stri
             <UserCell name={issue.user.name} sub={issue.user.email} />
             <div>
               <p className="text-slate-500">Job</p>
-              <Link href={`/admin/jobs/${issue.job.id}`} className="mt-0.5 inline-flex items-center gap-1.5 font-medium break-words text-slate-900 hover:text-brand-700">{issue.job.title} <ExternalLink className="size-3.5 shrink-0" /></Link>
+              <Link href={`/admin/jobs/${issue.job.id}`} className="mt-0.5 inline-flex items-center gap-1.5 title-wrap font-medium text-slate-900 hover:text-brand-700">{issue.job.title} <ExternalLink className="size-3.5 shrink-0" /></Link>
               <div className="mt-1"><StatusBadge status={jobBadge(issue.job)} /></div>
             </div>
             {!stillTheirs && <p className="rounded-lg bg-slate-50 px-3 py-2 text-slate-600">This job is no longer assigned to {issue.user.name}. They&apos;re still notified of your replies, but can&apos;t reply.</p>}

@@ -1,13 +1,19 @@
-import { ArrowLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, UserMinus, X } from "lucide-react";
+import ReplaceTranscript from "./ReplaceTranscript";
+import { cleanDoc } from "@/lib/richDoc";
+import { ArrowLeft, ArrowRightLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, UserMinus, X } from "lucide-react";
 import RichText from "@/components/RichText";
+import ClampedText from "@/components/ClampedText";
 import RichTextEditor from "@/components/RichTextEditor";
 import Guidelines from "@/components/Guidelines";
+import { LanguageField, ProjectField } from "@/components/JobFields";
+import JobTags from "@/components/JobTags";
+import { projectNames } from "@/lib/projects";
 import { getGuidelines } from "@/lib/guidelines";
 import { richHtml } from "@/lib/richtext";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { approveJob, approveRequest, assignJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, unassignJob, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
+import { approveJob, approveRequest, assignJob, transferJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, unassignJob, updateReviewNote, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
 import { IssueStatus } from "@/components/IssueThread";
 import { ActionForm, ConfirmAction } from "@/components/client";
 import MediaPlayer from "@/components/MediaPlayer";
@@ -17,7 +23,10 @@ import { MediaRemoved, PageHeader, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { deadlineInput, formatBytes, formatDate, formatDeadline, formatDuration, formatHours, formatRelative, formatUGX } from "@/lib/format";
-import { jobPayLabel } from "@/lib/pay";
+import { approvedPay, jobPayLabel } from "@/lib/pay";
+import { payStates } from "@/lib/earnings";
+import { speaks } from "@/lib/jobFields";
+import { languageOptions } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Job" };
 
@@ -34,19 +43,38 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
   await requireAdmin();
   const { id } = await params;
   const guidelines = await getGuidelines();
-  const [job, users] = await Promise.all([
+  const [job, users, projects, paidStates, languageList] = await Promise.all([
     db.job.findUnique({
       where: { id },
       include: {
         assignee: true,
         earnings: { include: { user: { select: { name: true } } } },
-        requests: { include: { user: { select: { name: true, email: true } } }, orderBy: { createdAt: "asc" } },
+        requests: { include: { user: { select: { name: true, email: true, languages: true } } }, orderBy: { createdAt: "asc" } },
         issues: { include: { user: { select: { name: true } }, _count: { select: { messages: true } } }, orderBy: { updatedAt: "desc" } },
       },
     }),
-    db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true, languages: true }, orderBy: { name: "asc" } }),
+    projectNames(),
+    payStates(),
+    languageOptions(),
   ]);
   if (!job) notFound();
+  const credit = job.earnings.find((e) => e.userId === job.assigneeId);
+  const creditPaid = credit ? paidStates.get(credit.id) : undefined;
+  const others = users.filter((u) => u.id !== job.assigneeId);
+  // People who listed the job's language come first when picking someone.
+  const matching = users.filter((u) => speaks(u.languages, job.language));
+  const rest = users.filter((u) => !speaks(u.languages, job.language));
+  const label = (u: { name: string; languages: string[] }) => (u.languages.length ? `${u.name} (${u.languages.join(", ")})` : `${u.name} (no languages listed)`);
+  const userOptions = (list: typeof users) =>
+    job.language && matching.length ? (
+      <>
+        <optgroup label={`Listed ${job.language}`}>{list.filter((u) => matching.includes(u)).map((u) => <option key={u.id} value={u.id}>{label(u)}</option>)}</optgroup>
+        <optgroup label="Others">{list.filter((u) => rest.includes(u)).map((u) => <option key={u.id} value={u.id}>{label(u)}</option>)}</optgroup>
+      </>
+    ) : (
+      list.map((u) => <option key={u.id} value={u.id}>{label(u)}</option>)
+    );
   const due = job.deadline ? formatDeadline(job.deadline) : null;
   const pending = job.requests.filter((r) => r.status === "PENDING");
 
@@ -55,7 +83,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
       <PageHeader
         back={job.status === "SUBMITTED" ? <Link href="/admin/reviews" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Reviews</Link> : <Link href="/admin" className="-my-2 inline-flex items-center gap-1.5 py-2 text-sm font-medium text-slate-500 hover:text-slate-800"><ArrowLeft className="size-4" /> Dashboard</Link>}
         title={job.title}
-        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={jobBadge(job)} /><span className="num">{formatDuration(job.durationSeconds)} · expected {jobPayLabel(job)}</span></span>}
+        description={<span className="flex flex-wrap items-center gap-x-3 gap-y-1"><StatusBadge status={jobBadge(job)} /><span className="num">{formatDuration(job.durationSeconds)} · {approvedPay(job) != null ? "earned" : "expected"} {jobPayLabel(job)}</span><JobTags job={job} /></span>}
         actions={
           <>
             <a href={`/api/jobs/${job.id}/transcript?format=docx`} className="btn-secondary"><Download className="size-4" /> Word .docx</a>
@@ -75,22 +103,26 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
           <section className="card">
             <div className="card-header"><h2 className="card-title">Details</h2></div>
             <div className="card-body space-y-3 text-sm">
-              {job.description ? <RichText html={job.description} className="text-slate-700" /> : <p className="text-slate-400">No details for transcribers yet.</p>}
+              {job.description ? <ClampedText html={job.description} lines={6} className="text-slate-700" /> : <p className="text-slate-400">No details for transcribers yet.</p>}
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-slate-600">
+                <span>Project: <span className="text-slate-900">{job.project ?? "Not set"}</span></span>
                 <span>Language: <span className="text-slate-900">{job.language ?? "Not set"}</span></span>
                 <span>Deadline: <span className={due?.overdue ? "text-red-700" : "text-slate-900"}>{due?.text ?? "None"}</span></span>
               </div>
               <details>
-                <summary className="cursor-pointer font-medium text-brand-600 hover:text-brand-700">Edit details</summary>
+                <summary className="cursor-pointer font-medium text-brand-600 hover:text-brand-700">Edit details and notes</summary>
                 <ActionForm action={updateJobDetails} className="mt-3 space-y-3">
                   <input type="hidden" name="jobId" value={job.id} />
                   <div><label className="label" htmlFor="d-title">Title</label><input className="input" id="d-title" name="title" defaultValue={job.title} required /></div>
-                  <div><label className="label" htmlFor="d-desc">Details for transcribers</label><RichTextEditor name="description" id="d-desc" defaultValue={richHtml(job.description)} /></div>
+                  <div><label className="label" htmlFor="d-desc">Details for transcribers</label><RichTextEditor name="description" id="d-desc" defaultValue={richHtml(job.description)} /><p className="hint mt-1">You can add to these at any time. {job.assignee && !job.approvedAt ? `${job.assignee.name} sees the change right away and is told about it.` : "Whoever takes the job sees them."}</p></div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div><label className="label" htmlFor="d-lang">Language</label><input className="input" id="d-lang" name="language" defaultValue={job.language ?? ""} /></div>
+                    <div><label className="label" htmlFor="d-project">Project</label><ProjectField id="d-project" projects={projects} defaultValue={job.project ?? ""} /></div>
+                    <div><label className="label" htmlFor="d-lang">Language</label><LanguageField id="d-lang" languages={languageList} defaultValue={job.language ?? ""} /></div>
                     <div><label className="label" htmlFor="d-due">Deadline</label><input className="input" id="d-due" name="deadline" type="date" defaultValue={deadlineInput(job.deadline)} /></div>
-                    <div><label className="label" htmlFor="d-fixed">Fixed price (UGX)</label><input className="input" id="d-fixed" name="fixedPay" inputMode="numeric" defaultValue={job.fixedPay ?? ""} placeholder="Empty = pay by length" /></div>
+                    <div><label className="label" htmlFor="d-rate">Special rate (UGX per hour)</label><input className="input" id="d-rate" name="ratePerHour" inputMode="numeric" defaultValue={job.ratePerHour ?? ""} placeholder="Empty = usual rate" /></div>
+                    <div><label className="label" htmlFor="d-fixed">Or a fixed price (UGX)</label><input className="input" id="d-fixed" name="fixedPay" inputMode="numeric" defaultValue={job.fixedPay ?? ""} placeholder="Paid as is, whatever the length" /></div>
                   </div>
+                  <p className="hint">Fill in one of these, or leave both empty for the usual rate.</p>
                   <button className="btn">Save details</button>
                 </ActionForm>
               </details>
@@ -101,7 +133,11 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
               <summary className="cursor-pointer font-medium text-brand-600 hover:text-brand-700">Edit guidelines</summary>
               <ActionForm action={updateGuidelines} className="mt-3 space-y-3">
                 <RichTextEditor name="guidelines" id="guidelines" defaultValue={guidelines} minHeight="10rem" />
-                <p className="hint">These show on every job, for every transcriber.</p>
+                <label className="flex items-start gap-2 text-sm text-slate-700">
+                  <input type="checkbox" name="tell" defaultChecked className="mt-0.5 size-4 rounded border-slate-300" />
+                  <span>Tell transcribers who have jobs open that the guidelines changed</span>
+                </label>
+                <p className="hint">These show on every job, for every transcriber. You can also edit them from Guidelines in the menu.</p>
                 <button className="btn">Save guidelines</button>
               </ActionForm>
             </details>
@@ -110,8 +146,14 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
           {/* Review links land here: the comparison, with the approve and send-back controls right under it. */}
           <div id="review" className="scroll-mt-4 space-y-6">
             <section className="card overflow-hidden">
-              <div className="card-header"><h2 className="card-title">Transcript review</h2></div>
-              <TranscriptDiff original={job.originalTranscript} edited={job.editedTranscript} finalLabel={job.status === "SUBMITTED" ? "Submitted" : "Current draft"} />
+              <div className="card-header">
+                <h2 className="card-title">Transcript review</h2>
+                {job.status !== "SUBMITTED" && (
+                  <div className="ml-auto"><ReplaceTranscript jobId={job.id} assignee={job.assignee?.name ?? null} hasEdits={job.editedTranscript !== job.originalTranscript} /></div>
+                )}
+                {job.status === "SUBMITTED" && !job.approvedAt && <span className="ml-auto text-xs text-slate-500">Wrong transcript? Send it back first, then replace it.</span>}
+              </div>
+              <TranscriptDiff {...(job.transcriptFormat === "html" ? { original: cleanDoc(job.originalTranscript), edited: cleanDoc(job.editedTranscript) } : { original: job.originalTranscript, edited: job.editedTranscript })} format={job.transcriptFormat} finalLabel={job.status === "SUBMITTED" ? "Submitted" : "Current draft"} />
             </section>
             {job.status === "SUBMITTED" && (
               <section className="card">
@@ -134,7 +176,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                       <label className="label" htmlFor="review-note">{job.approvedAt ? "Still needs changes?" : "Not satisfactory?"}</label>
                       <RichTextEditor name="note" id="review-note" minHeight="7rem" placeholder="e.g. Speaker names are missing from 02:10 to 04:30, and fix the spelling of Kampala." />
                       <button className="btn-secondary w-full"><Undo2 className="size-4" /> Send back with instructions</button>
-                      <p className="text-xs text-slate-500">{job.assignee?.name ?? "The transcriber"} sees your instructions and can edit again. Pay already credited stays, and resubmitting won&apos;t pay twice.</p>
+                      <p className="text-xs text-slate-500">{job.assignee?.name ?? "The transcriber"} sees your instructions and can edit again. Their pay for it stays on hold until you approve a resubmission.</p>
                     </ActionForm>
                   )}
                 </div>
@@ -148,6 +190,16 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
             <section className="rounded-xl bg-orange-50 px-4 py-3 text-sm text-orange-900 ring-1 ring-orange-600/15">
               <p className="flex items-center gap-2 font-medium"><MessageSquareWarning className="size-4 shrink-0" /> Sent back {formatRelative(job.reviewedAt)}{job.revisions > 1 ? ` (round ${job.revisions})` : ""}</p>
               <RichText html={job.reviewNote} className="mt-1" />
+              {job.reviewNoteEditedAt && <p className="mt-1 text-xs text-orange-800">Edited {formatRelative(job.reviewNoteEditedAt)}</p>}
+              <details className="mt-3 border-t border-orange-600/15 pt-3">
+                <summary className="cursor-pointer font-medium text-brand-700 hover:text-brand-800">Edit or add to these notes</summary>
+                <ActionForm action={updateReviewNote} className="mt-3 space-y-3">
+                  <input type="hidden" name="jobId" value={job.id} />
+                  <RichTextEditor name="note" id="review-note-edit" defaultValue={job.reviewNote} minHeight="8rem" />
+                  <p className="text-xs text-orange-800">{job.assignee?.name ?? "The transcriber"} sees the new notes right away and gets a notification.</p>
+                  <button className="btn">Save notes</button>
+                </ActionForm>
+              </details>
             </section>
           )}
           {job.status === "UNASSIGNED" && (
@@ -172,7 +224,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                       {job.requests.map((r) => (
                         <li key={r.id} className="space-y-2 py-3">
                           <div className="flex items-center gap-2">
-                            <div className="min-w-0 flex-1"><UserCell name={r.user.name} sub={`Asked ${formatRelative(r.createdAt)}`} /></div>
+                            <div className="min-w-0 flex-1"><UserCell name={r.user.name} sub={`Asked ${formatRelative(r.createdAt)} · ${r.user.languages.length ? r.user.languages.join(", ") : "no languages listed"}${speaks(r.user.languages, job.language) ? "" : job.language && r.user.languages.length ? ` (not ${job.language})` : ""}`} /></div>
                             {r.status === "DECLINED" && <span className="text-xs text-slate-400">Declined</span>}
                           </div>
                           {r.note && <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">“{r.note}”</p>}
@@ -202,16 +254,40 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
             <div className="card-body space-y-4">
               {job.assignee && <UserCell name={job.assignee.name} sub={job.assignee.email} />}
               {job.status === "SUBMITTED" ? null : (
-                <ActionForm action={assignJob} className="space-y-2" confirm={{ title: job.assignee ? "Change who has this job?" : "Assign this job?", description: job.assignee ? `${job.assignee.name} loses access to it and is told. Their draft stays on the job for the next person.` : "The person you picked is told and can start right away.", label: "Save assignment" }}>
+                <ActionForm action={assignJob} className="space-y-2" confirm={{ title: job.assignee ? "Change who has this job?" : "Assign this job?", description: job.assignee ? `${job.assignee.name} loses access to it and is told. Their draft stays on the job for the next person${job.earnings.some((e) => e.userId === job.assigneeId) ? ", and the pay credited to them for it is removed" : ""}.` : "The person you picked is told and can start right away.", label: "Save assignment" }}>
                   <input type="hidden" name="jobId" value={job.id} />
                   <label className="label" htmlFor="assigneeId">{job.assignee ? "Reassign to" : "Assign to"}</label>
                   <div className="flex gap-2">
                     <select className="input" id="assigneeId" name="assigneeId" defaultValue={job.assigneeId ?? ""}>
                       <option value="">Nobody</option>
-                      {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+                      {userOptions(users)}
                     </select>
                     <button className="btn shrink-0">Save</button>
                   </div>
+                </ActionForm>
+              )}
+              {job.status === "SUBMITTED" && job.assignee && others.length > 0 && (
+                <ActionForm
+                  action={transferJob}
+                  className="space-y-2"
+                  confirm={{
+                    title: `Transfer this job from ${job.assignee.name}?`,
+                    description: `The person you picked gets the job${credit ? ` and its ${formatUGX(credit.amount)} pay` : ""} as if they had done it, and both are told. ${job.assignee.name} loses the job, its pay and its notices.${creditPaid && creditPaid !== "Unpaid" ? ` ${job.assignee.name} was already ${creditPaid === "Paid" ? "paid" : "partly paid"} for this job, so their balance will show they were overpaid. Recover that from them or take it off a later payment.` : ""}`,
+                    label: "Transfer",
+                    danger: !!creditPaid && creditPaid !== "Unpaid",
+                    ...(creditPaid && creditPaid !== "Unpaid" ? { tick: `I understand ${job.assignee.name} was already paid for this job.` } : {}),
+                  }}
+                >
+                  <input type="hidden" name="jobId" value={job.id} />
+                  <label className="label" htmlFor="toId">Transfer to another transcriber</label>
+                  <div className="flex gap-2">
+                    <select className="input" id="toId" name="toId" required defaultValue="">
+                      <option value="" disabled>Choose a transcriber</option>
+                      {userOptions(others)}
+                    </select>
+                    <button className="btn-secondary shrink-0"><ArrowRightLeft className="size-4" /> Transfer</button>
+                  </div>
+                  <p className="hint">Moves the job and its pay to them, and removes both from {job.assignee.name.split(" ")[0]}.</p>
                 </ActionForm>
               )}
               {job.assignee && !(job.status === "SUBMITTED" && job.approvedAt) && !job.mediaRemovedAt && (
@@ -254,13 +330,13 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
             <div className="card-header"><h2 className="card-title">Time credited</h2></div>
             <div className="card-body space-y-4">
               {job.earnings.length === 0 ? (
-                <p className="text-sm text-slate-500">Nothing credited yet. When the transcript is submitted, its {formatHours(job.durationSeconds)} are added to the transcriber&apos;s total hours, which their pay is worked out on.</p>
+                <p className="text-sm text-slate-500">Nothing credited yet. When the transcript is submitted its {formatHours(job.durationSeconds)} are recorded here, and they count toward the transcriber&apos;s pay once you approve it.</p>
               ) : (
                 <ul className="space-y-2">
                   {job.earnings.map((e) => (
                     <li key={e.id} className="flex items-center gap-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm">
                       <span className="flex-1 text-emerald-900">{e.user.name}</span>
-                      <span className="num font-semibold text-emerald-900">{formatHours(e.seconds)}</span>
+                      <span className="num font-semibold text-emerald-900">{formatHours(e.seconds)}<span className="block text-right text-xs font-normal">{job.approvedAt ? "approved, counts toward pay" : "not approved yet, not owed"}</span></span>
                       <ConfirmAction
                         action={removeEarning}
                         fields={{ earningId: e.id }}

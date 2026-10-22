@@ -1,4 +1,7 @@
 import { ArrowRight, Check, CircleCheck, ClipboardCheck, Download } from "lucide-react";
+import SortSelect from "@/components/SortSelect";
+import { pickSort, sortJobs, sortOptions, type SortKey } from "@/lib/sort";
+import JobTags from "@/components/JobTags";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { approveJob } from "@/app/actions";
@@ -8,6 +11,7 @@ import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { formatDuration, formatRelative } from "@/lib/format";
 import { jobPayLabel } from "@/lib/pay";
+import { transcriptWords } from "@/lib/docText";
 
 export const metadata: Metadata = { title: "Reviews" };
 
@@ -28,9 +32,13 @@ function changedWords(original: string, edited: string) {
   return { added: b.length - kept, removed: a.length - kept };
 }
 
-export default async function ReviewsPage({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
+const REVIEW_SORTS: SortKey[] = ["submitted_old", "submitted_new", "assigned_old", "assigned_new", "deadline", "longest", "shortest", "pay_high", "pay_low", "title"];
+
+export default async function ReviewsPage({ searchParams }: { searchParams: Promise<{ show?: string; sort?: string }> }) {
   await requireAdmin();
-  const showApproved = (await searchParams).show === "approved";
+  const sp = await searchParams;
+  const showApproved = sp.show === "approved";
+  const sort = await pickSort("reviews", sp.sort, REVIEW_SORTS, "submitted_old");
   const [waiting, approved] = await Promise.all([
     db.job.findMany({
       where: { status: "SUBMITTED", approvedAt: null },
@@ -44,21 +52,22 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Prom
       take: 50,
     }),
   ]);
-  const jobs = showApproved ? approved : waiting;
+  const jobs = showApproved ? approved : sortJobs(waiting, sort);
 
   return (
     <>
       <PageHeader
         title="Reviews"
-        description={waiting.length ? `${waiting.length} submission${waiting.length === 1 ? "" : "s"} waiting for you, oldest first. Open one to compare it with the original, then approve it or send it back.` : "Submitted transcripts land here for you to approve or send back."}
+        description={waiting.length ? `${waiting.length} submission${waiting.length === 1 ? "" : "s"} waiting for you. Open one to compare it with the original, then approve it or send it back.` : "Submitted transcripts land here for you to approve or send back."}
       />
-      <div className="mb-4 flex gap-2" role="tablist">
+      <div className="mb-4 flex flex-wrap items-center gap-2" role="tablist">
         <Link href="/admin/reviews" role="tab" aria-selected={!showApproved} className={`rounded-full px-3 py-1.5 text-sm font-medium ring-1 ring-inset ${!showApproved ? "bg-brand-50 text-brand-700 ring-brand-600/20" : "text-slate-600 ring-slate-200"}`}>
           Waiting <span className="num">{waiting.length}</span>
         </Link>
         <Link href="/admin/completed" className="rounded-full px-3 py-1.5 text-sm font-medium text-slate-600 ring-1 ring-slate-200 ring-inset">
           Completed
         </Link>
+        {waiting.length > 1 && <SortSelect page="reviews" value={sort} options={sortOptions(REVIEW_SORTS)} className="ml-auto" />}
       </div>
 
       {jobs.length === 0 ? (
@@ -72,12 +81,12 @@ export default async function ReviewsPage({ searchParams }: { searchParams: Prom
       ) : (
         <ul className="space-y-3">
           {jobs.map((j) => {
-            const c = changedWords(j.originalTranscript, j.editedTranscript);
+            const c = changedWords(transcriptWords(j.originalTranscript, j.transcriptFormat), transcriptWords(j.editedTranscript, j.transcriptFormat));
             return (
               <li key={j.id} className="card p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
                   <div className="min-w-0 flex-1">
-                    <Link href={`/admin/jobs/${j.id}#review`} className="font-medium break-words text-slate-900 hover:text-brand-700">{j.title}</Link>
+                    <Link href={`/admin/jobs/${j.id}#review`} className="title-clamp font-medium text-slate-900 hover:text-brand-700" title={j.title}>{j.title}</Link><JobTags job={j} className="mt-1 flex" />
                     <div className="num mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500">
                       <span>{formatDuration(j.durationSeconds)}</span>
                       <span>{jobPayLabel(j)}</span>

@@ -5,8 +5,9 @@ import { db } from "@/lib/db";
 import { parseDeadline } from "@/lib/format";
 import { uploadMedia } from "@/lib/media";
 import { mediaTypeOf } from "@/lib/mediaTypes";
-import { parseFixedPay } from "@/lib/pay";
-import { docxToText } from "@/lib/docx";
+import { parsePricing } from "@/lib/pay";
+import { docText, type TranscriptFormat } from "@/lib/docText";
+import { readTranscriptFile } from "@/lib/transcriptUpload";
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -22,20 +23,22 @@ export async function POST(req: Request) {
   const description = cleanRich(String(form.get("description") ?? "").slice(0, 50000));
   if (richText(description).length > 5000) return NextResponse.json({ error: "Keep the details under 5,000 characters." }, { status: 400 });
   const language = String(form.get("language") ?? "").trim().slice(0, 60) || null;
+  if (!language) return NextResponse.json({ error: "Choose the job's language." }, { status: 400 });
+  const project = String(form.get("project") ?? "").trim().replace(/\s+/g, " ").slice(0, 80) || null;
   const deadline = parseDeadline(String(form.get("deadline") ?? ""));
-  const fixedPay = parseFixedPay(form.get("fixedPay"));
-  if (fixedPay === "invalid") return NextResponse.json({ error: "Enter the fixed price as a whole number of shillings, or leave it empty." }, { status: 400 });
+  const pricing = parsePricing(form);
+  if ("error" in pricing) return NextResponse.json({ error: pricing.error }, { status: 400 });
+  const { ratePerHour, fixedPay } = pricing;
 
   let transcript = String(form.get("transcriptText") ?? "");
+  let transcriptFormat: TranscriptFormat = "text";
   const transcriptFile = form.get("transcriptFile");
   if (transcriptFile instanceof File && transcriptFile.size > 0) {
-    if (/\.docx$/i.test(transcriptFile.name)) {
-      try {
-        transcript = await docxToText(Buffer.from(await transcriptFile.arrayBuffer()));
-      } catch {
-        return NextResponse.json({ error: "Couldn't read that Word file. Save it as .docx and try again." }, { status: 400 });
-      }
-    } else transcript = await transcriptFile.text();
+    // Word files keep their formatting and tables.
+    const read = await readTranscriptFile(transcriptFile);
+    if ("error" in read) return NextResponse.json({ error: read.error }, { status: 400 });
+    transcript = read.text;
+    transcriptFormat = read.format;
   }
 
   if (!title) return NextResponse.json({ error: "Give the job a title." }, { status: 400 });
@@ -46,7 +49,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "The media must be an audio or video file." }, { status: 400 });
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0)
     return NextResponse.json({ error: "Couldn't read the media length. Enter it manually." }, { status: 400 });
-  if (!transcript.trim()) return NextResponse.json({ error: "Add a transcript." }, { status: 400 });
+  if (!(transcriptFormat === "html" ? docText(transcript) : transcript).trim()) return NextResponse.json({ error: "Add a transcript." }, { status: 400 });
 
   let stored: Awaited<ReturnType<typeof uploadMedia>>;
   try {
@@ -63,11 +66,14 @@ export async function POST(req: Request) {
       mediaBytes: stored.bytes,
       mediaType,
       durationSeconds,
+      ratePerHour,
       fixedPay,
       originalTranscript: transcript,
       editedTranscript: transcript,
+      transcriptFormat,
       description,
       language,
+      project,
       deadline,
       posted: assignTo === "",
       ...(assigneeId ? { assigneeId, status: "ASSIGNED", assignedAt: new Date() } : {}),

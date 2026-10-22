@@ -1,6 +1,6 @@
 "use client";
 
-import { AudioLines, CircleCheckBig, ClipboardCheck, ClipboardList, HandCoins, Inbox, LifeBuoy, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
+import { AudioLines, BookOpenCheck, CircleCheckBig, ClipboardCheck, ClipboardList, HandCoins, Inbox, LifeBuoy, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -16,11 +16,13 @@ const ADMIN_LINKS = [
   { href: "/admin/completed", label: "Completed", icon: CircleCheckBig },
   { href: "/admin/jobs/new", label: "Upload job", icon: Upload },
   { href: "/admin/users", label: "Team & payments", icon: Users },
+  { href: "/admin/guidelines", label: "Guidelines", icon: BookOpenCheck },
 ];
 const USER_LINKS = [
   { href: "/jobs", label: "My jobs", icon: ClipboardList },
   { href: "/board", label: "Find work", icon: Search },
   { href: "/earnings", label: "My earnings", icon: Wallet },
+  { href: "/guidelines", label: "Guidelines", icon: BookOpenCheck },
 ];
 const REFERRER_LINKS = [{ href: "/referrals", label: "My referrals", icon: HandCoins }];
 const LINKS = { ADMIN: ADMIN_LINKS, USER: USER_LINKS, REFERRER: REFERRER_LINKS };

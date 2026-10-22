@@ -2,13 +2,18 @@
 
 import { diffWords } from "diff";
 import { useMemo, useState } from "react";
+import { docText } from "@/lib/docText";
+import DocView from "./DocView";
+import TranscriptView from "./TranscriptView";
 
 type View = "changes" | "final" | "original";
 
 /** Shows what the transcriber changed, word by word, plus the plain before/after texts. */
-export default function TranscriptDiff({ original, edited, finalLabel }: { original: string; edited: string; finalLabel: string }) {
+/** For formatted transcripts the comparison is of the words; the other tabs show the formatting. Their HTML must be cleaned on the server. */
+export default function TranscriptDiff({ original, edited, finalLabel, format = "text" }: { original: string; edited: string; finalLabel: string; format?: string }) {
+  const rich = format === "html";
   const [view, setView] = useState<View>("changes");
-  const parts = useMemo(() => diffWords(original, edited), [original, edited]);
+  const parts = useMemo(() => (rich ? diffWords(docText(original), docText(edited)) : diffWords(original, edited)), [rich, original, edited]);
   const stats = useMemo(() => {
     let added = 0,
       removed = 0;
@@ -52,10 +57,12 @@ export default function TranscriptDiff({ original, edited, finalLabel }: { origi
               ),
             )
           )
-        ) : view === "final" ? (
-          edited
         ) : (
-          original
+          rich ? (
+            <DocView html={view === "final" ? edited : original} className="font-sans whitespace-pre-wrap" />
+          ) : (
+            <TranscriptView text={view === "final" ? edited : original} className="text-[14px] whitespace-normal" />
+          )
         )}
       </div>
     </>

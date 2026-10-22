@@ -1,4 +1,9 @@
 import { CircleCheck, FileAudio, FileVideo, Hourglass, Inbox, Search, Upload, Wallet } from "lucide-react";
+import PayProblems from "@/components/PayProblems";
+import { payProblems } from "@/lib/payCheck";
+import SortSelect from "@/components/SortSelect";
+import { pickSort, sortJobs, sortOptions, type SortKey } from "@/lib/sort";
+import JobTags from "@/components/JobTags";
 import type { Metadata } from "next";
 import Link from "next/link";
 import PayDayCard from "@/components/PayDayCard";
@@ -7,7 +12,7 @@ import StorageCard from "@/components/StorageCard";
 import { Avatar, EmptyState, PageHeader, StatList, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { balancesByUser } from "@/lib/earnings";
+import { balancesByUser, expectedByUser } from "@/lib/earnings";
 import { formatDuration, formatRelative, formatUGX } from "@/lib/format";
 import { getNextPayDate } from "@/lib/settings";
 import { jobPayLabel } from "@/lib/pay";
@@ -23,28 +28,33 @@ const FILTER_LABELS: Record<Filter, string> = {
   SUBMITTED: "Submitted",
 };
 
-export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ status?: string; q?: string }> }) {
+const DASH_SORTS: SortKey[] = ["updated", "posted_new", "posted_old", "assigned_new", "assigned_old", "submitted_new", "submitted_old", "deadline", "longest", "shortest", "pay_high", "pay_low", "title"];
+
+export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; sort?: string }> }) {
   await requireAdmin();
-  const { status, q = "" } = await searchParams;
+  const { status, q = "", sort: sortParam } = await searchParams;
+  const sort = await pickSort("dashboard", sortParam, DASH_SORTS, "updated");
   const filter: Filter = FILTERS.includes(status as Filter) ? (status as Filter) : "ALL";
   const query = q.trim();
 
-  const [jobs, users, balances, counts, payDate, stored, pendingRequests] = await Promise.all([
+  const [jobs, users, balances, problems, expected, counts, payDate, stored, pendingRequests] = await Promise.all([
     db.job.findMany({
       where: {
         ...(filter === "ALL" ? {} : { status: filter }),
-        ...(query ? { OR: [{ title: { contains: query, mode: "insensitive" } }, { assignee: { name: { contains: query, mode: "insensitive" } } }] } : {}),
+        ...(query ? { OR: [{ title: { contains: query, mode: "insensitive" } }, { project: { contains: query, mode: "insensitive" } }, { assignee: { name: { contains: query, mode: "insensitive" } } }] } : {}),
       },
       include: { assignee: { select: { name: true } }, earnings: true, _count: { select: { requests: { where: { status: "PENDING" } } } } },
-      orderBy: [{ updatedAt: "desc" }],
     }),
     db.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, orderBy: { name: "asc" } }),
     balancesByUser(),
+    payProblems(),
+    expectedByUser(),
     db.job.groupBy({ by: ["status"], _count: true }),
     getNextPayDate(),
     db.job.findMany({ where: { mediaRemovedAt: null }, select: { mediaBytes: true, status: true } }),
     db.jobRequest.count({ where: { status: "PENDING", job: { status: "UNASSIGNED" } } }),
   ]);
+  sortJobs(jobs, sort);
   const sizes = stored.map((j) => ({ status: j.status, bytes: j.mediaBytes }));
   const usedBytes = sizes.reduce((s, j) => s + j.bytes, 0);
   const removable = sizes.filter((j) => j.status === "SUBMITTED");
@@ -53,6 +63,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const owing = users
     .map((u) => ({ user: u, balance: balances.get(u.id) ?? { earned: 0, paid: 0, owed: 0 } }))
     .sort((a, b) => b.balance.owed - a.balance.owed);
+  const totalExpected = [...expected.values()].reduce((sum, e) => sum + e.total, 0);
   const totalOwed = owing.reduce((sum, o) => sum + Math.max(o.balance.owed, 0), 0);
   const peopleOwed = owing.filter((o) => o.balance.owed > 0).length;
   const href = (f: Filter) => {
@@ -75,24 +86,26 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
         }
       />
 
+      <PayProblems problems={problems} />
       <StatList
         stats={[
           { icon: Inbox, label: "Waiting to assign", value: count("UNASSIGNED"), tone: "slate", hint: pendingRequests ? <Link href="/admin/requests" className="font-medium text-brand-600 hover:text-brand-700">{pendingRequests} request{pendingRequests === 1 ? "" : "s"} to review</Link> : undefined },
-          { icon: Hourglass, label: "In progress", value: count("ASSIGNED"), tone: "amber" },
+          { icon: Hourglass, label: "In progress", value: count("ASSIGNED"), tone: "amber", hint: <Link href="/admin/users" className="hover:text-slate-700">{formatUGX(totalExpected)} expected pay</Link> },
           { icon: CircleCheck, label: "Submitted", value: count("SUBMITTED"), tone: "emerald" },
           { icon: Wallet, label: "Owed to team", value: formatUGX(totalOwed), tone: "brand", hint: waitingHint(peopleOwed) },
         ]}
       />
 
-      <div className="mt-6 grid gap-6 xl:grid-cols-[1fr_320px]">
+      <div className="mt-6 space-y-6">
         <section className="card overflow-hidden">
           <div className="card-header">
             <h2 className="card-title">Jobs</h2>
             <form className="relative ml-auto w-full sm:w-64" role="search">
               {filter !== "ALL" && <input type="hidden" name="status" value={filter} />}
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
-              <input className="input pl-9" name="q" defaultValue={query} placeholder="Search title or person" aria-label="Search jobs" />
+              <input className="input pl-9" name="q" defaultValue={query} placeholder="Search title, project or person" aria-label="Search jobs" />
             </form>
+            <SortSelect page="dashboard" value={sort} options={sortOptions(DASH_SORTS)} className="w-full sm:w-auto" />
           </div>
           <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3 sm:px-5" role="tablist">
             {FILTERS.map((f) => {
@@ -135,7 +148,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                     <li key={j.id}>
                       <Link href={`/admin/jobs/${j.id}`} className="block px-4 py-3 active:bg-slate-50">
                         <div className="flex items-start justify-between gap-3">
-                          <span className="min-w-0 font-medium break-words text-slate-900">{j.title}</span>
+                          <span className="min-w-0"><span className="title-clamp font-medium text-slate-900" title={j.title}>{j.title}</span><JobTags job={j} className="mt-1 flex" /></span>
                           <span className="num shrink-0 text-right text-sm text-slate-600">{formatDuration(j.durationSeconds)}<span className="block text-xs text-slate-400">{jobPayLabel(j)}</span></span>
                         </div>
                         <div className="num mt-0.5 text-xs text-slate-500">
@@ -158,6 +171,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                     <th>Assigned to</th>
                     <th>Status</th>
                     <th className="text-right">Length</th>
+                    <th className="text-right">Pay</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -165,16 +179,17 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                     const Icon = j.mediaType.startsWith("video") ? FileVideo : FileAudio;
                     return (
                       <tr key={j.id}>
-                        <td>
+                        <td className="min-w-72">
                           <div className="flex items-center gap-3">
                             <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-500">
                               <Icon className="size-4.5" aria-hidden />
                             </span>
                             <div className="min-w-0">
-                              <Link href={`/admin/jobs/${j.id}`} className="font-medium text-slate-900 hover:text-brand-700">
+                              <Link href={`/admin/jobs/${j.id}`} className="title-clamp font-medium text-slate-900 hover:text-brand-700" title={j.title}>
                                 {j.title}
                               </Link>
-                              <div className="num text-xs text-slate-500">
+                              <JobTags job={j} className="mt-1 flex" />
+                              <div className="num mt-1 text-xs text-slate-500">
                                 {j.status === "SUBMITTED" ? `submitted ${formatRelative(j.submittedAt)}` : `updated ${formatRelative(j.updatedAt)}`}
                               </div>
                             </div>
@@ -196,8 +211,9 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                             <span className="text-slate-400">Nobody yet</span>
                           )}
                         </td>
-                        <td><StatusBadge status={jobBadge(j)} /></td>
-                        <td className="num text-right whitespace-nowrap text-slate-600">{formatDuration(j.durationSeconds)}<span className="block text-xs text-slate-400">{jobPayLabel(j)}</span></td>
+                        <td className="whitespace-nowrap"><StatusBadge status={jobBadge(j)} /></td>
+                        <td className="num text-right whitespace-nowrap text-slate-600">{formatDuration(j.durationSeconds)}</td>
+                        <td className="num text-right whitespace-nowrap text-slate-600">{jobPayLabel(j)}{j.fixedPay != null ? <span className="block text-xs text-slate-400">fixed price</span> : j.ratePerHour != null && <span className="block text-xs text-slate-400">special rate</span>}</td>
                       </tr>
                     );
                   })}
@@ -208,7 +224,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
           )}
         </section>
 
-        <div className="space-y-6">
+        <div className="grid items-start gap-6 lg:grid-cols-3">
         <PayDayCard payDate={payDate} totalOwed={totalOwed} peopleOwed={peopleOwed} />
         <StorageCard usedBytes={usedBytes} removableBytes={removable.reduce((s, j) => s + j.bytes, 0)} removableCount={removable.length} />
         <section className="card h-fit">

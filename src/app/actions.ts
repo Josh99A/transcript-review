@@ -1,20 +1,24 @@
 "use server";
 
+import { payProblems } from "@/lib/payCheck";
 import bcrypt from "bcryptjs";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { cleanRich, richText } from "@/lib/richtext";
-import { setGuidelines } from "@/lib/guidelines";
+import { cleanDoc } from "@/lib/richDoc";
+import { docText } from "@/lib/docText";
+import { getGuidelinesInfo, setGuidelines } from "@/lib/guidelines";
 import { createSession, destroySession, homeFor, requireAdmin, requireRole, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatPayDate, parseDeadline } from "@/lib/format";
-import { notify, notifyAdmins } from "@/lib/notify";
-import { earningsFor, parseFixedPay } from "@/lib/pay";
+import { notify, notifyAdmins, settleNotices } from "@/lib/notify";
+import { creditAmount, earningsFor, hasOwnPay, parsePricing, RATE_PER_HOUR_UGX } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
-import { getNextPayDate, setNextPayDate } from "@/lib/settings";
+import { cleanLanguages } from "@/lib/jobFields";
+import { getLanguages, getNextPayDate, languageOptions, setLanguages, setNextPayDate } from "@/lib/settings";
 import { deleteMedia } from "@/lib/media";
 
 export type FormState = { error?: string; ok?: string; email?: string } | undefined;
@@ -127,6 +131,36 @@ export async function savePaymentDetails(formData: FormData): Promise<FormState>
   return { ok: rawPhone ? "Payment details saved." : "Payment details removed." };
 }
 
+/** The languages a transcriber can work in. */
+export async function saveLanguages(formData: FormData): Promise<FormState> {
+  const me = await requireRole("USER");
+  const languages = cleanLanguages([...formData.getAll("languages").map(String), String(formData.get("other") ?? "")], await languageOptions());
+  await db.user.update({ where: { id: me.id }, data: { languages } });
+  revalidatePath("/", "layout");
+  return { ok: languages.length ? "Languages saved." : "Languages cleared." };
+}
+
+/** Admins add a language to the list offered on jobs and to transcribers. */
+export async function addLanguage(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const list = await getLanguages();
+  const [name] = cleanLanguages([String(formData.get("language") ?? "")], list);
+  if (!name) return { error: "Type the language to add." };
+  if (list.includes(name)) return { error: `${name} is already on the list.` };
+  await setLanguages([...list, name]);
+  revalidatePath("/", "layout");
+  return { ok: `${name} added.` };
+}
+
+/** Takes a language off the list. People who listed it keep it, and jobs in it keep their language. */
+export async function removeLanguage(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const name = String(formData.get("language") ?? "");
+  await setLanguages((await getLanguages()).filter((l) => l !== name));
+  revalidatePath("/", "layout");
+  return { ok: `${name} removed from the list.` };
+}
+
 // ---------- Admin: pay dates ----------
 
 export async function updatePayDate(formData: FormData): Promise<FormState> {
@@ -146,19 +180,24 @@ export async function payEveryone(): Promise<FormState> {
   // One pay run at a time, so a double click or two admins can't pay the same balance twice.
   const payouts = await db.$transaction(async (tx) => {
     await lockPayments(tx);
-    const [balances, people] = await Promise.all([
+    const [balances, people, problems] = await Promise.all([
       balancesByUser(tx),
       tx.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, select: { id: true } }),
+      payProblems(tx),
     ]);
-    const rows = people.map((p) => ({ userId: p.id, amount: balances.get(p.id)?.owed ?? 0, note })).filter((p) => p.amount > 0);
+    // People with pay that doesn't match their jobs are left out until it's fixed.
+    const held = new Set(problems.map((p) => p.userId));
+    const rows = people.map((p) => ({ userId: p.id, amount: balances.get(p.id)?.owed ?? 0, note })).filter((p) => p.amount > 0 && !held.has(p.userId));
     if (rows.length) await tx.payout.createMany({ data: rows });
-    return rows;
+    return { rows, held: people.filter((p) => held.has(p.id) && (balances.get(p.id)?.owed ?? 0) > 0).length };
   });
-  if (payouts.length === 0) return { error: "Nobody is owed anything right now." };
-  await Promise.all(payouts.map((p) => notify([p.userId], { title: `You were paid UGX ${p.amount.toLocaleString("en-US")}`, body: note, href: "/earnings" })));
+  const { rows: payoutRows, held } = payouts;
+  const skipped = held ? ` ${held} ${held === 1 ? "person was" : "people were"} left out because of a pay problem; see the warning on Team & payments.` : "";
+  if (payoutRows.length === 0) return { error: held ? `Nobody was paid.${skipped}` : "Nobody is owed anything right now." };
+  await Promise.all(payoutRows.map((p) => notify([p.userId], { title: `You were paid UGX ${p.amount.toLocaleString("en-US")}`, body: note, href: "/earnings" })));
   revalidatePath("/", "layout");
-  const total = payouts.reduce((s, p) => s + p.amount, 0);
-  return { ok: `Recorded ${payouts.length} payment${payouts.length === 1 ? "" : "s"} totalling UGX ${total.toLocaleString("en-US")}.` };
+  const total = payoutRows.reduce((s, p) => s + p.amount, 0);
+  return { ok: `Recorded ${payoutRows.length} payment${payoutRows.length === 1 ? "" : "s"} totalling UGX ${total.toLocaleString("en-US")}.${skipped}` };
 }
 
 /** Serializes everything that reads balances and records payments. */
@@ -201,6 +240,11 @@ export async function assignJob(formData: FormData): Promise<FormState> {
       const person = await tx.user.findUnique({ where: { id: assigneeId }, select: { role: true } });
       if (person?.role !== "USER") refuse("Jobs can only go to transcribers.");
     }
+    // Moving a job off someone takes back any pay they had for it, as leaving or unassigning does.
+    if (job.assigneeId) {
+      await lockPayments(tx);
+      await tx.earning.deleteMany({ where: { jobId, userId: job.assigneeId } });
+    }
     await tx.job.update({
       where: { id: jobId },
       data: assigneeId
@@ -221,8 +265,9 @@ export async function assignJob(formData: FormData): Promise<FormState> {
   });
   if (failed(res)) return res;
   const { job, declined } = res;
-  if (assigneeId) await notify([assigneeId], { title: `New job assigned: ${job.title}`, href: `/jobs/${jobId}` });
-  if (job.assigneeId) await notify([job.assigneeId], { title: `${job.title} was taken off your list`, body: "An admin moved this job. You don't need to work on it any more.", href: "/jobs" });
+  if (assigneeId) await notify([assigneeId], { title: `New job assigned: ${job.title}`, href: `/jobs/${jobId}`, jobId, kind: "assigned" });
+  if (job.assigneeId) await notify([job.assigneeId], { title: `${job.title} was taken off your list`, body: "An admin moved this job. You don't need to work on it any more.", href: "/jobs", jobId });
+  await settleNotices(jobId);
   await notify(declined, { title: `${job.title} went to someone else`, body: "Thanks for asking. Check Find work for other jobs.", href: "/board" });
   revalidatePath("/admin");
   revalidatePath("/admin/requests");
@@ -230,6 +275,40 @@ export async function assignJob(formData: FormData): Promise<FormState> {
   revalidatePath("/jobs");
   revalidatePath(`/admin/jobs/${jobId}`);
   return { ok: assigneeId ? "Assignment saved." : "Job unassigned." };
+}
+
+/**
+ * Moves a submitted or approved job, with its pay, to another transcriber as if they had done it. The previous
+ * transcriber loses the job, its pay and its notices; payments already made to them stay recorded as they were.
+ */
+export async function transferJob(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const jobId = String(formData.get("jobId"));
+  const toId = String(formData.get("toId") ?? "");
+  const res = await guarded(async (tx) => {
+    await lockPayments(tx);
+    const job = (await lockJob(tx, jobId)) ?? refuse("This job no longer exists.");
+    if (job.status !== "SUBMITTED" || !job.assigneeId) refuse("Only submitted or completed jobs can be transferred.");
+    if (toId === job.assigneeId) refuse("It's already theirs.");
+    const to = await tx.user.findUnique({ where: { id: toId }, select: { id: true, name: true, role: true, referredById: true } });
+    if (to?.role !== "USER") refuse("Pick a transcriber to transfer it to.");
+    const from = job.assigneeId!;
+    // Any old credit of theirs on this job is replaced by the transferred one.
+    await tx.earning.deleteMany({ where: { jobId, userId: to!.id } });
+    // The pay moves as is (same amount and rate), and the new person's referrer gets the referral share.
+    await tx.earning.updateMany({ where: { jobId, userId: from }, data: { userId: to!.id, referrerId: to!.referredById } });
+    await tx.job.update({ where: { id: jobId }, data: { assigneeId: to!.id } });
+    await tx.jobRequest.deleteMany({ where: { jobId, userId: from } });
+    await tx.notification.deleteMany({ where: { jobId, userId: from } });
+    return { job, from, to: to! };
+  });
+  if (failed(res)) return res;
+  const { job, from, to } = res;
+  const done = job.approvedAt ? "It's approved, and its pay is now in your earnings." : "It's waiting for review. Its pay is added to your earnings once it's approved.";
+  await notify([to.id], { title: `${job.title} was transferred to you`, body: done, href: `/jobs/${jobId}`, jobId });
+  await notify([from], { title: `${job.title} was moved to someone else`, body: "An admin transferred this job and its pay to another transcriber.", href: "/jobs" });
+  revalidatePath("/", "layout");
+  return { ok: `Transferred to ${to.name}.` };
 }
 
 /** Once a job is assigned, the assignee's request (if any) is approved and the rest declined. Returns who was declined. */
@@ -244,6 +323,7 @@ const detailsSchema = z.object({
   title: z.string().trim().min(1, "Give the job a title"),
   description: z.string().trim().max(50000).default(""),
   language: z.string().trim().max(60).default(""),
+  project: z.string().trim().max(80).default(""),
   deadline: z.string().trim().regex(/^(\d{4}-\d{2}-\d{2})?$/, "Enter a valid deadline").default(""),
 });
 
@@ -252,25 +332,44 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
   const jobId = String(formData.get("jobId"));
   const parsed = detailsSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
-  const { title, language, deadline } = parsed.data;
+  const { title, language, project, deadline } = parsed.data;
   const description = cleanRich(parsed.data.description);
   if (richText(description).length > 5000) return { error: "Keep the details under 5,000 characters." };
-  const fixedPay = parseFixedPay(formData.get("fixedPay"));
-  if (fixedPay === "invalid") return { error: "Enter the fixed price as a whole number of shillings, or leave it empty." };
+  const pricing = parsePricing(formData);
+  if ("error" in pricing) return { error: pricing.error };
+  const { ratePerHour, fixedPay } = pricing;
+  const before = await db.job.findUnique({ where: { id: jobId }, select: { description: true } });
+  if (!before) return { error: "This job no longer exists." };
+  const instructionsChanged = before.description !== description;
   const job = await db.job.update({
     where: { id: jobId },
-    data: { title, description, language: language || null, deadline: parseDeadline(deadline), fixedPay },
+    data: {
+      title, description, language: language || null, project: project.replace(/\s+/g, " ") || null, deadline: parseDeadline(deadline), ratePerHour, fixedPay,
+      ...(instructionsChanged ? { instructionsUpdatedAt: new Date() } : {}),
+    },
+    include: { assignee: { select: { name: true } } },
   });
+  // Whoever is working on it hears about new instructions; an approved job is finished, so nobody is told.
+  const told = instructionsChanged && job.assigneeId && !job.approvedAt ? job.assignee?.name : null;
+  if (told) {
+    await notify([job.assigneeId!], {
+      title: `Instructions updated: ${job.title}`,
+      body: description ? "An admin changed the notes for this job. Open it to read them." : "An admin removed the notes for this job.",
+      href: `/jobs/${jobId}`,
+      jobId,
+      kind: "instructions",
+    });
+  }
   // Keep pay already credited for this job in line with its pricing.
-  await db.earning.updateMany({
-    where: { jobId },
-    data: { fixed: fixedPay != null, amount: fixedPay ?? earningsFor(job.durationSeconds) },
-  });
+  for (const e of await db.earning.findMany({ where: { jobId } })) {
+    await db.earning.update({ where: { id: e.id }, data: { customRate: hasOwnPay(job), amount: creditAmount(job.durationSeconds, job, e.lockedRate) } });
+  }
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
   revalidatePath("/board");
   revalidatePath("/admin/users");
-  return { ok: "Details saved." };
+  revalidatePath(`/jobs/${jobId}`);
+  return { ok: told ? `Details saved. ${told} was told the instructions changed.` : "Details saved." };
 }
 
 export async function setPosted(formData: FormData): Promise<FormState> {
@@ -304,7 +403,8 @@ export async function approveRequest(formData: FormData): Promise<FormState> {
   });
   if (failed(res)) return res;
   const { request, job, declined } = res;
-  await notify([request.userId], { title: `Your request was approved: ${job.title}`, body: "It's now in My jobs.", href: `/jobs/${job.id}` });
+  await notify([request.userId], { title: `Your request was approved: ${job.title}`, body: "It's now in My jobs.", href: `/jobs/${job.id}`, jobId: job.id, kind: "assigned" });
+  await settleNotices(job.id);
   await notify(declined, { title: `${job.title} went to someone else`, body: "Thanks for asking. Check Find work for other jobs.", href: "/board" });
   revalidatePath(`/admin/jobs/${job.id}`);
   revalidatePath("/admin");
@@ -319,7 +419,7 @@ export async function declineRequest(formData: FormData): Promise<FormState> {
   const { count } = await db.jobRequest.updateMany({ where: { id: requestId, status: "PENDING" }, data: { status: "DECLINED" } });
   if (!count) return { error: "This request was already answered or withdrawn." };
   const request = await db.jobRequest.findUniqueOrThrow({ where: { id: requestId }, include: { job: { select: { title: true } } } });
-  await notify([request.userId], { title: `Your request wasn't approved: ${request.job.title}`, body: "Check Find work for other jobs.", href: "/board" });
+  await notify([request.userId], { title: `Your request wasn't approved: ${request.job.title}`, body: "Check Find work for other jobs.", href: "/board", jobId: request.jobId });
   revalidatePath(`/admin/jobs/${request.jobId}`);
   revalidatePath("/admin");
   revalidatePath("/admin/requests");
@@ -340,15 +440,41 @@ export async function reopenJob(formData: FormData): Promise<FormState> {
   // Conditional on the job still being as we just read it, so it can't be sent back twice or after it changed hands.
   const { count } = await db.job.updateMany({
     where: { id: jobId, status: "SUBMITTED", assigneeId: job.assigneeId, mediaRemovedAt: null },
-    data: { status: "ASSIGNED", submittedAt: null, approvedAt: null, reviewNote: note, reviewedAt: new Date(), revisions: { increment: 1 } },
+    data: { status: "ASSIGNED", submittedAt: null, approvedAt: null, reviewNote: note, reviewedAt: new Date(), reviewNoteEditedAt: null, revisions: { increment: 1 } },
   });
   if (!count) return { error: "This job changed while you were looking at it. Reload and try again." };
-  await notify([job.assigneeId], { title: `Changes needed: ${job.title}`, body: richText(note).slice(0, 500), href: `/jobs/${jobId}` });
+  // No longer approved, so its pay goes back to today's rate until it's approved again.
+  await db.earning.updateMany({ where: { jobId, customRate: false }, data: { lockedRate: null, amount: earningsFor(job.durationSeconds) } });
+  await notify([job.assigneeId], { title: `Changes needed: ${job.title}`, body: richText(note).slice(0, 500), href: `/jobs/${jobId}`, jobId, kind: "sent-back" });
+  await settleNotices(jobId);
   revalidatePath("/admin/reviews");
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/jobs");
   return { ok: "Sent back with your instructions." };
+}
+
+/** Changes the notes on a job that was sent back, e.g. to add something the admin forgot. */
+export async function updateReviewNote(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const jobId = String(formData.get("jobId"));
+  const note = cleanRich(String(formData.get("note") ?? ""));
+  if (richText(note).length > 5000) return { error: "Keep the instructions under 5,000 characters." };
+  if (!note) return { error: "The notes can't be empty. Write what needs to change." };
+  const job = await db.job.findUnique({ where: { id: jobId }, include: { assignee: { select: { name: true } } } });
+  if (!job) return { error: "This job no longer exists." };
+  if (job.reviewNote === note) return { ok: "No changes to save." };
+  // Only while the job is still back with the transcriber; once they resubmit, the notes are done with.
+  const { count } = await db.job.updateMany({
+    where: { id: jobId, status: "ASSIGNED", assigneeId: job.assigneeId, reviewNote: { not: null } },
+    data: { reviewNote: note, reviewNoteEditedAt: new Date() },
+  });
+  if (!count) return { error: "This job isn't waiting on changes any more, so its notes can't be edited. Reload to see where it is." };
+  await notify([job.assigneeId], { title: `Notes updated: ${job.title}`, body: `The admin changed what needs fixing. ${richText(note)}`.slice(0, 500), href: `/jobs/${jobId}`, jobId, kind: "sent-back" });
+  revalidatePath(`/admin/jobs/${jobId}`);
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/jobs");
+  return { ok: `Notes saved. ${job.assignee?.name ?? "The transcriber"} was told.` };
 }
 
 /** Marks a submitted job as reviewed and accepted. */
@@ -358,7 +484,10 @@ export async function approveJob(formData: FormData): Promise<FormState> {
   const { count } = await db.job.updateMany({ where: { id: jobId, status: "SUBMITTED", approvedAt: null }, data: { approvedAt: new Date(), reviewedAt: new Date() } });
   if (!count) return { error: "Only submitted jobs that aren't approved yet can be approved." };
   const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
-  await notify([job.assigneeId], { title: `Approved: ${job.title}`, body: "Your transcript was accepted.", href: `/jobs/${jobId}` });
+  // Approved pay keeps today's usual rate even if the rate changes later.
+  await db.earning.updateMany({ where: { jobId, customRate: false }, data: { lockedRate: RATE_PER_HOUR_UGX, amount: earningsFor(job.durationSeconds) } });
+  await notify([job.assigneeId], { title: `Approved: ${job.title}`, body: "Your transcript was accepted, and its pay is now in your earnings.", href: `/jobs/${jobId}`, jobId, kind: "approved" });
+  await settleNotices(jobId);
   revalidatePath("/admin/reviews");
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
@@ -376,7 +505,9 @@ export async function updateDuration(formData: FormData): Promise<FormState> {
   if (total > 24 * 3600) return { error: "Length can't be more than 24 hours." };
   const job = await db.job.update({ where: { id: jobId }, data: { durationSeconds: total } });
   // Time already credited for this job follows the corrected length.
-  await db.earning.updateMany({ where: { jobId }, data: { seconds: total, ...(job.fixedPay == null ? { amount: earningsFor(total) } : {}) } });
+  for (const e of await db.earning.findMany({ where: { jobId } })) {
+    await db.earning.update({ where: { id: e.id }, data: { seconds: total, amount: creditAmount(total, job, e.lockedRate) } });
+  }
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
   revalidatePath("/admin/users");
@@ -443,6 +574,8 @@ export async function recordPayout(formData: FormData): Promise<FormState> {
   if (!Number.isFinite(amount) || amount <= 0) return { error: "Enter an amount greater than zero." };
   const res = await guarded(async (tx) => {
     await lockPayments(tx);
+    const problem = (await payProblems(tx)).find((p) => p.userId === userId);
+    if (problem) refuse(`Fix the pay problem on ${problem.jobTitle} first: ${problem.problem}`);
     const owed = (await balancesByUser(tx)).get(userId)?.owed ?? 0;
     if (amount > owed) refuse(`That's more than they're owed (UGX ${Math.max(owed, 0).toLocaleString("en-US")}).`);
     await tx.payout.create({ data: { userId, amount, note } });
@@ -476,7 +609,7 @@ export async function requestJob(formData: FormData): Promise<FormState> {
     return job!;
   });
   if (failed(res)) return res;
-  await notifyAdmins({ title: `${user.name} requested ${res.title}`, body: note, href: "/admin/requests" });
+  await notifyAdmins({ title: `${user.name} requested ${res.title}`, body: note, href: "/admin/requests", jobId, kind: "requested" });
   revalidatePath("/board");
   revalidatePath("/admin/requests");
   revalidatePath("/admin");
@@ -495,9 +628,16 @@ export async function cancelRequest(formData: FormData): Promise<FormState> {
   return { ok: "Request withdrawn." };
 }
 
-export async function saveDraft(jobId: string, text: string): Promise<FormState> {
+/** Formatted transcripts are cleaned before they are stored; plain ones are kept as typed. */
+async function cleanTranscript(jobId: string, text: string) {
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { transcriptFormat: true } });
+  return job?.transcriptFormat === "html" ? { text: cleanDoc(text), words: docText(text) } : { text, words: text };
+}
+
+export async function saveDraft(jobId: string, raw: string): Promise<FormState> {
   const user = await requireUser();
-  if (text.length > MAX_TRANSCRIPT) return { error: "The transcript is too long to save." };
+  if (raw.length > MAX_TRANSCRIPT) return { error: "The transcript is too long to save." };
+  const { text } = await cleanTranscript(jobId, raw);
   const { count } = await db.job.updateMany({ where: { id: jobId, assigneeId: user.id, status: "ASSIGNED" }, data: { editedTranscript: text } });
   if (!count) return { error: "This job is no longer open for editing. It may have been submitted or moved to someone else." };
   return { ok: "Draft saved." };
@@ -505,10 +645,11 @@ export async function saveDraft(jobId: string, text: string): Promise<FormState>
 
 const MAX_TRANSCRIPT = 2_000_000;
 
-export async function submitJob(jobId: string, text: string, fileName?: string): Promise<FormState> {
+export async function submitJob(jobId: string, raw: string, fileName?: string): Promise<FormState> {
   const user = await requireUser();
-  if (!text.trim()) return { error: "The transcript is empty." };
-  if (text.length > MAX_TRANSCRIPT) return { error: "The transcript is too long to save." };
+  if (raw.length > MAX_TRANSCRIPT) return { error: "The transcript is too long to save." };
+  const { text, words } = await cleanTranscript(jobId, raw);
+  if (!words.trim()) return { error: "The transcript is empty." };
   const res = await guarded(async (tx) => {
     const job = await lockJob(tx, jobId);
     if (!job || job.assigneeId !== user.id) refuse("This job isn't assigned to you any more.");
@@ -521,9 +662,9 @@ export async function submitJob(jobId: string, text: string, fileName?: string):
       create: {
         jobId,
         userId: user.id,
-        amount: job!.fixedPay ?? earningsFor(job!.durationSeconds),
+        amount: creditAmount(job!.durationSeconds, job!, null),
         seconds: job!.durationSeconds,
-        fixed: job!.fixedPay != null,
+        customRate: hasOwnPay(job!),
         referrerId: user.referredById,
       },
       update: {},
@@ -535,28 +676,41 @@ export async function submitJob(jobId: string, text: string, fileName?: string):
     title: `${user.name} ${res.resubmission ? "resubmitted" : "submitted"} ${res.title}`,
     body: [res.reviewNote ? "Resubmitted after your changes." : res.resubmission ? "Replaced their earlier submission." : null, fileName ? `Uploaded as a file (${fileName.slice(0, 100)}).` : null, "Ready to review."].filter(Boolean).join(" "),
     href: `/admin/jobs/${jobId}#review`,
+    jobId,
+    kind: "submitted",
   });
+  await settleNotices(jobId);
   revalidatePath("/jobs");
   revalidatePath("/earnings");
   revalidatePath("/admin/reviews");
   revalidatePath("/admin");
-  redirect("/jobs?submitted=1");
+  redirect(`/jobs?submitted=${jobId}`);
 }
 
 /** Takes back a submission the admin hasn't reviewed yet, so it can be edited and resubmitted. Pay already credited stays. */
 export async function withdrawSubmission(formData: FormData): Promise<FormState> {
   const user = await requireRole("USER");
   const jobId = String(formData.get("jobId"));
-  const { count } = await db.job.updateMany({
-    where: { id: jobId, assigneeId: user.id, status: "SUBMITTED", approvedAt: null, mediaRemovedAt: null },
-    data: { status: "ASSIGNED", submittedAt: null },
+  // Unsubmitting takes back the pay added on submit; submitting again adds it once more.
+  const res = await guarded(async (tx) => {
+    const job = await lockJob(tx, jobId);
+    await lockPayments(tx);
+    if (!job || job.assigneeId !== user.id || job.status !== "SUBMITTED" || job.approvedAt || job.mediaRemovedAt) {
+      refuse("This submission can't be changed any more. The admin may have already reviewed it.");
+    }
+    await tx.job.update({ where: { id: jobId }, data: { status: "ASSIGNED", submittedAt: null } });
+    await tx.earning.deleteMany({ where: { jobId, userId: user.id } });
+    return job!;
   });
-  if (!count) return { error: "This submission can't be changed any more. The admin may have already reviewed it." };
+  if (failed(res)) return res;
+  await notifyAdmins({ title: `${user.name} unsubmitted ${res.title}`, body: "They're fixing a mistake and will submit it again. No need to review it yet.", href: `/admin/jobs/${jobId}`, jobId, kind: "unsubmitted" });
+  await settleNotices(jobId);
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/jobs");
+  revalidatePath("/earnings");
   revalidatePath("/admin/reviews");
   revalidatePath("/admin");
-  return { ok: "You can edit it again. Submit when you're done." };
+  return { ok: "Unsubmitted. Fix it and submit again when you're done." };
 }
 
 // ---------- Notifications ----------
@@ -573,9 +727,19 @@ export async function updateGuidelines(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const html = cleanRich(String(formData.get("guidelines") ?? ""));
   if (richText(html).length > 10000) return { error: "Keep the guidelines under 10,000 characters." };
+  if ((await getGuidelinesInfo()).html === html) return { ok: "No changes to save." };
   await setGuidelines(html);
+  // Tell everyone with a job still open, so nobody keeps working from the old rules.
+  let told = 0;
+  if (formData.get("tell") === "on") {
+    const open = await db.job.findMany({ where: { assigneeId: { not: null }, approvedAt: null }, select: { assigneeId: true }, distinct: ["assigneeId"] });
+    const ids = open.map((j) => j.assigneeId!);
+    told = ids.length;
+    if (ids.length) await notify(ids, { title: "Transcription guidelines updated", body: html ? "An admin changed the guidelines that apply to every job. Read them before you carry on." : "An admin removed the general guidelines.", href: "/guidelines" });
+  }
   revalidatePath("/", "layout");
-  return { ok: html ? "Guidelines saved. Every job now shows them." : "Guidelines removed." };
+  const who = told ? ` ${told} transcriber${told === 1 ? " was" : "s were"} told.` : "";
+  return { ok: (html ? "Guidelines saved. Every job now shows them." : "Guidelines removed.") + who };
 }
 
 // ---------- Leaving and unassigning ----------
@@ -620,7 +784,8 @@ export async function leaveJob(formData: FormData): Promise<FormState> {
     return job!;
   });
   if (failed(res)) return res;
-  await notifyAdmins({ title: `${user.name} left ${res.title}`, body: `${reason || "No reason given."} It's back on Find work.`, href: `/admin/jobs/${jobId}` });
+  await notifyAdmins({ title: `${user.name} left ${res.title}`, body: `${reason || "No reason given."} It's back on Find work.`, href: `/admin/jobs/${jobId}`, jobId });
+  await settleNotices(jobId);
   revalidateRelease(jobId);
   return { ok: "You've left the job. It's back on Find work for others." };
 }
@@ -643,7 +808,9 @@ export async function unassignJob(formData: FormData): Promise<FormState> {
     title: `${res.title} was taken off your list`,
     body: reason || "An admin unassigned this job. You don't need to work on it any more.",
     href: "/jobs",
+    jobId,
   });
+  await settleNotices(jobId);
   revalidateRelease(jobId);
   return { ok: "Unassigned. The job is back on Find work." };
 }

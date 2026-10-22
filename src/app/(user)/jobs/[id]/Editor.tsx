@@ -9,6 +9,10 @@ import { Modal, Spinner } from "@/components/client";
 import MediaPlayer, { SKIP_SECONDS, SPEEDS } from "@/components/MediaPlayer";
 import { formatDuration, formatHours, formatUGX } from "@/lib/format";
 import { expectedPayFor } from "@/lib/pay";
+import { countWords, hasTable } from "@/lib/transcriptTables";
+import { docText } from "@/lib/docText";
+import BlockEditor from "./BlockEditor";
+import RichDocEditor, { type DocEditorApi } from "./RichDocEditor";
 import { useUndo } from "./useUndo";
 
 /** Seconds to jump back when resuming with the keyboard, so you re-hear the last words. */
@@ -35,14 +39,19 @@ export default function Editor({
   initial,
   original,
   seconds,
-  fixedPay,
+  ratePerHour,
+  fixedPay = null,
+  format = "text",
 }: {
   jobId: string;
   mediaType: string;
   initial: string;
   original: string;
   seconds: number;
-  fixedPay: number | null;
+  ratePerHour: number | null;
+  fixedPay?: number | null;
+  /** "html" for transcripts from Word that keep their formatting. */
+  format?: string;
 }) {
   const { text, set: setText, undo, redo, canUndo, canRedo } = useUndo(initial);
   const [saved, setSaved] = useState(initial);
@@ -57,10 +66,20 @@ export default function Editor({
   const fileRef = useRef<HTMLInputElement>(null);
   const mediaRef = useRef<HTMLMediaElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editorRef = useRef<HTMLDivElement>(null);
+  const docRef = useRef<DocEditorApi | null>(null);
+  const rich = format === "html";
+  const plain = useCallback((t: string) => (rich ? docText(t) : t), [rich]);
+  const textRef = useRef(text);
+  useEffect(() => {
+    textRef.current = text;
+  }, [text]);
   const isVideo = mediaType.startsWith("video");
 
   const dirty = text !== saved;
-  const words = useMemo(() => (text.trim() ? text.trim().split(/\s+/).length : 0), [text]);
+  const words = useMemo(() => countWords(plain(text)), [plain, text]);
+  // Transcripts with tables get a table editor; everything else keeps the single text box.
+  const withTables = useMemo(() => !rich && hasTable(text), [rich, text]);
 
   const save = useCallback(
     async (value: string, manual = false) => {
@@ -96,6 +115,16 @@ export default function Editor({
   }, [dirty]);
 
   const insertAtCursor = useCallback((snippet: string) => {
+    if (docRef.current) return docRef.current.insert(snippet);
+    const active = document.activeElement;
+    if (active instanceof HTMLTextAreaElement && active !== textareaRef.current && editorRef.current?.contains(active)) {
+      // A box in the table editor: set its value the way typing would, so its own change handler updates the transcript.
+      const { selectionStart: a, selectionEnd: b, value } = active;
+      Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set?.call(active, value.slice(0, a) + snippet + value.slice(b));
+      active.dispatchEvent(new Event("input", { bubbles: true }));
+      active.setSelectionRange(a + snippet.length, a + snippet.length);
+      return;
+    }
     const ta = textareaRef.current;
     if (!ta) return;
     const { selectionStart: a, selectionEnd: b, value } = ta;
@@ -111,6 +140,7 @@ export default function Editor({
     (dir: "undo" | "redo") => {
       const cursor = dir === "undo" ? undo() : redo();
       const ta = textareaRef.current;
+      // In the table editor the cursor can't be placed by offset, so the change just shows.
       if (cursor == null || !ta) return;
       requestAnimationFrame(() => {
         ta.setSelectionRange(cursor, cursor);
@@ -126,6 +156,7 @@ export default function Editor({
 
   // Playback shortcuts work while typing, so you never leave the keyboard.
   useEffect(() => {
+    const inEditor = (t: EventTarget | null) => t instanceof HTMLTextAreaElement && !!editorRef.current?.contains(t);
     const onKey = (e: KeyboardEvent) => {
       const m = mediaRef.current;
       const key = e.key;
@@ -156,12 +187,12 @@ export default function Editor({
       else if (e.altKey && e.code === "KeyT") {
         if (m) insertAtCursor(`[${formatDuration(m.currentTime)}] `);
       }
-      else if ((e.ctrlKey || e.metaKey) && key.toLowerCase() === "s") save(textareaRef.current?.value ?? "", true);
+      else if ((e.ctrlKey || e.metaKey) && key.toLowerCase() === "s") save(textRef.current, true);
       else if ((e.ctrlKey || e.metaKey) && !e.altKey && (key.toLowerCase() === "y" || (key.toLowerCase() === "z" && e.shiftKey))) {
-        if (e.target === textareaRef.current) history("redo");
+        if (inEditor(e.target)) history("redo");
         else handled = false;
       } else if ((e.ctrlKey || e.metaKey) && !e.altKey && key.toLowerCase() === "z") {
-        if (e.target === textareaRef.current) history("undo");
+        if (inEditor(e.target)) history("undo");
         else handled = false;
       }
       else handled = false;
@@ -175,13 +206,13 @@ export default function Editor({
     if (!confirmOpen) return { added: 0, removed: 0 };
     let added = 0,
       removed = 0;
-    for (const part of diffWords(original, text)) {
+    for (const part of diffWords(plain(original), plain(text))) {
       const n = part.value.trim() ? part.value.trim().split(/\s+/).length : 0;
       if (part.added) added += n;
       else if (part.removed) removed += n;
     }
     return { added, removed };
-  }, [confirmOpen, original, text]);
+  }, [confirmOpen, original, text, plain]);
 
   function submit() {
     startSubmit(async () => {
@@ -245,12 +276,16 @@ export default function Editor({
           <span className="num text-slate-400">{words.toLocaleString()} words</span>
           <div className="ml-auto flex items-center gap-1">
             {/* preventDefault on pointer down keeps the textarea's focus (and the phone keyboard) as it was. */}
+            {!rich && (
+              <>
             <button type="button" className="btn-ghost size-10 px-0 sm:size-8" onPointerDown={(e) => e.preventDefault()} onClick={() => history("undo")} disabled={!canUndo} aria-label="Undo" title="Undo (Ctrl+Z)">
               <Undo2 className="size-4" />
             </button>
             <button type="button" className="btn-ghost size-10 px-0 sm:size-8" onPointerDown={(e) => e.preventDefault()} onClick={() => history("redo")} disabled={!canRedo} aria-label="Redo" title="Redo (Ctrl+Shift+Z)">
               <Redo2 className="size-4" />
             </button>
+              </>
+            )}
             <button type="button" className="btn-ghost btn-sm" onClick={() => setRestoreOpen(true)} disabled={text === original}>
               <RotateCcw className="size-3.5" /> Restore original
             </button>
@@ -269,6 +304,12 @@ export default function Editor({
             {uploading ? <Spinner className="size-3.5" /> : <FileUp className="size-3.5" />} Upload finished file
           </button>
         </div>
+        <div ref={editorRef} className="flex flex-1 flex-col">
+        {rich ? (
+          <RichDocEditor value={text} onChange={setText} apiRef={docRef} />
+        ) : withTables ? (
+          <BlockEditor text={text} onChange={setText} />
+        ) : (
         <textarea
           ref={textareaRef}
           className="min-h-[55vh] w-full flex-1 resize-y border-0 bg-white px-5 py-4 font-mono text-base leading-7 sm:text-[15px] text-slate-800 focus:ring-0 focus:outline-none"
@@ -277,15 +318,19 @@ export default function Editor({
           spellCheck
           aria-label="Transcript"
         />
+        )}
+        </div>
         <div className="flex flex-wrap items-center gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3">
           <p className="text-xs text-slate-500">
             {fixedPay != null ? (
-              <>This job pays a fixed <span className="num font-semibold text-slate-700">{formatUGX(fixedPay)}</span> when you submit it.</>
+              <>This job has a fixed price of <span className="num font-semibold text-slate-700">{formatUGX(fixedPay)}</span>, added to your earnings when an admin approves it.</>
+            ) : ratePerHour != null ? (
+              <>This job is paid at its own rate: about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds, ratePerHour))}</span> for its <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span>, added to your earnings when an admin approves it.</>
             ) : (
-              <>Submitting adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours (about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds))}</span>). Pay is worked out on your total hours.</>
+              <>Once an admin approves it, this adds <span className="num font-semibold text-slate-700">{formatHours(seconds)}</span> to your total hours (about <span className="num font-semibold text-slate-700">{formatUGX(expectedPayFor(seconds))}</span>). Pay is worked out on your approved hours.</>
             )}
           </p>
-          <button type="button" className="btn ml-auto" onClick={() => setConfirmOpen(true)} disabled={submitting || !text.trim()}>
+          <button type="button" className="btn ml-auto" onClick={() => setConfirmOpen(true)} disabled={submitting || !plain(text).trim()}>
             <Send className="size-4" /> Submit transcript
           </button>
         </div>
@@ -295,12 +340,12 @@ export default function Editor({
         open={confirmOpen}
         onClose={() => { if (!submitting) { setConfirmOpen(false); setUploadedFrom(null); } }}
         title={uploadedFrom ? `Submit ${uploadedFrom}?` : "Submit this transcript?"}
-        description={uploadedFrom ? "Your file's text is now in the editor. Check the changes below, then submit. You can't edit it after that unless an admin sends it back." : "Once submitted you can't edit it unless an admin sends it back."}
+        description={uploadedFrom ? "Your file's text is now in the editor. Check the changes below, then submit. You can't edit it after that unless an admin sends it back. Its pay is added to your earnings when an admin approves it." : "Once submitted you can't edit it unless an admin sends it back. Its pay is added to your earnings when an admin approves it."}
       >
         <dl className="mb-5 grid grid-cols-3 gap-3 rounded-lg bg-slate-50 p-4 text-center">
           <div><dt className="text-xs text-slate-500">Words added</dt><dd className="num mt-0.5 font-semibold text-emerald-700">+{changes.added}</dd></div>
           <div><dt className="text-xs text-slate-500">Words removed</dt><dd className="num mt-0.5 font-semibold text-red-700">−{changes.removed}</dd></div>
-          <div><dt className="text-xs text-slate-500">Adds to your hours</dt><dd className="num mt-0.5 font-semibold text-slate-900">{formatHours(seconds)}</dd></div>
+          <div><dt className="text-xs text-slate-500">Adds when approved</dt><dd className="num mt-0.5 font-semibold text-slate-900">{formatHours(seconds)}</dd></div>
         </dl>
         {changes.added + changes.removed === 0 && (
           <p className="mb-4 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800">You haven&apos;t changed anything from the original yet.</p>

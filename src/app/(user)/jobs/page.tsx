@@ -1,31 +1,40 @@
-import { ArrowRight, CircleCheck, Clock, FileAudio, FileVideo, Inbox } from "lucide-react";
+import { ArrowRight, CircleCheck, Clock, Eye, FileAudio, FileVideo, Undo2, X } from "lucide-react";
+import SortSelect from "@/components/SortSelect";
+import { pickSort, sortJobs, sortOptions, type SortKey } from "@/lib/sort";
+import PayPicture from "@/components/PayPicture";
+import { ActionForm } from "@/components/client";
+import { withdrawSubmission } from "@/app/actions";
+import JobTags from "@/components/JobTags";
 import { richText } from "@/lib/richtext";
 import type { Prisma } from "@prisma/client";
 import type { Metadata } from "next";
 import Link from "next/link";
 import StatusBadge, { jobBadge } from "@/components/StatusBadge";
-import { EmptyState, PageHeader, StatCard } from "@/components/ui";
+import { EmptyState, PageHeader } from "@/components/ui";
 import PayDateBanner from "@/components/PayDateBanner";
 import { requireRole } from "@/lib/auth";
 import { db } from "@/lib/db";
-import { balanceFor } from "@/lib/earnings";
-import { formatDeadline, formatDuration, formatHours, formatRelative, formatUGX } from "@/lib/format";
+import { balanceFor, expectedFor } from "@/lib/earnings";
+import { formatDate, formatDeadline, formatDuration, formatRelative, formatUGX } from "@/lib/format";
 import { getNextPayDate } from "@/lib/settings";
-import SubmittedToast from "./SubmittedToast";
+import ClearSubmitted from "./ClearSubmitted";
 import { jobPayLabel } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "My jobs" };
 
-export default async function MyJobsPage({ searchParams }: { searchParams: Promise<{ submitted?: string }> }) {
+const MINE_SORTS: SortKey[] = ["assigned_new", "assigned_old", "deadline", "submitted_new", "submitted_old", "longest", "shortest", "pay_high", "pay_low", "title"];
+
+export default async function MyJobsPage({ searchParams }: { searchParams: Promise<{ submitted?: string; sort?: string }> }) {
   const user = await requireRole("USER");
-  const { submitted } = await searchParams;
-  const [jobs, balance, payDate, openJobs, requests] = await Promise.all([
+  const { submitted, sort: sortParam } = await searchParams;
+  const sort = await pickSort("my-jobs", sortParam, MINE_SORTS, "assigned_new");
+  const [jobs, balance, expected, payDate, openJobs, requests] = await Promise.all([
     db.job.findMany({
       where: { assigneeId: user.id },
       include: { earnings: { where: { userId: user.id } } },
-      orderBy: [{ assignedAt: "desc" }],
     }),
     balanceFor(user.id),
+    expectedFor(user.id),
     getNextPayDate(),
     db.job.count({ where: { posted: true, status: "UNASSIGNED" } }),
     db.jobRequest.findMany({
@@ -34,16 +43,17 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
       orderBy: { createdAt: "desc" },
     }),
   ]);
+  sortJobs(jobs, sort);
   const open = jobs.filter((j) => j.status === "ASSIGNED");
   const started = (j: (typeof jobs)[number]) => j.editedTranscript !== j.originalTranscript;
   const changes = open.filter((j) => j.reviewNote);
   const inProgress = open.filter((j) => !j.reviewNote && started(j));
   const notStarted = open.filter((j) => !j.reviewNote && !started(j));
-  const sent = jobs.filter((j) => j.status === "SUBMITTED").sort((a, b) => +(b.submittedAt ?? 0) - +(a.submittedAt ?? 0));
+  const sent = jobs.filter((j) => j.status === "SUBMITTED");
   const awaiting = sent.filter((j) => !j.approvedAt);
   const completed = sent.filter((j) => j.approvedAt);
-  const todoSeconds = open.reduce((s, j) => s + j.durationSeconds, 0);
   const firstName = user.name.split(" ")[0];
+  const justSent = submitted ? sent.find((j) => j.id === submitted) : undefined;
 
   const groups = [
     { id: "changes", label: "Needs changes", count: changes.length, tone: "bg-red-50 text-red-800 ring-red-600/20" },
@@ -56,17 +66,14 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
 
   return (
     <>
-      {submitted && <SubmittedToast />}
       <PageHeader title={`Hi ${firstName}`} description="Here's what's waiting for you." />
       <div className="mb-6"><PayDateBanner payDate={payDate} owed={balance.owed} /></div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 [&>*:last-child]:col-span-2 sm:[&>*:last-child]:col-span-1">
-        <StatCard icon={Inbox} label="To do" value={open.length} tone="amber" hint={open.length ? `${formatHours(todoSeconds)} of media` : "All caught up"} />
-        <StatCard icon={Clock} label="Hours completed" value={formatHours(balance.seconds)} tone="brand" hint="Your pay is worked out on this total" />
-        <StatCard icon={CircleCheck} label="Waiting to be paid" value={formatUGX(balance.owed)} tone="emerald" hint={<Link href="/earnings" className="font-medium text-brand-600 hover:text-brand-700">View earnings</Link>} />
-      </div>
+      {justSent && <SubmittedBanner job={justSent} />}
+      <PayPicture expected={expected} balance={balance} />
 
-      <nav aria-label="Jump to" className="mt-6 flex flex-wrap gap-2">
+      <div className="mt-6 flex flex-wrap items-start justify-between gap-3">
+      <nav aria-label="Jump to" className="flex flex-wrap gap-2">
         {groups.map((g) =>
           g.count ? (
             <a key={g.id} href={`#${g.id}`} className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ring-1 ring-inset ${g.tone}`}>
@@ -79,6 +86,8 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
           ),
         )}
       </nav>
+        {jobs.length > 1 && <SortSelect page="my-jobs" value={sort} options={sortOptions(MINE_SORTS)} />}
+      </div>
 
       {open.length === 0 && (
         <div className="card mt-6">
@@ -100,7 +109,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
           <ul className="card divide-y divide-slate-100">
             {requests.map((r) => (
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 sm:px-6">
-                <span className="min-w-0 font-medium break-words text-slate-900">{r.job.title}</span>
+                <span className="min-w-0"><span className="title-clamp font-medium text-slate-900" title={r.job.title}>{r.job.title}</span><JobTags job={r.job} className="mt-1 flex" /></span>
                 <span className="num text-sm text-slate-500">{formatDuration(r.job.durationSeconds)} · {jobPayLabel(r.job)} · asked {formatRelative(r.createdAt)}</span>
               </li>
             ))}
@@ -109,8 +118,8 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
         </Group>
       )}
 
-      <DoneGroup id="awaiting" title="Awaiting review" hint="Submitted and waiting for an admin to check." jobs={awaiting} />
-      <DoneGroup id="completed" title="Completed" hint="Approved by an admin." jobs={completed} />
+      <DoneGroup id="awaiting" title="Submitted, awaiting review" hint="Waiting for an admin to check. Open one to see what you sent." jobs={awaiting} />
+      <DoneGroup id="completed" title="Completed" hint="Approved by an admin. Open one to see what you sent." jobs={completed} />
 
       {openJobs > 0 && open.length > 0 && (
         <p className="mt-8 text-sm text-slate-500">
@@ -148,7 +157,7 @@ function JobGroup({ id, title, hint, jobs, action }: { id: string; title: string
                   <Icon className="size-5" />
                 </span>
                 <div className="min-w-0 flex-1">
-                  <span className="block min-w-0 font-medium break-words text-slate-900">{j.title}</span>
+                  <span className="title-clamp font-medium text-slate-900" title={j.title}>{j.title}</span><JobTags job={j} className="mt-1 flex" />
                   {j.reviewNote && <span className="mt-0.5 line-clamp-2 block text-sm text-red-700">{richText(j.reviewNote)}</span>}
                   <div className="num mt-0.5 flex flex-wrap gap-x-3 text-xs text-slate-500">
                     <span className="inline-flex items-center gap-1"><Clock className="size-3" /> {formatDuration(j.durationSeconds)}</span>
@@ -172,6 +181,39 @@ function JobGroup({ id, title, hint, jobs, action }: { id: string; title: string
   );
 }
 
+function SubmittedBanner({ job }: { job: MyJob }) {
+  return (
+    <section role="status" className="relative mb-6 rounded-xl bg-emerald-50 p-4 ring-1 ring-emerald-600/20 sm:p-5">
+      <ClearSubmitted />
+      <Link href="/jobs" scroll={false} aria-label="Dismiss" className="absolute top-3 right-3 rounded-md p-1 text-emerald-700 hover:bg-emerald-100"><X className="size-4" /></Link>
+      <div className="flex gap-3 pr-6">
+        <CircleCheck className="mt-0.5 size-6 shrink-0 text-emerald-600" aria-hidden />
+        <div className="min-w-0 space-y-2 text-sm text-emerald-900">
+          <p className="title-wrap text-base font-semibold">Sent for review: {job.title}</p>
+          <p>
+            It&apos;s now <span className="font-medium">awaiting review</span>. Its pay is added to <Link href="/earnings" className="font-medium underline">your earnings</Link> once an admin approves it.
+          </p>
+          <div>
+            <p className="font-medium">What happens next</p>
+            <ul className="mt-1 list-disc space-y-0.5 pl-5">
+              <li>An admin checks your work. You&apos;ll get a notification when they approve it (and the pay is added) or ask for changes.</li>
+              <li>If they ask for changes, the job moves to Needs changes with their notes.</li>
+              <li>Made a mistake? You can unsubmit it until it&apos;s reviewed.</li>
+            </ul>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link href={`/jobs/${job.id}`} className="btn-secondary btn-sm inline-flex"><Eye className="size-3.5" /> View what you submitted</Link>
+            <ActionForm action={withdrawSubmission} redirectTo={`/jobs/${job.id}`} confirm={{ title: "Unsubmit this transcript?", description: `It goes back to In progress with your edits kept and leaves the admin's review list. You can submit it again when you're ready.`, label: "Unsubmit and edit" }}>
+              <input type="hidden" name="jobId" value={job.id} />
+              <button className="btn-secondary btn-sm"><Undo2 className="size-3.5" /> Unsubmit</button>
+            </ActionForm>
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function DoneGroup({ id, title, hint, jobs }: { id: string; title: string; hint: string; jobs: MyJob[] }) {
   if (jobs.length === 0) return null;
   return (
@@ -180,10 +222,12 @@ function DoneGroup({ id, title, hint, jobs }: { id: string; title: string; hint:
         {jobs.map((j) => (
           <li key={j.id}>
             <Link href={`/jobs/${j.id}`} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 hover:bg-slate-50 sm:px-6">
-              <span className="min-w-0 font-medium break-words text-slate-900">{j.title}</span>
-              <span className="num flex items-center gap-3 text-sm text-slate-500">
+              <span className="min-w-0"><span className="title-clamp font-medium text-slate-900" title={j.title}>{j.title}</span><JobTags job={j} className="mt-1 flex" /></span>
+              <span className="num flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-slate-500">
                 <StatusBadge status={jobBadge(j)} />
-                {formatDuration(j.durationSeconds)} · {j.approvedAt ? `approved ${formatRelative(j.approvedAt)}` : `submitted ${formatRelative(j.submittedAt)}`}
+                <span>{formatDuration(j.durationSeconds)} · {j.approvedAt ? `approved ${formatRelative(j.approvedAt)}` : `submitted ${formatDate(j.submittedAt)}`}</span>
+                {j.earnings[0] && (j.approvedAt ? <span className="font-medium text-emerald-700">{formatUGX(j.earnings[0].amount)} earned</span> : null)}
+                <span className="inline-flex items-center gap-1 font-medium text-brand-600"><Eye className="size-4" aria-hidden /> View</span>
               </span>
             </Link>
           </li>

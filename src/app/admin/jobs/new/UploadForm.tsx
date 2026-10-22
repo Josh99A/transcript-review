@@ -1,6 +1,7 @@
 "use client";
 
 import RichTextEditor from "@/components/RichTextEditor";
+import { LanguageField, ProjectField } from "@/components/JobFields";
 import { CloudUpload, FileAudio, FileText, FileVideo, Pencil, TriangleAlert, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
@@ -65,7 +66,7 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
-export default function UploadForm({ users }: { users: { id: string; name: string }[] }) {
+export default function UploadForm({ users, projects, languages }: { users: { id: string; name: string }[]; projects: string[]; languages: string[] }) {
   const router = useRouter();
   const mediaInput = useRef<HTMLInputElement>(null);
   const [media, setMedia] = useState<File | null>(null);
@@ -81,14 +82,16 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
   const [pasted, setPasted] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [language, setLanguage] = useState("");
+  const [project, setProject] = useState("");
   const [deadline, setDeadline] = useState("");
+  const [ratePerHour, setRatePerHour] = useState("");
   const [fixedPay, setFixedPay] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [progress, setProgress] = useState<number | null>(null);
 
   const effectiveDuration = manual ? Number(minutes || 0) * 60 + Number(seconds || 0) : (duration ?? 0);
   const hasTranscript = mode === "file" ? !!transcriptFile : !!pasted.trim();
-  const ready = !!media && effectiveDuration > 0 && !!title.trim() && hasTranscript;
+  const ready = !!media && effectiveDuration > 0 && !!title.trim() && !!language && hasTranscript;
   const busy = progress !== null;
 
   async function pickMedia(file: File | undefined) {
@@ -124,7 +127,9 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
     data.set("assigneeId", assigneeId);
     data.set("description", String(new FormData(e.currentTarget as HTMLFormElement).get("description") ?? ""));
     data.set("language", language);
+    data.set("project", project.trim());
     data.set("deadline", deadline);
+    data.set("ratePerHour", ratePerHour);
     data.set("fixedPay", fixedPay);
     if (mode === "file" && transcriptFile) data.set("transcriptFile", transcriptFile);
     else data.set("transcriptText", pasted);
@@ -241,18 +246,29 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="label" htmlFor="language">Language <span className="font-normal text-slate-400">(optional)</span></label>
-              <input className="input" id="language" value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="e.g. English, Luganda" />
+              <label className="label" htmlFor="project">Project <span className="font-normal text-slate-400">(optional)</span></label>
+              <ProjectField id="project" projects={projects} value={project} onChange={setProject} />
+              <p className="hint">Tells jobs apart, e.g. the client or study. Pick an earlier one or type a new one.</p>
+            </div>
+            <div>
+              <label className="label" htmlFor="language">Language</label>
+              <LanguageField id="language" languages={languages} required onChange={setLanguage} />
             </div>
             <div>
               <label className="label" htmlFor="deadline">Deadline <span className="font-normal text-slate-400">(optional)</span></label>
               <input className="input" id="deadline" type="date" value={deadline} onChange={(e) => setDeadline(e.target.value)} />
             </div>
           </div>
-          <div className="mt-4">
-            <label className="label" htmlFor="fixedPay">Fixed price in UGX <span className="font-normal text-slate-400">(optional)</span></label>
-            <input className="input sm:max-w-60" id="fixedPay" inputMode="numeric" value={fixedPay} onChange={(e) => setFixedPay(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Leave empty to pay by length" />
-            <p className="hint">Use this for jobs with their own price. It&apos;s paid as is, instead of by the hour.</p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2">
+            <div>
+              <label className="label" htmlFor="ratePerHour">Special rate in UGX per hour <span className="font-normal text-slate-400">(optional)</span></label>
+              <input className="input" id="ratePerHour" inputMode="numeric" value={ratePerHour} disabled={!!fixedPay} onChange={(e) => setRatePerHour(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Leave empty for the usual rate" />
+            </div>
+            <div>
+              <label className="label" htmlFor="fixedPay">Or a fixed price in UGX <span className="font-normal text-slate-400">(optional)</span></label>
+              <input className="input" id="fixedPay" inputMode="numeric" value={fixedPay} disabled={!!ratePerHour} onChange={(e) => setFixedPay(e.target.value.replace(/[^0-9]/g, ""))} placeholder="Paid as is, whatever the length" />
+            </div>
+            <p className="hint sm:col-span-2">Leave both empty to pay the usual rate. A fixed price stays the same whatever the length or the usual rate.</p>
           </div>
         </Step>
 
@@ -304,7 +320,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
           <div className="card-header"><h2 className="card-title">Summary</h2></div>
           <dl className="card-body space-y-3 text-sm">
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Length</dt><dd className="num font-medium">{effectiveDuration > 0 ? formatDuration(effectiveDuration) : "—"}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-slate-500">Expected pay</dt><dd className="num">{fixedPay ? `${formatUGX(Number(fixedPay))} fixed` : effectiveDuration > 0 ? `~${formatUGX(expectedPayFor(effectiveDuration))}` : "—"}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-slate-500">Expected pay</dt><dd className="num">{fixedPay ? formatUGX(Number(fixedPay)) : effectiveDuration > 0 ? `~${formatUGX(expectedPayFor(effectiveDuration, ratePerHour ? Number(ratePerHour) : null))}` : "—"}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-slate-500">Assigned to</dt><dd className="truncate">{assigneeName ?? (assigneeId === "" ? "Job board" : "Nobody yet")}</dd></div>
           </dl>
           <div className="border-t border-slate-100 p-5">
@@ -323,7 +339,7 @@ export default function UploadForm({ users }: { users: { id: string; name: strin
               {busy ? <Spinner /> : <CloudUpload className="size-4" />}
               {busy ? "Uploading…" : assigneeName ? "Upload and assign" : assigneeId === "" ? "Upload and post" : "Upload job"}
             </button>
-            {!ready && !busy && <p className="hint text-center">Add a media file, title and transcript to continue.</p>}
+            {!ready && !busy && <p className="hint text-center">Add a media file, title, language and transcript to continue.</p>}
           </div>
         </div>
       </aside>

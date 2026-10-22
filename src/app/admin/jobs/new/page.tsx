@@ -4,13 +4,19 @@ import Link from "next/link";
 import { PageHeader } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
+import { projectNames } from "@/lib/projects";
+import { languageOptions } from "@/lib/settings";
 import UploadForm from "./UploadForm";
 
 export const metadata: Metadata = { title: "Upload job" };
 
 export default async function NewJobPage() {
   await requireAdmin();
-  const users = await db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } });
+  const [users, projects, languages] = await Promise.all([
+    db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
+    projectNames(),
+    languageOptions(),
+  ]);
   return (
     <>
       <PageHeader
@@ -18,7 +24,7 @@ export default async function NewJobPage() {
         title="Upload a job"
         description="Add the media and its transcript, then choose who will correct it."
       />
-      <UploadForm users={users} />
+      <UploadForm users={users} projects={projects} languages={languages} />
     </>
   );
 }

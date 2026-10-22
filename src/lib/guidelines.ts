@@ -16,8 +16,13 @@ export const DEFAULT_GUIDELINES = [
 ].join("");
 
 export async function getGuidelines(): Promise<string> {
+  return (await getGuidelinesInfo()).html;
+}
+
+/** The guidelines and when an admin last changed them (null while they are still the defaults). */
+export async function getGuidelinesInfo(): Promise<{ html: string; updatedAt: Date | null }> {
   const s = await db.setting.findUnique({ where: { key: KEY } });
-  return s ? s.value : DEFAULT_GUIDELINES;
+  return s ? { html: s.value, updatedAt: s.updatedAt } : { html: DEFAULT_GUIDELINES, updatedAt: null };
 }
 
 /** Saves new guidelines. Empty hides the panel. */
