@@ -4,6 +4,7 @@ import { Banknote, CalendarClock } from "lucide-react";
 import { payEveryone, updatePayDate } from "@/app/actions";
 import { daysUntil, formatPayDate, formatUGX } from "@/lib/format";
 import { ActionForm, ConfirmAction } from "./client";
+import ReportLinks from "./ReportLinks";
 
 /** Admin control for the announced pay date, plus a one-click pay run for everyone owed. */
 export default function PayDayCard({ payDate, totalOwed, peopleOwed }: { payDate: string | null; totalOwed: number; peopleOwed: number }) {
@@ -51,6 +52,8 @@ export default function PayDayCard({ payDate, totalOwed, peopleOwed }: { payDate
             confirmLabel="Record payments"
             tick="I've actually sent this money to everyone listed."
           />
+          <ReportLinks className="mt-2" label="PDF report" />
+          <p className="mt-1.5 text-xs text-slate-500">Download before you go offline to pay from it.</p>
         </div>
       </div>
     </section>

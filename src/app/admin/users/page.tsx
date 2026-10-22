@@ -10,6 +10,7 @@ import { formatDate, formatHours, formatUGX } from "@/lib/format";
 import { REFERRAL_RATE_PER_HOUR_UGX } from "@/lib/pay";
 import { NewUserButton, PayoutButton, ReferrerSelect, ResetPasswordButton } from "./forms";
 import LanguageSettings from "./LanguageSettings";
+import ReportLinks from "@/components/ReportLinks";
 import { getLanguages } from "@/lib/settings";
 
 export const metadata: Metadata = { title: "Team & payments" };
@@ -48,7 +49,7 @@ export default async function UsersPage() {
 
   return (
     <>
-      <PageHeader title="Team & payments" description="Add people, see what each person is owed and record payments." actions={<NewUserButton referrers={referrerOptions} />} />
+      <PageHeader title="Team & payments" description="Add people, see what each person is owed and record payments." actions={<><ReportLinks /><NewUserButton referrers={referrerOptions} /></>} />
 
       <PayProblems problems={problems} />
       <StatList
