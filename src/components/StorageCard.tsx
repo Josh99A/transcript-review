@@ -2,6 +2,7 @@ import { HardDrive } from "lucide-react";
 import { removeAllSubmittedMedia } from "@/app/actions";
 import { formatBytes } from "@/lib/format";
 import { ConfirmAction } from "./client";
+import StorageCheck from "./StorageCheck";
 
 /** Admin card showing space used by media files, with a one-click cleanup for submitted jobs. */
 export default function StorageCard({ usedBytes, removableBytes, removableCount }: { usedBytes: number; removableBytes: number; removableCount: number }) {
@@ -37,6 +38,7 @@ export default function StorageCard({ usedBytes, removableBytes, removableCount 
         ) : (
           <p className="text-sm text-slate-500">No submitted jobs have media left to remove.</p>
         )}
+        <StorageCheck />
       </div>
     </section>
   );

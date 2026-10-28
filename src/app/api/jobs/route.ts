@@ -15,6 +15,10 @@ export async function POST(req: Request) {
   if (!user || user.role !== "ADMIN") return NextResponse.json({ error: "Not allowed" }, { status: 403 });
 
   const form = await req.formData();
+  // A retry of an upload that already made its job (say the reply was lost) gets that job back, not a second one.
+  const uploadKey = String(form.get("uploadKey") ?? "").slice(0, 64) || null;
+  const made = uploadKey ? await db.job.findUnique({ where: { uploadKey }, select: { id: true } }) : null;
+  if (made) return NextResponse.json({ id: made.id });
   const title = String(form.get("title") ?? "").trim();
   const durationSeconds = Math.round(Number(form.get("durationSeconds")));
   // "" posts the job on the board, "__hold" keeps it unassigned and off the board.
@@ -60,6 +64,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Couldn't read the media length. Enter it manually." }, { status: 400 });
   if (!(transcriptFormat === "html" ? docText(transcript) : transcript).trim()) return NextResponse.json({ error: "Add a transcript." }, { status: 400 });
 
+  // The same recording is never stored twice. The upload form checks before sending; this catches two at once.
+  const fingerprint = driveMediaId ? `drive:${driveMediaId}` : String(form.get("fingerprint") ?? "").slice(0, 100) || null;
+  const duplicate = fingerprint ? await db.job.findFirst({ where: { mediaFingerprint: fingerprint }, select: { title: true } }) : null;
+  if (duplicate) {
+    if (uploaded) await deleteMedia(uploaded.name);
+    return NextResponse.json({ error: `This recording is already uploaded as “${duplicate.title}”.` }, { status: 409 });
+  }
+
   const createJob = (stored: { name: string; bytes: number }, mediaType: string) =>
     db.job.create({
       data: {
@@ -67,6 +79,8 @@ export async function POST(req: Request) {
         mediaPath: stored.name,
         mediaBytes: stored.bytes,
         mediaType,
+        mediaFingerprint: fingerprint,
+        uploadKey,
         durationSeconds,
         ratePerHour,
         fixedPay,

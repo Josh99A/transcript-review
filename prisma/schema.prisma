@@ -66,6 +66,11 @@ model Job {
   mediaPath             String
   mediaBytes            Int            @default(0)
   mediaType             String
+  // Identifies the recording, so the same one isn't uploaded twice: "drive:<file id>" for Google Drive, otherwise
+  // "file:" and a hash of the file's size, start and end, worked out in the admin's browser.
+  mediaFingerprint      String?
+  // Set by the upload form for each upload, so a retried request returns the job it already made instead of a second one.
+  uploadKey             String?        @unique
   durationSeconds       Int
   // Special jobs paid at their own hourly rate (UGX per hour) instead of the usual one.
   ratePerHour           Int?
@@ -101,6 +106,8 @@ model Job {
   notifications         Notification[]
   createdAt             DateTime       @default(now())
   updatedAt             DateTime       @updatedAt
+
+  @@index([mediaFingerprint])
 }
 
 model Payout {

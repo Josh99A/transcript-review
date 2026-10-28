@@ -93,6 +93,21 @@ export function readMediaToken(token: string): { name: string; bytes: number } |
   return name && Number(bytes) > 0 ? { name, bytes: Number(bytes) } : null;
 }
 
+/** Every media file in storage, with Cloudinary's checksum of its contents, for finding leftovers and copies. */
+export async function listStoredMedia() {
+  const files: { publicId: string; name: string; bytes: number; etag: string; createdAt: Date }[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await cloudinary.api.resources({ ...ASSET, prefix: `${FOLDER}/`, max_results: 500, next_cursor: cursor });
+    for (const r of page.resources) files.push({ publicId: r.public_id, name: `${r.public_id}.${r.format}`, bytes: r.bytes, etag: r.etag, createdAt: new Date(r.created_at) });
+    cursor = page.next_cursor;
+  } while (cursor);
+  return files;
+}
+
+/** The Cloudinary public id of a stored file name, which is how listStoredMedia names files. */
+export const publicIdOf = (name: string) => split(name).publicId;
+
 function split(name: string) {
   const dot = name.lastIndexOf(".");
   return dot > 0 ? { publicId: name.slice(0, dot), format: name.slice(dot + 1) } : { publicId: name, format: undefined };

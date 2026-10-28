@@ -24,6 +24,8 @@ type Upload = {
   /** A Drive recording is copied on the server, so it can be cancelled but not paused. */
   fromDrive: boolean;
   assigneeId: string;
+  /** Identifies the recording, so the form can refuse to upload it a second time. */
+  fingerprint: string;
   status: Status;
   loaded: number;
   total: number | null;
@@ -34,7 +36,9 @@ type Upload = {
 /** What a running upload needs that the panel doesn't show: the form, the file, how far it got, and the request in flight. */
 type Run = { data: FormData; file: File | null; uploadId: string; offset: number; token?: string; xhr?: XMLHttpRequest; halted?: "pause" | "cancel" };
 
-const UploadsContext = createContext<{ start: (upload: { title: string; data: FormData; fromDrive: boolean; assigneeId: string }) => void } | null>(null);
+type NewUpload = { title: string; data: FormData; fromDrive: boolean; assigneeId: string; fingerprint: string };
+
+const UploadsContext = createContext<{ start: (upload: NewUpload) => void; uploading: (fingerprint: string) => string | null } | null>(null);
 
 export function useUploads() {
   const uploads = useContext(UploadsContext);
@@ -103,6 +107,8 @@ export function UploadsProvider({ children }: { children: React.ReactNode }) {
         // Then the job itself. A Drive recording is copied now, and the server streams one JSON line per update.
         const data = new FormData();
         run.data.forEach((v, k) => data.append(k, v));
+        // Lets the server spot a retry of a job it already made, e.g. when its reply was lost.
+        data.set("uploadKey", run.uploadId);
         if (file) {
           data.set("mediaToken", run.token!);
           data.set("mediaName", file.name);
@@ -137,13 +143,13 @@ export function UploadsProvider({ children }: { children: React.ReactNode }) {
   );
 
   const start = useCallback(
-    ({ title, data, fromDrive, assigneeId }: { title: string; data: FormData; fromDrive: boolean; assigneeId: string }) => {
+    ({ title, data, fromDrive, assigneeId, fingerprint }: NewUpload) => {
       const media = data.get("media");
       const file = media instanceof File ? media : null;
       data.delete("media");
       const key = nextKey.current++;
       runs.current.set(key, { data, file, uploadId: crypto.randomUUID().replace(/-/g, ""), offset: 0 });
-      setUploads((list) => [...list, { key, title, fromDrive, assigneeId, status: "uploading", loaded: 0, total: file?.size ?? null }]);
+      setUploads((list) => [...list, { key, title, fromDrive, assigneeId, fingerprint, status: "uploading", loaded: 0, total: file?.size ?? null }]);
       setOpen(true);
       go(key, { title, assigneeId });
     },
@@ -180,6 +186,9 @@ export function UploadsProvider({ children }: { children: React.ReactNode }) {
     toast(`Cancelled “${u.title}”`, { description: "Nothing was saved." });
   }
 
+  // Finished uploads are jobs now, which the server checks; this covers the ones still on their way.
+  const uploading = useCallback((fingerprint: string) => uploads.find((u) => u.fingerprint === fingerprint && u.status !== "done")?.title ?? null, [uploads]);
+
   const dismiss = (key: number) => setUploads((list) => list.filter((u) => u.key !== key));
 
   // Leaving the site mid-upload throws the upload away, so ask first. Moving between admin pages is fine.
@@ -202,7 +211,7 @@ export function UploadsProvider({ children }: { children: React.ReactNode }) {
         : "Uploads finished";
 
   return (
-    <UploadsContext.Provider value={{ start }}>
+    <UploadsContext.Provider value={{ start, uploading }}>
       {children}
       {/* Room at the bottom so the panel never hides the end of a page. */}
       {uploads.length > 0 && <div aria-hidden className="h-48" />}
