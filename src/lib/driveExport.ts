@@ -3,6 +3,7 @@ import { after } from "next/server";
 import { db } from "./db";
 import { htmlToDocx, textToDocx } from "./docx";
 import { mediaUrl } from "./media";
+import { notifyAdmins } from "./notify";
 import { cleanDoc } from "./richDoc";
 
 // Approved jobs are copied into a folder in an admin's own Google Drive: one folder per job with its recording
@@ -217,7 +218,10 @@ export async function exportJob(jobId: string) {
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     console.error(`Drive export of job ${jobId} failed:`, message);
-    await db.job.update({ where: { id: jobId }, data: { driveExportError: message.slice(0, 500) } }).catch(() => {});
+    const failed = await db.job.update({ where: { id: jobId }, data: { driveExportError: message.slice(0, 500) } }).catch(() => null);
+    if (failed) {
+      await notifyAdmins({ title: `Couldn't copy ${failed.title} to Google Drive`, body: `${message.slice(0, 300)} Open the job to try again.`, href: `/admin/jobs/${jobId}`, jobId, email: true });
+    }
   } finally {
     running.delete(jobId);
   }

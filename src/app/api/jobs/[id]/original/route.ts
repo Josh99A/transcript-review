@@ -44,6 +44,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
         : "The admin uploaded the wrong transcript and replaced it. Work on the new one.",
       href: `/jobs/${id}`,
       jobId: id,
+      email: true,
     });
   }
   revalidatePath(`/admin/jobs/${id}`);

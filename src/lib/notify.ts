@@ -1,17 +1,36 @@
 import "server-only";
 import { db } from "./db";
+import { type Detail, emailConfigured, sendEmailsLater } from "./email";
 import { isOutdated } from "./noticeState";
 
-type Notice = { title: string; body?: string | null; href: string; jobId?: string | null; kind?: string | null };
+type Notice = {
+  title: string;
+  body?: string | null;
+  href: string;
+  jobId?: string | null;
+  kind?: string | null;
+  /** Also email it, for the things people need to know about even when they're not in the app. */
+  email?: boolean;
+  /** Extra facts listed in the email only. */
+  details?: Detail[];
+};
 
-/** Records an in-app notification for each of the given people. Never throws: a lost notice mustn't fail the action. */
+/** Records an in-app notification for each of the given people, and emails it if asked. Never throws: a lost notice mustn't fail the action. */
 export async function notify(userIds: (string | null | undefined)[], notice: Notice) {
   const ids = [...new Set(userIds.filter((id): id is string => !!id))];
   if (ids.length === 0) return;
+  const { email, details, ...row } = notice;
   try {
-    await db.notification.createMany({ data: ids.map((userId) => ({ userId, ...notice, body: notice.body?.slice(0, 300) ?? null })) });
+    await db.notification.createMany({ data: ids.map((userId) => ({ userId, ...row, body: row.body?.slice(0, 300) ?? null })) });
   } catch (e) {
     console.error("notify failed", e);
+  }
+  if (!email || !emailConfigured()) return;
+  try {
+    const people = await db.user.findMany({ where: { id: { in: ids } }, select: { email: true, name: true } });
+    sendEmailsLater(people.map((p) => ({ to: p.email, name: p.name, subject: row.title, body: row.body, details, href: row.href })));
+  } catch (e) {
+    console.error("notify email failed", e);
   }
 }
 
