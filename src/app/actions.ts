@@ -19,7 +19,7 @@ import { creditAmount, earningsFor, hasOwnPay, parsePricing, RATE_PER_HOUR_UGX }
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { cleanLanguages } from "@/lib/jobFields";
 import { getLanguages, getNextPayDate, languageOptions, setLanguages, setNextPayDate } from "@/lib/settings";
-import { deleteMedia } from "@/lib/media";
+import { deleteMedia, listStoredMedia, publicIdOf } from "@/lib/media";
 import { disconnectDrive, exportLater, waitingForDrive } from "@/lib/driveExport";
 
 export type FormState = { error?: string; ok?: string; email?: string } | undefined;
@@ -564,6 +564,46 @@ export async function removeAllSubmittedMedia(): Promise<FormState> {
   await db.job.updateMany({ where: { id: { in: jobs.map((j) => j.id) } }, data: { mediaRemovedAt: new Date() } });
   revalidatePath("/", "layout");
   return { ok: `Removed ${jobs.length} media file${jobs.length === 1 ? "" : "s"}. Transcripts and pay records are kept.` };
+}
+
+// Files this new are left alone: they may belong to an upload that is still being finished or retried.
+const LEFTOVER_AGE_MS = 6 * 60 * 60 * 1000;
+
+/** Stored media files no job uses (e.g. an upload that failed and was never retried), and recordings stored for more than one job. */
+async function storageCheck() {
+  const [files, jobs] = await Promise.all([listStoredMedia(), db.job.findMany({ select: { id: true, title: true, mediaPath: true } })]);
+  const jobsByFile = new Map<string, { id: string; title: string }[]>();
+  for (const j of jobs) jobsByFile.set(publicIdOf(j.mediaPath), [...(jobsByFile.get(publicIdOf(j.mediaPath)) ?? []), { id: j.id, title: j.title }]);
+  const leftovers = files.filter((f) => !jobsByFile.has(f.publicId) && Date.now() - f.createdAt.getTime() > LEFTOVER_AGE_MS);
+  // Files with the same contents have the same checksum, so this also finds copies uploaded before duplicates were blocked.
+  const byContents = new Map<string, { id: string; title: string }[]>();
+  for (const f of files) {
+    const used = jobsByFile.get(f.publicId);
+    if (used) byContents.set(f.etag, [...(byContents.get(f.etag) ?? []), ...used]);
+  }
+  const copies = [...byContents.values()].filter((group) => group.length > 1);
+  return { leftovers, copies };
+}
+
+export async function checkStorage(): Promise<{ leftovers: number; leftoverBytes: number; copies: { id: string; title: string }[][] } | { error: string }> {
+  await requireAdmin();
+  try {
+    const { leftovers, copies } = await storageCheck();
+    return { leftovers: leftovers.length, leftoverBytes: leftovers.reduce((n, f) => n + f.bytes, 0), copies };
+  } catch (err) {
+    console.error("Storage check failed", err);
+    return { error: "Couldn't check storage. Try again in a minute." };
+  }
+}
+
+/** Deletes stored media files that no job uses. Checks again first, so a file a job started using meanwhile is kept. */
+export async function removeLeftoverMedia(): Promise<FormState> {
+  await requireAdmin();
+  const { leftovers } = await storageCheck();
+  if (leftovers.length === 0) return { ok: "No unused files left." };
+  for (const f of leftovers) await deleteMedia(f.name);
+  revalidatePath("/admin");
+  return { ok: `Removed ${leftovers.length} unused file${leftovers.length === 1 ? "" : "s"}.` };
 }
 
 // ---------- Admin: Google Drive export ----------

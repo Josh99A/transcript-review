@@ -3,6 +3,7 @@
 import RichTextEditor from "@/components/RichTextEditor";
 import { LanguageField, ProjectField } from "@/components/JobFields";
 import { CloudUpload, FileAudio, FileText, FileVideo, Link2, Pencil, TriangleAlert, X } from "lucide-react";
+import Link from "next/link";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Spinner } from "@/components/client";
@@ -56,6 +57,18 @@ function playerDuration(url: string, type: string): Promise<number> {
     };
     el.src = url;
   });
+}
+
+/**
+ * Identifies a recording without reading all of it: a hash of its size, first and last megabyte. The same file
+ * picked again, even renamed, gives the same answer, so it isn't uploaded twice.
+ */
+async function fingerprintOf(file: File): Promise<string> {
+  const MB = 1024 * 1024;
+  if (!crypto.subtle) return `file:${file.size}:${file.lastModified}:${file.name}`;
+  const sample = await new Blob([`${file.size}:`, file.slice(0, MB), file.slice(Math.max(0, file.size - MB))]).arrayBuffer();
+  const hash = new Uint8Array(await crypto.subtle.digest("SHA-256", sample));
+  return `file:${Array.from(hash, (b) => b.toString(16).padStart(2, "0")).join("")}`;
 }
 
 type DriveInfo = { id: string; name: string; type: string; size: number | null };
@@ -126,7 +139,12 @@ export default function UploadForm(props: Props) {
 }
 
 function JobForm({ users, projects, languages, onQueued }: Props & { onQueued: () => void }) {
-  const { start } = useUploads();
+  const { start, uploading } = useUploads();
+  const sent = useRef(false);
+  const pick = useRef(0);
+  const [fingerprint, setFingerprint] = useState<string | null>(null);
+  // The job that already has this recording, or an upload of it still in the uploads panel.
+  const [duplicate, setDuplicate] = useState<{ title: string; id?: string } | null>(null);
   const mediaInput = useRef<HTMLInputElement>(null);
   const [media, setMedia] = useState<File | null>(null);
   const [driveMedia, setDriveMedia] = useState<DriveInfo | null>(null);
@@ -152,7 +170,7 @@ function JobForm({ users, projects, languages, onQueued }: Props & { onQueued: (
   const effectiveDuration = manual ? Number(minutes || 0) * 60 + Number(seconds || 0) : (duration ?? 0);
   const hasTranscript = mode === "file" ? !!transcriptFile : mode === "drive" ? !!driveTranscript : !!pasted.trim();
   const picked = media ? { name: media.name, size: media.size as number | null, type: mediaTypeOf(media.name, media.type) } : driveMedia;
-  const ready = !!picked && effectiveDuration > 0 && !!title.trim() && !!language && hasTranscript;
+  const ready = !!picked && !!fingerprint && !duplicate && effectiveDuration > 0 && !!title.trim() && !!language && hasTranscript;
   async function pickMedia(file: File | undefined) {
     setError(null);
     if (!file) return;
@@ -163,14 +181,31 @@ function JobForm({ users, projects, languages, onQueued }: Props & { onQueued: (
     }
     setMedia(file);
     setDriveMedia(null);
-    await measure(file.name, file, type);
+    await Promise.all([checkDuplicate(() => fingerprintOf(file)), measure(file.name, file, type)]);
   }
 
   async function pickDriveMedia(file: DriveInfo) {
     setError(null);
     setMedia(null);
     setDriveMedia(file);
-    await measure(file.name, `/api/drive/${file.id}`, file.type);
+    await Promise.all([checkDuplicate(async () => `drive:${file.id}`), measure(file.name, `/api/drive/${file.id}`, file.type)]);
+  }
+
+  /** Looks for the recording in the uploads panel and among existing jobs, so the same one isn't stored twice. */
+  async function checkDuplicate(identify: () => Promise<string>) {
+    const mine = ++pick.current;
+    setFingerprint(null);
+    setDuplicate(null);
+    try {
+      const id = await identify();
+      const inPanel = uploading(id);
+      const job = inPanel ? null : ((await (await fetch(`/api/uploads?fingerprint=${encodeURIComponent(id)}`)).json()).job as { id: string; title: string } | null);
+      if (mine !== pick.current) return;
+      setDuplicate(inPanel ? { title: inPanel } : job);
+      setFingerprint(id);
+    } catch {
+      if (mine === pick.current) setError("Couldn't check whether this recording is already uploaded. Pick it again to retry.");
+    }
   }
 
   async function measure(name: string, source: File | string, type: string) {
@@ -188,6 +223,9 @@ function JobForm({ users, projects, languages, onQueued }: Props & { onQueued: (
   }
 
   function clearMedia() {
+    pick.current++;
+    setFingerprint(null);
+    setDuplicate(null);
     setMedia(null);
     setDriveMedia(null);
     setDuration(null);
@@ -196,10 +234,13 @@ function JobForm({ users, projects, languages, onQueued }: Props & { onQueued: (
 
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!ready) return;
+    // A quick second tap mustn't send the same job twice.
+    if (!ready || sent.current) return;
+    sent.current = true;
     setError(null);
     const data = new FormData();
     data.set("title", title.trim());
+    data.set("fingerprint", fingerprint!);
     if (media) data.set("media", media);
     else if (driveMedia) data.set("driveMediaId", driveMedia.id);
     data.set("durationSeconds", String(Math.round(effectiveDuration)));
@@ -213,7 +254,7 @@ function JobForm({ users, projects, languages, onQueued }: Props & { onQueued: (
     if (mode === "file" && transcriptFile) data.set("transcriptFile", transcriptFile);
     else if (mode === "drive" && driveTranscript) data.set("driveTranscriptId", driveTranscript.id);
     else data.set("transcriptText", pasted);
-    start({ title: title.trim(), data, fromDrive: !!driveMedia, assigneeId });
+    start({ title: title.trim(), data, fromDrive: !!driveMedia, assigneeId, fingerprint: fingerprint! });
     toast(`Uploading “${title.trim()}”`, { description: "Its progress shows at the bottom of the screen. You can add the next job now." });
     onQueued();
     window.scrollTo({ top: 0 });
@@ -277,7 +318,20 @@ function JobForm({ users, projects, languages, onQueued }: Props & { onQueued: (
               </button>
             </div>
           )}
-          <input ref={mediaInput} type="file" accept={MEDIA_ACCEPT} className="hidden" onChange={(e) => pickMedia(e.target.files?.[0])} />
+          <input ref={mediaInput} type="file" accept={MEDIA_ACCEPT} className="hidden" onChange={(e) => { pickMedia(e.target.files?.[0]); e.target.value = ""; }} />
+          {duplicate && (
+            <p role="alert" className="mt-3 flex items-start gap-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">
+              <TriangleAlert className="mt-0.5 size-4 shrink-0 text-amber-600" />
+              <span>
+                {duplicate.id ? (
+                  <>This recording is already uploaded as <Link href={`/admin/jobs/${duplicate.id}`} className="font-medium underline">{duplicate.title}</Link>.</>
+                ) : (
+                  <>This recording is already uploading as &ldquo;{duplicate.title}&rdquo;.</>
+                )}{" "}
+                Pick a different file, so the same recording isn&apos;t stored twice.
+              </span>
+            </p>
+          )}
 
           {picked && (manual ? (
             <div className="mt-4">
@@ -412,7 +466,7 @@ function JobForm({ users, projects, languages, onQueued }: Props & { onQueued: (
               <CloudUpload className="size-4" />
               {assigneeName ? "Upload and assign" : assigneeId === "" ? "Upload and post" : "Upload job"}
             </button>
-            {!ready && <p className="hint text-center">Add a media file, title, language and transcript to continue.</p>}
+            {!ready && <p className="hint text-center">{duplicate ? "This recording is already uploaded. Pick a different one." : "Add a media file, title, language and transcript to continue."}</p>}
           </div>
         </div>
       </aside>

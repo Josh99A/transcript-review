@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
+import { db } from "@/lib/db";
 import { CHUNK, deleteMedia, mediaToken, readMediaToken, uploadChunk } from "@/lib/media";
 
 /**
@@ -34,4 +35,13 @@ export async function DELETE(req: Request) {
   const stored = readMediaToken(new URL(req.url).searchParams.get("token") ?? "");
   if (stored) await deleteMedia(stored.name);
   return NextResponse.json({ ok: true });
+}
+
+/** Tells the upload form whether a recording is already a job, before it sends the file again. */
+export async function GET(req: Request) {
+  const user = await getCurrentUser();
+  if (!user || user.role !== "ADMIN") return NextResponse.json({ error: "Not allowed" }, { status: 403 });
+  const fingerprint = new URL(req.url).searchParams.get("fingerprint") ?? "";
+  const job = fingerprint ? await db.job.findFirst({ where: { mediaFingerprint: fingerprint }, select: { id: true, title: true } }) : null;
+  return NextResponse.json({ job });
 }
