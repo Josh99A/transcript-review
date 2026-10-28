@@ -20,6 +20,7 @@ import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { cleanLanguages } from "@/lib/jobFields";
 import { getLanguages, getNextPayDate, languageOptions, setLanguages, setNextPayDate } from "@/lib/settings";
 import { deleteMedia } from "@/lib/media";
+import { disconnectDrive, exportLater, waitingForDrive } from "@/lib/driveExport";
 
 export type FormState = { error?: string; ok?: string; email?: string } | undefined;
 
@@ -481,18 +482,19 @@ export async function updateReviewNote(formData: FormData): Promise<FormState> {
 export async function approveJob(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const jobId = String(formData.get("jobId"));
-  const { count } = await db.job.updateMany({ where: { id: jobId, status: "SUBMITTED", approvedAt: null }, data: { approvedAt: new Date(), reviewedAt: new Date() } });
+  const { count } = await db.job.updateMany({ where: { id: jobId, status: "SUBMITTED", approvedAt: null }, data: { approvedAt: new Date(), reviewedAt: new Date(), driveExportedAt: null, driveExportError: null } });
   if (!count) return { error: "Only submitted jobs that aren't approved yet can be approved." };
   const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
   // Approved pay keeps today's usual rate even if the rate changes later.
   await db.earning.updateMany({ where: { jobId, customRate: false }, data: { lockedRate: RATE_PER_HOUR_UGX, amount: earningsFor(job.durationSeconds) } });
   await notify([job.assigneeId], { title: `Approved: ${job.title}`, body: "Your transcript was accepted, and its pay is now in your earnings.", href: `/jobs/${jobId}`, jobId, kind: "approved" });
   await settleNotices(jobId);
+  const toDrive = await exportLater([jobId]);
   revalidatePath("/admin/reviews");
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/jobs");
-  return { ok: "Marked as approved." };
+  return { ok: toDrive ? "Marked as approved. Copying it to Google Drive." : "Marked as approved." };
 }
 
 export async function updateDuration(formData: FormData): Promise<FormState> {
@@ -562,6 +564,38 @@ export async function removeAllSubmittedMedia(): Promise<FormState> {
   await db.job.updateMany({ where: { id: { in: jobs.map((j) => j.id) } }, data: { mediaRemovedAt: new Date() } });
   revalidatePath("/", "layout");
   return { ok: `Removed ${jobs.length} media file${jobs.length === 1 ? "" : "s"}. Transcripts and pay records are kept.` };
+}
+
+// ---------- Admin: Google Drive export ----------
+
+/** Copies one approved job to Drive again, e.g. after an export failed. */
+export async function exportJobToDrive(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const jobId = String(formData.get("jobId"));
+  const job = await db.job.findUnique({ where: { id: jobId }, select: { status: true, approvedAt: true } });
+  if (!job || job.status !== "SUBMITTED" || !job.approvedAt) return { error: "Only approved jobs are copied to Google Drive." };
+  await db.job.update({ where: { id: jobId }, data: { driveExportedAt: null, driveExportError: null } });
+  if (!(await exportLater([jobId]))) return { error: "Connect Google Drive on the dashboard first." };
+  revalidatePath(`/admin/jobs/${jobId}`);
+  return { ok: "Copying it to Google Drive. Reload in a minute to see it there." };
+}
+
+/** Copies every approved job that isn't in Drive yet, e.g. the ones approved before Drive was connected. */
+export async function exportWaitingToDrive(): Promise<FormState> {
+  await requireAdmin();
+  const jobs = await waitingForDrive();
+  if (!jobs.length) return { error: "Every approved job is already in Google Drive." };
+  await db.job.updateMany({ where: { id: { in: jobs.map((j) => j.id) } }, data: { driveExportError: null } });
+  if (!(await exportLater(jobs.map((j) => j.id)))) return { error: "Connect Google Drive first." };
+  revalidatePath("/admin");
+  return { ok: `Copying ${jobs.length} job${jobs.length === 1 ? "" : "s"} to Google Drive. This can take a few minutes for long recordings.` };
+}
+
+export async function disconnectGoogleDrive(): Promise<FormState> {
+  await requireAdmin();
+  await disconnectDrive();
+  revalidatePath("/admin");
+  return { ok: "Google Drive disconnected. Files already copied stay in Drive." };
 }
 
 // ---------- Admin: payouts ----------

@@ -13,7 +13,7 @@ import { richHtml } from "@/lib/richtext";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { approveJob, approveRequest, assignJob, transferJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, unassignJob, updateReviewNote, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
+import { approveJob, exportJobToDrive, approveRequest, assignJob, transferJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, unassignJob, updateReviewNote, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
 import { IssueStatus } from "@/components/IssueThread";
 import { ActionForm, ConfirmAction } from "@/components/client";
 import MediaPlayer from "@/components/MediaPlayer";
@@ -27,6 +27,7 @@ import { approvedPay, jobPayLabel } from "@/lib/pay";
 import { payStates } from "@/lib/earnings";
 import { speaks } from "@/lib/jobFields";
 import { languageOptions } from "@/lib/settings";
+import { driveExportStatus, exportRunning, folderLink } from "@/lib/driveExport";
 
 export const metadata: Metadata = { title: "Job" };
 
@@ -39,11 +40,28 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   );
 }
 
+/** Where the approved job stands in Google Drive, with a retry when copying failed. */
+function DriveStatus({ job, connected }: { job: { id: string; driveFolderId: string | null; driveExportedAt: Date | null; driveExportError: string | null; mediaRemovedAt: Date | null; driveMediaId: string | null }; connected: boolean }) {
+  if (!connected && !job.driveFolderId) return null;
+  const open = job.driveFolderId && <a href={folderLink(job.driveFolderId)} target="_blank" rel="noreferrer" className="font-medium text-brand-600 hover:text-brand-700">Open in Drive</a>;
+  const retry = connected && (
+    <ActionForm action={exportJobToDrive} className="inline">
+      <input type="hidden" name="jobId" value={job.id} />
+      <button className="font-medium text-brand-600 hover:text-brand-700">{job.driveExportError ? "Try again" : "Copy again"}</button>
+    </ActionForm>
+  );
+  if (job.driveExportError) return <p className="text-sm text-red-700">Couldn&apos;t copy to Google Drive: {job.driveExportError} {retry}</p>;
+  if (job.driveExportedAt)
+    return <p className="flex flex-wrap items-center gap-x-2 text-sm text-slate-600">Copied to Google Drive {formatRelative(job.driveExportedAt)}{job.mediaRemovedAt && !job.driveMediaId ? " (transcript only, the media was removed)" : ""}. {open} {retry}</p>;
+  if (!connected) return null;
+  return <p className="text-sm text-slate-600">{exportRunning(job.id) ? "Copying to Google Drive…" : "Not in Google Drive yet."} {open} {!exportRunning(job.id) && retry}</p>;
+}
+
 export default async function AdminJobPage({ params }: { params: Promise<{ id: string }> }) {
   await requireAdmin();
   const { id } = await params;
   const guidelines = await getGuidelines();
-  const [job, users, projects, paidStates, languageList] = await Promise.all([
+  const [job, users, projects, paidStates, languageList, drive] = await Promise.all([
     db.job.findUnique({
       where: { id },
       include: {
@@ -57,6 +75,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
     projectNames(),
     payStates(),
     languageOptions(),
+    driveExportStatus(),
   ]);
   if (!job) notFound();
   const credit = job.earnings.find((e) => e.userId === job.assigneeId);
@@ -160,7 +179,10 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                 <div className="card-header"><h2 className="card-title">Review</h2></div>
                 <div className="card-body space-y-4">
                   {job.approvedAt ? (
-                    <p className="flex items-center gap-2 text-sm text-emerald-700"><CircleCheck className="size-4 shrink-0" /> Approved {formatRelative(job.approvedAt)}.</p>
+                    <>
+                      <p className="flex items-center gap-2 text-sm text-emerald-700"><CircleCheck className="size-4 shrink-0" /> Approved {formatRelative(job.approvedAt)}.</p>
+                      <DriveStatus job={job} connected={drive.configured && drive.connected} />
+                    </>
                   ) : (
                     <>
                       <p className="text-sm text-slate-600">Check the changes, then approve them or send the job back with instructions.</p>

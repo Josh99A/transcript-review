@@ -9,6 +9,8 @@ import Link from "next/link";
 import PayDayCard from "@/components/PayDayCard";
 import StatusBadge, { jobBadge } from "@/components/StatusBadge";
 import StorageCard from "@/components/StorageCard";
+import DriveCard from "@/components/DriveCard";
+import { driveExportStatus, waitingForDrive } from "@/lib/driveExport";
 import { Avatar, EmptyState, PageHeader, StatList, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -30,14 +32,14 @@ const FILTER_LABELS: Record<Filter, string> = {
 
 const DASH_SORTS: SortKey[] = ["updated", "posted_new", "posted_old", "assigned_new", "assigned_old", "submitted_new", "submitted_old", "deadline", "longest", "shortest", "pay_high", "pay_low", "title"];
 
-export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; sort?: string }> }) {
+export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; sort?: string; drive_error?: string }> }) {
   await requireAdmin();
-  const { status, q = "", sort: sortParam } = await searchParams;
+  const { status, q = "", sort: sortParam, drive_error: driveError } = await searchParams;
   const sort = await pickSort("dashboard", sortParam, DASH_SORTS, "updated");
   const filter: Filter = FILTERS.includes(status as Filter) ? (status as Filter) : "ALL";
   const query = q.trim();
 
-  const [jobs, users, balances, problems, expected, counts, payDate, stored, pendingRequests] = await Promise.all([
+  const [jobs, users, balances, problems, expected, counts, payDate, stored, pendingRequests, drive, notInDrive] = await Promise.all([
     db.job.findMany({
       where: {
         ...(filter === "ALL" ? {} : { status: filter }),
@@ -53,6 +55,8 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     getNextPayDate(),
     db.job.findMany({ where: { mediaRemovedAt: null }, select: { mediaBytes: true, status: true } }),
     db.jobRequest.count({ where: { status: "PENDING", job: { status: "UNASSIGNED" } } }),
+    driveExportStatus(),
+    waitingForDrive(),
   ]);
   sortJobs(jobs, sort);
   const sizes = stored.map((j) => ({ status: j.status, bytes: j.mediaBytes }));
@@ -227,6 +231,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
         <div className="grid items-start gap-6 lg:grid-cols-3">
         <PayDayCard payDate={payDate} totalOwed={totalOwed} peopleOwed={peopleOwed} />
         <StorageCard usedBytes={usedBytes} removableBytes={removable.reduce((s, j) => s + j.bytes, 0)} removableCount={removable.length} />
+        <DriveCard status={drive} waiting={notInDrive.length} failed={notInDrive.filter((j) => j.driveExportError).length} error={driveError} />
         <section className="card h-fit">
           <div className="card-header">
             <h2 className="card-title">Owed to team</h2>
