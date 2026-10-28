@@ -13,9 +13,10 @@ import { getGuidelinesInfo, setGuidelines } from "@/lib/guidelines";
 import { createSession, destroySession, homeFor, requireAdmin, requireRole, requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
-import { formatPayDate, parseDeadline } from "@/lib/format";
+import { formatDuration, formatPayDate, formatUGX, parseDeadline } from "@/lib/format";
 import { notify, notifyAdmins, settleNotices } from "@/lib/notify";
-import { creditAmount, earningsFor, hasOwnPay, parsePricing, RATE_PER_HOUR_UGX } from "@/lib/pay";
+import { type Detail, sendEmailsLater } from "@/lib/email";
+import { creditAmount, earningsFor, hasOwnPay, parsePricing, RATE_PER_HOUR_UGX, referralPayFor } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { cleanLanguages } from "@/lib/jobFields";
 import { getLanguages, getNextPayDate, languageOptions, setLanguages, setNextPayDate } from "@/lib/settings";
@@ -62,6 +63,18 @@ export async function createUser(formData: FormData): Promise<FormState> {
   const refError = referredById ? await referrerError(null, referredById) : null;
   if (refError) return { error: refError };
   await db.user.create({ data: { name, email, role, referredById, passwordHash: await bcrypt.hash(password, 10) } });
+  // The password isn't emailed; the admin passes it on themselves.
+  sendEmailsLater([
+    {
+      to: email,
+      name,
+      subject: "Your Transcript Review account is ready",
+      body: "An admin made you an account. Sign in with this email address and the password the admin gave you.",
+      details: [["Email", email]],
+      href: "/login",
+      button: "Sign in",
+    },
+  ]);
   revalidatePath("/admin/users");
   return { ok: `Created ${name}.` };
 }
@@ -195,7 +208,18 @@ export async function payEveryone(): Promise<FormState> {
   const { rows: payoutRows, held } = payouts;
   const skipped = held ? ` ${held} ${held === 1 ? "person was" : "people were"} left out because of a pay problem; see the warning on Team & payments.` : "";
   if (payoutRows.length === 0) return { error: held ? `Nobody was paid.${skipped}` : "Nobody is owed anything right now." };
-  await Promise.all(payoutRows.map((p) => notify([p.userId], { title: `You were paid UGX ${p.amount.toLocaleString("en-US")}`, body: note, href: "/earnings" })));
+  const paidTo = await payDestinations(payoutRows.map((p) => p.userId));
+  await Promise.all(
+    payoutRows.map((p) =>
+      notify([p.userId], {
+        title: `You were paid UGX ${p.amount.toLocaleString("en-US")}`,
+        body: note,
+        href: "/earnings",
+        email: true,
+        details: [["Amount", formatUGX(p.amount)], ["Sent to", paidTo.get(p.userId)], ["Date", formatPayDate(new Date().toISOString().slice(0, 10))]],
+      }),
+    ),
+  );
   revalidatePath("/", "layout");
   const total = payoutRows.reduce((s, p) => s + p.amount, 0);
   return { ok: `Recorded ${payoutRows.length} payment${payoutRows.length === 1 ? "" : "s"} totalling UGX ${total.toLocaleString("en-US")}.${skipped}` };
@@ -210,6 +234,26 @@ async function lockPayments(tx: Prisma.TransactionClient) {
 async function lockJob(tx: Prisma.TransactionClient, jobId: string) {
   await tx.$queryRaw`SELECT id FROM "Job" WHERE id = ${jobId} FOR UPDATE`;
   return tx.job.findUnique({ where: { id: jobId } });
+}
+
+type JobFacts = Prisma.JobGetPayload<object>;
+
+/** What an email says about a job, so people can act on it without opening the app first. */
+function jobFacts(job: JobFacts): Detail[] {
+  return [
+    ["Job", job.title],
+    ["Project", job.project],
+    ["Language", job.language],
+    ["Length", formatDuration(job.durationSeconds)],
+    ["Pay", formatUGX(creditAmount(job.durationSeconds, job, null))],
+    ["Deadline", job.deadline?.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })],
+  ];
+}
+
+/** Where a payment went, as the person entered it. */
+async function payDestinations(userIds: string[]) {
+  const people = await db.user.findMany({ where: { id: { in: userIds } }, select: { id: true, payNetwork: true, payPhone: true, payName: true } });
+  return new Map(people.map((p) => [p.id, [p.payNetwork, p.payPhone, p.payName && `(${p.payName})`].filter(Boolean).join(" ") || null]));
 }
 
 class Refused extends Error {}
@@ -266,10 +310,13 @@ export async function assignJob(formData: FormData): Promise<FormState> {
   });
   if (failed(res)) return res;
   const { job, declined } = res;
-  if (assigneeId) await notify([assigneeId], { title: `New job assigned: ${job.title}`, href: `/jobs/${jobId}`, jobId, kind: "assigned" });
-  if (job.assigneeId) await notify([job.assigneeId], { title: `${job.title} was taken off your list`, body: "An admin moved this job. You don't need to work on it any more.", href: "/jobs", jobId });
+  if (assigneeId) {
+    const assigned = await db.job.findUnique({ where: { id: jobId } });
+    await notify([assigneeId], { title: `New job assigned: ${job.title}`, href: `/jobs/${jobId}`, jobId, kind: "assigned", email: true, details: assigned ? jobFacts(assigned) : undefined });
+  }
+  if (job.assigneeId) await notify([job.assigneeId], { title: `${job.title} was taken off your list`, body: "An admin moved this job. You don't need to work on it any more.", href: "/jobs", jobId, email: true });
   await settleNotices(jobId);
-  await notify(declined, { title: `${job.title} went to someone else`, body: "Thanks for asking. Check Find work for other jobs.", href: "/board" });
+  await notify(declined, { title: `${job.title} went to someone else`, body: "Thanks for asking. Check Find work for other jobs.", href: "/board", email: true });
   revalidatePath("/admin");
   revalidatePath("/admin/requests");
   revalidatePath("/board");
@@ -306,8 +353,8 @@ export async function transferJob(formData: FormData): Promise<FormState> {
   if (failed(res)) return res;
   const { job, from, to } = res;
   const done = job.approvedAt ? "It's approved, and its pay is now in your earnings." : "It's waiting for review. Its pay is added to your earnings once it's approved.";
-  await notify([to.id], { title: `${job.title} was transferred to you`, body: done, href: `/jobs/${jobId}`, jobId });
-  await notify([from], { title: `${job.title} was moved to someone else`, body: "An admin transferred this job and its pay to another transcriber.", href: "/jobs" });
+  await notify([to.id], { title: `${job.title} was transferred to you`, body: done, href: `/jobs/${jobId}`, jobId, email: true, details: jobFacts(job) });
+  await notify([from], { title: `${job.title} was moved to someone else`, body: "An admin transferred this job and its pay to another transcriber.", href: "/jobs", email: true });
   revalidatePath("/", "layout");
   return { ok: `Transferred to ${to.name}.` };
 }
@@ -359,6 +406,7 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
       href: `/jobs/${jobId}`,
       jobId,
       kind: "instructions",
+      email: true,
     });
   }
   // Keep pay already credited for this job in line with its pricing.
@@ -404,9 +452,9 @@ export async function approveRequest(formData: FormData): Promise<FormState> {
   });
   if (failed(res)) return res;
   const { request, job, declined } = res;
-  await notify([request.userId], { title: `Your request was approved: ${job.title}`, body: "It's now in My jobs.", href: `/jobs/${job.id}`, jobId: job.id, kind: "assigned" });
+  await notify([request.userId], { title: `Your request was approved: ${job.title}`, body: "It's now in My jobs.", href: `/jobs/${job.id}`, jobId: job.id, kind: "assigned", email: true, details: jobFacts(job) });
   await settleNotices(job.id);
-  await notify(declined, { title: `${job.title} went to someone else`, body: "Thanks for asking. Check Find work for other jobs.", href: "/board" });
+  await notify(declined, { title: `${job.title} went to someone else`, body: "Thanks for asking. Check Find work for other jobs.", href: "/board", email: true });
   revalidatePath(`/admin/jobs/${job.id}`);
   revalidatePath("/admin");
   revalidatePath("/board");
@@ -420,7 +468,7 @@ export async function declineRequest(formData: FormData): Promise<FormState> {
   const { count } = await db.jobRequest.updateMany({ where: { id: requestId, status: "PENDING" }, data: { status: "DECLINED" } });
   if (!count) return { error: "This request was already answered or withdrawn." };
   const request = await db.jobRequest.findUniqueOrThrow({ where: { id: requestId }, include: { job: { select: { title: true } } } });
-  await notify([request.userId], { title: `Your request wasn't approved: ${request.job.title}`, body: "Check Find work for other jobs.", href: "/board", jobId: request.jobId });
+  await notify([request.userId], { title: `Your request wasn't approved: ${request.job.title}`, body: "Check Find work for other jobs.", href: "/board", jobId: request.jobId, email: true });
   revalidatePath(`/admin/jobs/${request.jobId}`);
   revalidatePath("/admin");
   revalidatePath("/admin/requests");
@@ -446,7 +494,7 @@ export async function reopenJob(formData: FormData): Promise<FormState> {
   if (!count) return { error: "This job changed while you were looking at it. Reload and try again." };
   // No longer approved, so its pay goes back to today's rate until it's approved again.
   await db.earning.updateMany({ where: { jobId, customRate: false }, data: { lockedRate: null, amount: earningsFor(job.durationSeconds) } });
-  await notify([job.assigneeId], { title: `Changes needed: ${job.title}`, body: richText(note).slice(0, 500), href: `/jobs/${jobId}`, jobId, kind: "sent-back" });
+  await notify([job.assigneeId], { title: `Changes needed: ${job.title}`, body: richText(note), href: `/jobs/${jobId}`, jobId, kind: "sent-back", email: true });
   await settleNotices(jobId);
   revalidatePath("/admin/reviews");
   revalidatePath("/admin");
@@ -471,7 +519,7 @@ export async function updateReviewNote(formData: FormData): Promise<FormState> {
     data: { reviewNote: note, reviewNoteEditedAt: new Date() },
   });
   if (!count) return { error: "This job isn't waiting on changes any more, so its notes can't be edited. Reload to see where it is." };
-  await notify([job.assigneeId], { title: `Notes updated: ${job.title}`, body: `The admin changed what needs fixing. ${richText(note)}`.slice(0, 500), href: `/jobs/${jobId}`, jobId, kind: "sent-back" });
+  await notify([job.assigneeId], { title: `Notes updated: ${job.title}`, body: `The admin changed what needs fixing. ${richText(note)}`, href: `/jobs/${jobId}`, jobId, kind: "sent-back", email: true });
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/jobs");
@@ -487,7 +535,19 @@ export async function approveJob(formData: FormData): Promise<FormState> {
   const job = await db.job.findUniqueOrThrow({ where: { id: jobId } });
   // Approved pay keeps today's usual rate even if the rate changes later.
   await db.earning.updateMany({ where: { jobId, customRate: false }, data: { lockedRate: RATE_PER_HOUR_UGX, amount: earningsFor(job.durationSeconds) } });
-  await notify([job.assigneeId], { title: `Approved: ${job.title}`, body: "Your transcript was accepted, and its pay is now in your earnings.", href: `/jobs/${jobId}`, jobId, kind: "approved" });
+  await notify([job.assigneeId], { title: `Approved: ${job.title}`, body: "Your transcript was accepted, and its pay is now in your earnings.", href: `/jobs/${jobId}`, jobId, kind: "approved", email: true, details: jobFacts(job) });
+  // The referrer's share of an approved job counts towards what they're owed from now on.
+  const credit = job.assigneeId ? await db.earning.findUnique({ where: { jobId_userId: { jobId, userId: job.assigneeId } }, include: { user: { select: { name: true } } } }) : null;
+  if (credit?.referrerId) {
+    const share = credit.customRate ? referralPayFor(0, credit.amount) : referralPayFor(credit.seconds);
+    await notify([credit.referrerId], {
+      title: `You earned ${formatUGX(share)} in referral pay`,
+      body: `${credit.user.name}, who you referred, had a transcript approved.`,
+      href: "/earnings",
+      email: true,
+      details: [["Transcriber", credit.user.name], ["Length", formatDuration(credit.seconds)], ["Your share", formatUGX(share)]],
+    });
+  }
   await settleNotices(jobId);
   const toDrive = await exportLater([jobId]);
   revalidatePath("/admin/reviews");
@@ -533,7 +593,7 @@ export async function deleteJob(formData: FormData): Promise<FormState> {
   if (credited) return { error: "This job has pay credited to someone. Remove that pay first, or keep the job." };
   const job = await db.job.delete({ where: { id: jobId } });
   await deleteMedia(job.mediaPath);
-  if (job.assigneeId) await notify([job.assigneeId], { title: `${job.title} was cancelled`, body: "An admin deleted this job, so you don't need to work on it.", href: "/jobs" });
+  if (job.assigneeId) await notify([job.assigneeId], { title: `${job.title} was cancelled`, body: "An admin deleted this job, so you don't need to work on it.", href: "/jobs", email: true });
   revalidatePath("/admin");
   revalidatePath("/board");
   revalidatePath("/jobs");
@@ -656,7 +716,14 @@ export async function recordPayout(formData: FormData): Promise<FormState> {
     return {};
   });
   if (failed(res)) return res;
-  await notify([userId], { title: `You were paid UGX ${amount.toLocaleString("en-US")}`, body: note, href: "/earnings" });
+  const paidTo = await payDestinations([userId]);
+  await notify([userId], {
+    title: `You were paid UGX ${amount.toLocaleString("en-US")}`,
+    body: note,
+    href: "/earnings",
+    email: true,
+    details: [["Amount", formatUGX(amount)], ["Sent to", paidTo.get(userId)], ["Date", formatPayDate(new Date().toISOString().slice(0, 10))]],
+  });
   revalidatePath("/admin/users");
   revalidatePath("/admin");
   return { ok: "Payment recorded." };
@@ -683,7 +750,25 @@ export async function requestJob(formData: FormData): Promise<FormState> {
     return job!;
   });
   if (failed(res)) return res;
-  await notifyAdmins({ title: `${user.name} requested ${res.title}`, body: note, href: "/admin/requests", jobId, kind: "requested" });
+  const [asking, others] = await Promise.all([
+    db.user.findUnique({ where: { id: user.id }, select: { email: true, languages: true, _count: { select: { jobs: { where: { status: "ASSIGNED" } } } } } }),
+    db.jobRequest.count({ where: { jobId, status: "PENDING", userId: { not: user.id } } }),
+  ]);
+  await notifyAdmins({
+    title: `${user.name} requested ${res.title}`,
+    body: note,
+    href: "/admin/requests",
+    jobId,
+    kind: "requested",
+    email: true,
+    details: [
+      ["Requested by", `${user.name} (${asking?.email ?? ""})`],
+      ["Their languages", asking?.languages.join(", ")],
+      ["Jobs in progress", asking?._count.jobs],
+      ...jobFacts(res),
+      ["Other requests", others ? `${others} other ${others === 1 ? "person has" : "people have"} asked for this job` : "None yet"],
+    ],
+  });
   revalidatePath("/board");
   revalidatePath("/admin/requests");
   revalidatePath("/admin");
@@ -752,6 +837,8 @@ export async function submitJob(jobId: string, raw: string, fileName?: string): 
     href: `/admin/jobs/${jobId}#review`,
     jobId,
     kind: "submitted",
+    email: true,
+    details: [["Submitted by", user.name], ...jobFacts(res), ["Times sent back", res.revisions || null]],
   });
   await settleNotices(jobId);
   revalidatePath("/jobs");
@@ -809,7 +896,7 @@ export async function updateGuidelines(formData: FormData): Promise<FormState> {
     const open = await db.job.findMany({ where: { assigneeId: { not: null }, approvedAt: null }, select: { assigneeId: true }, distinct: ["assigneeId"] });
     const ids = open.map((j) => j.assigneeId!);
     told = ids.length;
-    if (ids.length) await notify(ids, { title: "Transcription guidelines updated", body: html ? "An admin changed the guidelines that apply to every job. Read them before you carry on." : "An admin removed the general guidelines.", href: "/guidelines" });
+    if (ids.length) await notify(ids, { title: "Transcription guidelines updated", body: html ? "An admin changed the guidelines that apply to every job. Read them before you carry on." : "An admin removed the general guidelines.", href: "/guidelines", email: true });
   }
   revalidatePath("/", "layout");
   const who = told ? ` ${told} transcriber${told === 1 ? " was" : "s were"} told.` : "";
@@ -858,7 +945,7 @@ export async function leaveJob(formData: FormData): Promise<FormState> {
     return job!;
   });
   if (failed(res)) return res;
-  await notifyAdmins({ title: `${user.name} left ${res.title}`, body: `${reason || "No reason given."} It's back on Find work.`, href: `/admin/jobs/${jobId}`, jobId });
+  await notifyAdmins({ title: `${user.name} left ${res.title}`, body: `${reason || "No reason given."} It's back on Find work.`, href: `/admin/jobs/${jobId}`, jobId, email: true, details: jobFacts(res) });
   await settleNotices(jobId);
   revalidateRelease(jobId);
   return { ok: "You've left the job. It's back on Find work for others." };
@@ -883,6 +970,7 @@ export async function unassignJob(formData: FormData): Promise<FormState> {
     body: reason || "An admin unassigned this job. You don't need to work on it any more.",
     href: "/jobs",
     jobId,
+    email: true,
   });
   await settleNotices(jobId);
   revalidateRelease(jobId);
@@ -914,7 +1002,7 @@ export async function raiseIssue(formData: FormData): Promise<FormState> {
   if (!job || job.assigneeId !== user.id) return { error: "You can only raise issues on jobs assigned to you." };
   const { subject, body } = parsed.data;
   const issue = await db.issue.create({ data: { jobId, userId: user.id, subject, messages: { create: { authorId: user.id, body } } } });
-  await notifyAdmins({ title: `${user.name} raised an issue: ${subject}`, body: `${job.title}: ${body.slice(0, 300)}`, href: `/admin/issues/${issue.id}` });
+  await notifyAdmins({ title: `${user.name} raised an issue: ${subject}`, body: `${job.title}: ${body}`, href: `/admin/issues/${issue.id}`, email: true });
   revalidateIssue(jobId, issue.id);
   return { ok: "Issue sent. You'll be notified when an admin replies." };
 }
@@ -938,11 +1026,12 @@ export async function replyToIssue(formData: FormData): Promise<FormState> {
   if (admin) {
     await notify([issue.userId], {
       title: `${resolve ? "Resolved" : "Reply"}: ${issue.subject}`,
-      body: body.slice(0, 300),
+      body,
       href: `/jobs/${issue.jobId}#issue-${issueId}`,
+      email: true,
     });
   } else {
-    await notifyAdmins({ title: `${user.name} replied: ${issue.subject}`, body: `${issue.job.title}: ${body.slice(0, 300)}`, href: `/admin/issues/${issueId}` });
+    await notifyAdmins({ title: `${user.name} replied: ${issue.subject}`, body: `${issue.job.title}: ${body}`, href: `/admin/issues/${issueId}`, email: true });
   }
   revalidateIssue(issue.jobId, issueId);
   return { ok: resolve ? "Reply sent and issue resolved." : "Reply sent." };
@@ -963,6 +1052,7 @@ export async function setIssueStatus(formData: FormData): Promise<FormState> {
     title: `${status === "RESOLVED" ? "Resolved" : "Reopened"}: ${issue.subject}`,
     body: status === "RESOLVED" ? "An admin marked your issue as resolved." : "An admin reopened your issue.",
     href: `/jobs/${issue.jobId}#issue-${issueId}`,
+    email: true,
   });
   revalidateIssue(issue.jobId, issueId);
   return { ok: status === "RESOLVED" ? "Marked resolved." : "Issue reopened." };

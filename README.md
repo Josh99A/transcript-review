@@ -63,3 +63,27 @@ changes replaces the transcript there. To set it up:
    signing in with the Google account whose Drive should receive the files.
 
 The folder can be renamed or moved anywhere in that Drive. The app only has access to files it made.
+
+## Email notifications
+
+Besides the bell in the app, the important notices are also emailed through [Resend](https://resend.com):
+
+- **Transcribers:** a job assigned or a request approved (with the job's language, length, pay and
+  deadline), a request declined or the job going to someone else, changes needed with the admin's
+  notes (and edits to them), approval with the pay, payments received with the amount and where it
+  was sent, a job taken off them, transferred or cancelled, new instructions or guidelines, a replaced
+  transcript, and admin replies to their issues.
+- **Admins:** job requests (who asked, their email, languages and jobs in progress, the job's details
+  and how many others asked), submissions and resubmissions ready to review, a transcriber leaving a
+  job, issues raised and replies, and a job that couldn't be copied to Google Drive.
+- **Referrers:** referral pay earned when someone they referred has a transcript approved.
+- **New accounts:** a welcome email with a sign-in link (the password is never emailed).
+
+To turn it on:
+
+1. In Resend, add and verify your domain (Domains), then create an API key (API Keys) with sending access.
+2. On Render, add `RESEND_API_KEY` and `EMAIL_FROM` (e.g. `Transcript Review <notifications@your-domain.com>`)
+   to the web service's Environment, and let it redeploy.
+
+Without `RESEND_API_KEY` nothing is emailed. Until a domain is verified, leave `EMAIL_FROM` empty to send
+from `onboarding@resend.dev`; Resend then only delivers to the email address of your own Resend account.
