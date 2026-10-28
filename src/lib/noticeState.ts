@@ -28,6 +28,7 @@ export function isOutdated(kind: string | null, job: JobNow, hadJob: boolean, re
       return !(job.status === "ASSIGNED" && job.reviewNote && job.assigneeId === recipientId);
     case "assigned":
       return job.assigneeId !== recipientId;
+    // Left from when transcribers asked for jobs and an admin picked who got each one.
     case "requested":
       return job.status !== "UNASSIGNED";
     default:

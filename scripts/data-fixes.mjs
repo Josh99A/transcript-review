@@ -23,6 +23,49 @@ const FIXES = [
       return `re-priced ${old.length}: ` + old.map((e) => `${e.job.title.slice(0, 20)} was ${e.amount}`).join("; ");
     },
   },
+  {
+    // Jobs now go to the first transcriber who takes them, with no admin approval. Requests still waiting
+    // when that changed are settled the same way: the earliest one gets the job and the rest are told.
+    key: "fix:2026-10-28-first-come-requests",
+    async run(tx) {
+      const jobs = await tx.job.findMany({
+        where: { status: "UNASSIGNED", requests: { some: { status: "PENDING" } } },
+        include: { requests: { where: { status: "PENDING" }, include: { user: { select: { name: true, role: true } } }, orderBy: { createdAt: "asc" } } },
+      });
+      const admins = await tx.user.findMany({ where: { role: "ADMIN" }, select: { id: true } });
+      const done = [];
+      for (const job of jobs) {
+        const first = job.posted ? job.requests.find((r) => r.user.role === "USER") : undefined;
+        const others = job.requests.filter((r) => r !== first);
+        if (first) {
+          await tx.job.update({
+            where: { id: job.id },
+            data: { assigneeId: first.userId, status: "ASSIGNED", assignedAt: new Date(), posted: false, reviewNote: null, reviewedAt: null, revisions: 0 },
+          });
+          await tx.jobRequest.update({ where: { id: first.id }, data: { status: "APPROVED" } });
+          await tx.notification.createMany({
+            data: [
+              { userId: first.userId, title: `You got ${job.title}`, body: "You asked for it first. It's now in My jobs.", href: `/jobs/${job.id}`, jobId: job.id, kind: "assigned" },
+              ...admins.map((a) => ({ userId: a.id, title: `${first.user.name} got ${job.title}`, body: "Their request was the earliest when jobs became first come, first served.", href: `/admin/jobs/${job.id}`, jobId: job.id })),
+            ],
+          });
+        }
+        if (others.length) {
+          await tx.jobRequest.updateMany({ where: { id: { in: others.map((r) => r.id) } }, data: { status: "DECLINED" } });
+          await tx.notification.createMany({
+            data: others.map((r) => ({
+              userId: r.userId,
+              title: first ? `${job.title} went to someone else` : `Your request for ${job.title} was closed`,
+              body: first ? "Someone asked for it before you. Check Find work for other jobs." : "Jobs on Find work are now first come, first served. Take one there.",
+              href: "/board",
+            })),
+          });
+        }
+        done.push(`${job.title.slice(0, 20)} -> ${first ? first.user.name : "nobody"} (${others.length} closed)`);
+      }
+      return `settled ${jobs.length}: ` + done.join("; ");
+    },
+  },
 ];
 
 const db = new PrismaClient();

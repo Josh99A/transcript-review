@@ -1,6 +1,6 @@
 import ReplaceTranscript from "./ReplaceTranscript";
 import { cleanDoc } from "@/lib/richDoc";
-import { ArrowLeft, ArrowRightLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, UserMinus, X } from "lucide-react";
+import { ArrowLeft, ArrowRightLeft, Check, CircleCheck, Download, FileX2, Megaphone, MessageSquareWarning, Trash2, Undo2, UserMinus } from "lucide-react";
 import RichText from "@/components/RichText";
 import ClampedText from "@/components/ClampedText";
 import RichTextEditor from "@/components/RichTextEditor";
@@ -13,7 +13,7 @@ import { richHtml } from "@/lib/richtext";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { approveJob, exportJobToDrive, approveRequest, assignJob, transferJob, declineRequest, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, unassignJob, updateReviewNote, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
+import { approveJob, exportJobToDrive, assignJob, transferJob, deleteJob, removeEarning, removeJobMedia, reopenJob, setPosted, unassignJob, updateReviewNote, updateDuration, updateGuidelines, updateJobDetails } from "@/app/actions";
 import { IssueStatus } from "@/components/IssueThread";
 import { ActionForm, ConfirmAction } from "@/components/client";
 import MediaPlayer from "@/components/MediaPlayer";
@@ -67,7 +67,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
       include: {
         assignee: true,
         earnings: { include: { user: { select: { name: true } } } },
-        requests: { include: { user: { select: { name: true, email: true, languages: true } } }, orderBy: { createdAt: "asc" } },
+        requests: { select: { userId: true, status: true } },
         issues: { include: { user: { select: { name: true } }, _count: { select: { messages: true } } }, orderBy: { updatedAt: "desc" } },
       },
     }),
@@ -95,7 +95,8 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
       list.map((u) => <option key={u.id} value={u.id}>{label(u)}</option>)
     );
   const due = job.deadline ? formatDeadline(job.deadline) : null;
-  const pending = job.requests.filter((r) => r.status === "PENDING");
+  // Whoever took it from Find work has the one approved request.
+  const tookIt = job.assignee && job.requests.some((r) => r.userId === job.assigneeId && r.status === "APPROVED");
 
   return (
     <>
@@ -237,36 +238,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   <input type="hidden" name="posted" value={job.posted ? "false" : "true"} />
                   <button className="btn-secondary w-full">{job.posted ? "Take off the job board" : "Post on the job board"}</button>
                 </ActionForm>
-                {job.requests.length === 0 ? (
-                  <p className="text-sm text-slate-500">{job.posted ? "No requests yet. Transcribers see it under Find work." : "Post it so transcribers can request it."}</p>
-                ) : (
-                  <div>
-                    <h3 className="mb-2 text-sm font-medium text-slate-700">Requests ({pending.length} waiting)</h3>
-                    <ul className="divide-y divide-slate-100">
-                      {job.requests.map((r) => (
-                        <li key={r.id} className="space-y-2 py-3">
-                          <div className="flex items-center gap-2">
-                            <div className="min-w-0 flex-1"><UserCell name={r.user.name} sub={`Asked ${formatRelative(r.createdAt)} · ${r.user.languages.length ? r.user.languages.join(", ") : "no languages listed"}${speaks(r.user.languages, job.language) ? "" : job.language && r.user.languages.length ? ` (not ${job.language})` : ""}`} /></div>
-                            {r.status === "DECLINED" && <span className="text-xs text-slate-400">Declined</span>}
-                          </div>
-                          {r.note && <p className="rounded-lg bg-slate-50 px-3 py-2 text-sm text-slate-700">“{r.note}”</p>}
-                          {r.status === "PENDING" && (
-                            <div className="flex gap-2">
-                              <ActionForm action={approveRequest} className="flex-1" confirm={{ title: `Give this job to ${r.user.name}?`, description: "Everyone else who asked for it is declined and told.", label: "Give it to them" }}>
-                                <input type="hidden" name="requestId" value={r.id} />
-                                <button className="btn w-full"><Check className="size-4" /> Give it to {r.user.name.split(" ")[0]}</button>
-                              </ActionForm>
-                              <ActionForm action={declineRequest} confirm={{ title: `Decline ${r.user.name}'s request?`, description: "They're told it wasn't approved. They can ask again while the job is on the board.", label: "Decline", danger: true }}>
-                                <input type="hidden" name="requestId" value={r.id} />
-                                <button className="btn-secondary" aria-label={`Decline ${r.user.name}`}><X className="size-4" /> Decline</button>
-                              </ActionForm>
-                            </div>
-                          )}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
+                <p className="text-sm text-slate-500">{job.posted ? "Transcribers see it under Find work. The first one to take it gets it, and you're told who." : "Post it so a transcriber can take it. The first one to take it gets it."}</p>
               </div>
             </section>
           )}
@@ -274,7 +246,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
           <section className="card">
             <div className="card-header"><h2 className="card-title">Assignment</h2></div>
             <div className="card-body space-y-4">
-              {job.assignee && <UserCell name={job.assignee.name} sub={job.assignee.email} />}
+              {job.assignee && <UserCell name={job.assignee.name} sub={tookIt && job.assignedAt ? `${job.assignee.email} · took it from Find work ${formatRelative(job.assignedAt)}` : job.assignee.email} />}
               {job.status === "SUBMITTED" ? null : (
                 <ActionForm action={assignJob} className="space-y-2" confirm={{ title: job.assignee ? "Change who has this job?" : "Assign this job?", description: job.assignee ? `${job.assignee.name} loses access to it and is told. Their draft stays on the job for the next person${job.earnings.some((e) => e.userId === job.assigneeId) ? ", and the pay credited to them for it is removed" : ""}.` : "The person you picked is told and can start right away.", label: "Save assignment" }}>
                   <input type="hidden" name="jobId" value={job.id} />

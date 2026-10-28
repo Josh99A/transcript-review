@@ -318,7 +318,6 @@ export async function assignJob(formData: FormData): Promise<FormState> {
   await settleNotices(jobId);
   await notify(declined, { title: `${job.title} went to someone else`, body: "Thanks for asking. Check Find work for other jobs.", href: "/board", email: true });
   revalidatePath("/admin");
-  revalidatePath("/admin/requests");
   revalidatePath("/board");
   revalidatePath("/jobs");
   revalidatePath(`/admin/jobs/${jobId}`);
@@ -432,47 +431,6 @@ export async function setPosted(formData: FormData): Promise<FormState> {
   revalidatePath("/admin");
   revalidatePath("/board");
   return { ok: posted ? "Posted on the job board." : "Taken off the job board." };
-}
-
-export async function approveRequest(formData: FormData): Promise<FormState> {
-  await requireAdmin();
-  const requestId = String(formData.get("requestId"));
-  const res = await guarded(async (tx) => {
-    const request = (await tx.jobRequest.findUnique({ where: { id: requestId }, include: { user: true } })) ?? refuse("This request was withdrawn.");
-    const job = (await lockJob(tx, request.jobId)) ?? refuse("This job no longer exists.");
-    if (job.status !== "UNASSIGNED") refuse("This job has already been assigned.");
-    const fresh = await tx.jobRequest.findUnique({ where: { id: requestId } });
-    if (fresh?.status !== "PENDING") refuse(fresh ? "This request was already answered." : "This request was withdrawn.");
-    await tx.job.update({
-      where: { id: job.id },
-      data: { assigneeId: request.userId, status: "ASSIGNED", assignedAt: new Date(), posted: false, reviewNote: null, reviewedAt: null, revisions: 0 },
-    });
-    const declined = await settleRequests(tx, job.id, request.userId);
-    return { request, job, declined };
-  });
-  if (failed(res)) return res;
-  const { request, job, declined } = res;
-  await notify([request.userId], { title: `Your request was approved: ${job.title}`, body: "It's now in My jobs.", href: `/jobs/${job.id}`, jobId: job.id, kind: "assigned", email: true, details: jobFacts(job) });
-  await settleNotices(job.id);
-  await notify(declined, { title: `${job.title} went to someone else`, body: "Thanks for asking. Check Find work for other jobs.", href: "/board", email: true });
-  revalidatePath(`/admin/jobs/${job.id}`);
-  revalidatePath("/admin");
-  revalidatePath("/board");
-  revalidatePath("/admin/requests");
-  return { ok: `Assigned to ${request.user.name}.` };
-}
-
-export async function declineRequest(formData: FormData): Promise<FormState> {
-  await requireAdmin();
-  const requestId = String(formData.get("requestId"));
-  const { count } = await db.jobRequest.updateMany({ where: { id: requestId, status: "PENDING" }, data: { status: "DECLINED" } });
-  if (!count) return { error: "This request was already answered or withdrawn." };
-  const request = await db.jobRequest.findUniqueOrThrow({ where: { id: requestId }, include: { job: { select: { title: true } } } });
-  await notify([request.userId], { title: `Your request wasn't approved: ${request.job.title}`, body: "Check Find work for other jobs.", href: "/board", jobId: request.jobId, email: true });
-  revalidatePath(`/admin/jobs/${request.jobId}`);
-  revalidatePath("/admin");
-  revalidatePath("/admin/requests");
-  return { ok: "Request declined." };
 }
 
 /** Send a submitted job back to its assignee with instructions for what to change. Pay already credited stays. */
@@ -731,60 +689,56 @@ export async function recordPayout(formData: FormData): Promise<FormState> {
 
 // ---------- Transcriber ----------
 
-/** A transcriber asks to take a job from the board. */
-export async function requestJob(formData: FormData): Promise<FormState> {
+/**
+ * A transcriber takes a job from the board. First come, first served: the job row is locked, so when two
+ * people press at once the second finds it already taken.
+ */
+export async function claimJob(formData: FormData): Promise<FormState> {
   const user = await requireRole("USER");
   const jobId = String(formData.get("jobId"));
-  const note = String(formData.get("note") ?? "").trim().slice(0, 500) || null;
   const res = await guarded(async (tx) => {
-    // Locked so an assignment can't land between the check and the request.
     const job = await lockJob(tx, jobId);
-    if (!job || !job.posted || job.status !== "UNASSIGNED") refuse("This job is no longer available.");
-    const existing = await tx.jobRequest.findUnique({ where: { jobId_userId: { jobId, userId: user.id } } });
-    if (existing?.status === "PENDING") refuse("You've already asked for this job.");
+    if (!job || !job.posted || job.status !== "UNASSIGNED") refuse("Someone else already took this job.");
+    const claimed = await tx.job.update({
+      where: { id: jobId },
+      data: { assigneeId: user.id, status: "ASSIGNED", assignedAt: new Date(), posted: false, reviewNote: null, reviewedAt: null, revisions: 0 },
+    });
+    // Kept as the record of who took it, and so requests left from before go to the others.
     await tx.jobRequest.upsert({
       where: { jobId_userId: { jobId, userId: user.id } },
-      create: { jobId, userId: user.id, note },
-      update: { note, status: "PENDING" },
+      create: { jobId, userId: user.id, status: "APPROVED" },
+      update: { status: "APPROVED" },
     });
-    return job!;
+    const declined = await settleRequests(tx, jobId, user.id);
+    return { job: claimed, declined };
   });
-  if (failed(res)) return res;
-  const [asking, others] = await Promise.all([
-    db.user.findUnique({ where: { id: user.id }, select: { email: true, languages: true, _count: { select: { jobs: { where: { status: "ASSIGNED" } } } } } }),
-    db.jobRequest.count({ where: { jobId, status: "PENDING", userId: { not: user.id } } }),
-  ]);
+  if (failed(res)) {
+    // Refresh the board so the job that was just taken disappears from it.
+    revalidatePath("/board");
+    return res;
+  }
+  const { job, declined } = res;
+  const inProgress = await db.job.count({ where: { assigneeId: user.id, status: "ASSIGNED" } });
   await notifyAdmins({
-    title: `${user.name} requested ${res.title}`,
-    body: note,
-    href: "/admin/requests",
+    title: `${user.name} took ${job.title}`,
+    body: "It went to them straight from Find work. You can unassign or move it from the job page.",
+    href: `/admin/jobs/${jobId}`,
     jobId,
-    kind: "requested",
     email: true,
     details: [
-      ["Requested by", `${user.name} (${asking?.email ?? ""})`],
-      ["Their languages", asking?.languages.join(", ")],
-      ["Jobs in progress", asking?._count.jobs],
-      ...jobFacts(res),
-      ["Other requests", others ? `${others} other ${others === 1 ? "person has" : "people have"} asked for this job` : "None yet"],
+      ["Taken by", `${user.name} (${user.email})`],
+      ["Their languages", user.languages.join(", ")],
+      ["Jobs in progress", inProgress],
+      ...jobFacts(job),
     ],
   });
+  await notify(declined, { title: `${job.title} went to someone else`, body: "Another transcriber took it first. Check Find work for other jobs.", href: "/board", email: true });
+  await settleNotices(jobId);
   revalidatePath("/board");
-  revalidatePath("/admin/requests");
+  revalidatePath("/jobs");
   revalidatePath("/admin");
   revalidatePath(`/admin/jobs/${jobId}`);
-  return { ok: "Request sent. You'll find the job in My jobs once an admin approves it." };
-}
-
-export async function cancelRequest(formData: FormData): Promise<FormState> {
-  const user = await requireRole("USER");
-  const jobId = String(formData.get("jobId"));
-  await db.jobRequest.deleteMany({ where: { jobId, userId: user.id, status: "PENDING" } });
-  revalidatePath("/board");
-  revalidatePath("/admin/requests");
-  revalidatePath("/admin");
-  revalidatePath(`/admin/jobs/${jobId}`);
-  return { ok: "Request withdrawn." };
+  return { ok: "It's yours. You'll find it in My jobs." };
 }
 
 /** Formatted transcripts are cleaned before they are stored; plain ones are kept as typed. */
@@ -924,7 +878,6 @@ async function releaseJob(tx: Prisma.TransactionClient, job: { id: string; assig
 function revalidateRelease(jobId: string) {
   revalidatePath("/admin");
   revalidatePath("/admin/reviews");
-  revalidatePath("/admin/requests");
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/board");
   revalidatePath("/jobs");

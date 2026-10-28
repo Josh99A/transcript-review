@@ -28,7 +28,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
   const user = await requireRole("USER");
   const { submitted, sort: sortParam } = await searchParams;
   const sort = await pickSort("my-jobs", sortParam, MINE_SORTS, "assigned_new");
-  const [jobs, balance, expected, payDate, openJobs, requests] = await Promise.all([
+  const [jobs, balance, expected, payDate, openJobs] = await Promise.all([
     db.job.findMany({
       where: { assigneeId: user.id },
       include: { earnings: { where: { userId: user.id } } },
@@ -37,11 +37,6 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
     expectedFor(user.id),
     getNextPayDate(),
     db.job.count({ where: { posted: true, status: "UNASSIGNED" } }),
-    db.jobRequest.findMany({
-      where: { userId: user.id, status: "PENDING", job: { status: "UNASSIGNED" } },
-      include: { job: true },
-      orderBy: { createdAt: "desc" },
-    }),
   ]);
   sortJobs(jobs, sort);
   const open = jobs.filter((j) => j.status === "ASSIGNED");
@@ -59,7 +54,6 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
     { id: "changes", label: "Needs changes", count: changes.length, tone: "bg-red-50 text-red-800 ring-red-600/20" },
     { id: "in-progress", label: "In progress", count: inProgress.length, tone: "bg-amber-50 text-amber-800 ring-amber-600/20" },
     { id: "assigned", label: "Assigned", count: notStarted.length, tone: "bg-brand-50 text-brand-700 ring-brand-600/20" },
-    { id: "requested", label: "Requested", count: requests.length, tone: "bg-slate-50 text-slate-700 ring-slate-500/20" },
     { id: "awaiting", label: "Awaiting review", count: awaiting.length, tone: "bg-sky-50 text-sky-800 ring-sky-600/20" },
     { id: "completed", label: "Completed", count: completed.length, tone: "bg-emerald-50 text-emerald-800 ring-emerald-600/20" },
   ];
@@ -94,7 +88,7 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
           <EmptyState
             icon={CircleCheck}
             title="You're all caught up"
-            description={openJobs ? `There ${openJobs === 1 ? "is 1 open job" : `are ${openJobs} open jobs`} you can request.` : "New jobs show up here when an admin assigns one to you or approves your request."}
+            description={openJobs ? `There ${openJobs === 1 ? "is 1 open job" : `are ${openJobs} open jobs`} you can take.` : "New jobs show up here when an admin assigns one to you or you take one from Find work."}
             action={openJobs ? <Link href="/board" className="btn">Find work</Link> : undefined}
           />
         </div>
@@ -104,26 +98,12 @@ export default async function MyJobsPage({ searchParams }: { searchParams: Promi
       <JobGroup id="in-progress" title="In progress" jobs={inProgress} action="Continue" />
       <JobGroup id="assigned" title="Assigned, not started" jobs={notStarted} action="Start" />
 
-      {requests.length > 0 && (
-        <Group id="requested" title="Requested" hint="Waiting for an admin to pick who gets each job.">
-          <ul className="card divide-y divide-slate-100">
-            {requests.map((r) => (
-              <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-3 sm:px-6">
-                <span className="min-w-0"><span className="title-clamp font-medium text-slate-900" title={r.job.title}>{r.job.title}</span><JobTags job={r.job} className="mt-1 flex" /></span>
-                <span className="num text-sm text-slate-500">{formatDuration(r.job.durationSeconds)} · {jobPayLabel(r.job)} · asked {formatRelative(r.createdAt)}</span>
-              </li>
-            ))}
-          </ul>
-          <Link href="/board" className="mt-2 inline-block text-sm font-medium text-brand-600 hover:text-brand-700">Manage requests on Find work</Link>
-        </Group>
-      )}
-
       <DoneGroup id="awaiting" title="Submitted, awaiting review" hint="Waiting for an admin to check. Open one to see what you sent." jobs={awaiting} />
       <DoneGroup id="completed" title="Completed" hint="Approved by an admin. Open one to see what you sent." jobs={completed} />
 
       {openJobs > 0 && open.length > 0 && (
         <p className="mt-8 text-sm text-slate-500">
-          <Link href="/board" className="font-medium text-brand-600 hover:text-brand-700">{openJobs} open job{openJobs === 1 ? "" : "s"} to request</Link> on Find work.
+          <Link href="/board" className="font-medium text-brand-600 hover:text-brand-700">{openJobs} open job{openJobs === 1 ? "" : "s"} to take</Link> on Find work.
         </p>
       )}
     </>

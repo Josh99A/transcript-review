@@ -15,7 +15,7 @@ import ClampedText from "@/components/ClampedText";
 import { languageOptions } from "@/lib/settings";
 import { db } from "@/lib/db";
 import { formatDeadline, formatDuration, formatRelative, formatUGX } from "@/lib/format";
-import RequestButton from "./RequestButton";
+import TakeButton from "./TakeButton";
 import { jobPayLabel } from "@/lib/pay";
 
 export const metadata: Metadata = { title: "Find work" };
@@ -55,7 +55,6 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
       ...(project ? { project } : {}),
       ...(rate === "usual" ? { ratePerHour: null, fixedPay: null } : rate === "custom" ? { OR: [{ ratePerHour: { not: null } }, { fixedPay: { not: null } }] } : {}),
     },
-    include: { requests: { where: { userId: user.id } } },
   });
   sortJobs(jobs, sort);
   const count = (s: string) => counts.find((c) => c.status === s)?._count ?? 0;
@@ -74,11 +73,11 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
 
   return (
     <>
-      <PageHeader title="Find work" description="Jobs waiting for a transcriber. Request the ones you'd like and an admin will pick who gets each one." />
+      <PageHeader title="Find work" description="Jobs waiting for a transcriber. The first person to take a job gets it." />
       <div className="mb-4">
         <StatList
           stats={[
-            { icon: Inbox, label: "Posted", value: posted, tone: "brand", hint: "Open to request now" },
+            { icon: Inbox, label: "Posted", value: posted, tone: "brand", hint: "Open to take now" },
             { icon: CircleCheck, label: "Assigned", value: inProgress + done, tone: "emerald", hint: `${done} finished` },
             { icon: Hourglass, label: "In progress", value: inProgress, tone: "amber", hint: mine > 0 ? <Link href="/jobs" className="font-medium text-brand-600 hover:text-brand-700">{mine} of them yours</Link> : "None of them yours" },
           ]}
@@ -121,7 +120,7 @@ export default async function BoardPage({ searchParams }: { searchParams: Promis
                 </dl>
                 {j.description && <ClampedText html={j.description} lines={3} className="mt-3 text-sm text-slate-700" />}
                 <div className="mt-auto pt-4">
-                  <RequestButton jobId={j.id} title={j.title} status={j.requests[0]?.status ?? null} />
+                  <TakeButton jobId={j.id} title={j.title} />
                 </div>
               </li>
             );
