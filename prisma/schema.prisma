@@ -89,6 +89,13 @@ model Job {
   reviewedAt            DateTime?
   approvedAt            DateTime?
   revisions             Int            @default(0)
+  // Copy in the admins' Google Drive, made when the job is approved: the job's folder there and the two files in it.
+  driveFolderId         String?
+  driveMediaId          String?
+  driveTranscriptId     String?
+  driveExportedAt       DateTime?
+  // Why the last copy to Drive failed, cleared once it works.
+  driveExportError      String?
   earnings              Earning[]
   issues                Issue[]
   notifications         Notification[]

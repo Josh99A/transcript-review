@@ -43,3 +43,23 @@ created automatically. Render is the only host the app is set up for, and it dep
 
 Render deletes a free Postgres database 30 days after it is created unless it is upgraded, and a
 free web service sleeps after 15 minutes without visitors, so the next visit takes about a minute.
+
+## Copying approved jobs to Google Drive
+
+When an admin approves a job, the app can copy its recording and final transcript (as Word) into a
+folder called "Transcript exports" in a Google Drive, one folder per job. Approving it again after
+changes replaces the transcript there. To set it up:
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project and enable the
+   **Google Drive API** (APIs & Services > Library).
+2. APIs & Services > OAuth consent screen: choose **External**, fill in the app name and your email,
+   add the scope `.../auth/drive.file`, then **Publish app** so it is "In production". (In "Testing",
+   Google ends the connection after 7 days.)
+3. APIs & Services > Credentials > Create credentials > OAuth client ID > **Web application**. Under
+   Authorised redirect URIs add `https://<your app>.onrender.com/api/drive-export/callback`.
+4. On Render, add `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` from that client to the web service's
+   Environment, and let it redeploy.
+5. In the app, open the admin dashboard and click **Connect Google Drive** on the Google Drive card,
+   signing in with the Google account whose Drive should receive the files.
+
+The folder can be renamed or moved anywhere in that Drive. The app only has access to files it made.

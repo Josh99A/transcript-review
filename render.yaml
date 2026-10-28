@@ -29,6 +29,11 @@ services:
         sync: false
       - key: ADMIN_NAME
         sync: false
+      # Optional: copy approved jobs to Google Drive (see .env.example), then connect Drive from the dashboard.
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
 
 databases:
   - name: transcript-review-db
