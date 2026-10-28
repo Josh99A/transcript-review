@@ -10,6 +10,8 @@ import PayDayCard from "@/components/PayDayCard";
 import StatusBadge, { jobBadge } from "@/components/StatusBadge";
 import StorageCard from "@/components/StorageCard";
 import DriveCard from "@/components/DriveCard";
+import EmailCard from "@/components/EmailCard";
+import { emailConfigured, emailSender } from "@/lib/email";
 import { driveExportStatus, waitingForDrive } from "@/lib/driveExport";
 import { Avatar, EmptyState, PageHeader, StatList, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
@@ -232,6 +234,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
         <PayDayCard payDate={payDate} totalOwed={totalOwed} peopleOwed={peopleOwed} />
         <StorageCard usedBytes={usedBytes} removableBytes={removable.reduce((s, j) => s + j.bytes, 0)} removableCount={removable.length} />
         <DriveCard status={drive} waiting={notInDrive.length} failed={notInDrive.filter((j) => j.driveExportError).length} error={driveError} />
+        <EmailCard configured={emailConfigured()} sender={emailSender()} />
         <section className="card h-fit">
           <div className="card-header">
             <h2 className="card-title">Owed to team</h2>

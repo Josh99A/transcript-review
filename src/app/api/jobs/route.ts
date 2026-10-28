@@ -9,6 +9,7 @@ import { parsePricing } from "@/lib/pay";
 import { docText, type TranscriptFormat } from "@/lib/docText";
 import { driveTranscript, openDriveFile } from "@/lib/drive";
 import { readTranscriptFile } from "@/lib/transcriptUpload";
+import { announceJob } from "@/lib/newJobAlerts";
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -99,6 +100,7 @@ export async function POST(req: Request) {
   if (uploaded) {
     // The file stays stored if this fails, so the form can try again without sending it a second time.
     const job = await createJob(uploaded, uploadedType!);
+    if (job.posted) announceJob(job.id);
     return NextResponse.json({ id: job.id });
   }
 
@@ -146,6 +148,7 @@ export async function POST(req: Request) {
       send({ copied: stored.bytes, total: stored.bytes, saved: true });
       try {
         const job = await createJob(stored, file.type);
+        if (job.posted) announceJob(job.id);
         send({ id: job.id });
       } catch (err) {
         console.error("Job create failed", err);

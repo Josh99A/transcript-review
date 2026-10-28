@@ -15,7 +15,8 @@ import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatDuration, formatPayDate, formatUGX, parseDeadline } from "@/lib/format";
 import { notify, notifyAdmins, settleNotices } from "@/lib/notify";
-import { type Detail, sendEmailsLater } from "@/lib/email";
+import { type Detail, emailConfigured, emailSender, sendEmails, sendEmailsLater } from "@/lib/email";
+import { announceJob } from "@/lib/newJobAlerts";
 import { creditAmount, earningsFor, hasOwnPay, parsePricing, RATE_PER_HOUR_UGX, referralPayFor } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { cleanLanguages } from "@/lib/jobFields";
@@ -428,6 +429,7 @@ export async function setPosted(formData: FormData): Promise<FormState> {
   // Only an unassigned job can be on the board; the condition is checked in the same statement as the change.
   const { count } = await db.job.updateMany({ where: { id: jobId, ...(posted ? { status: "UNASSIGNED" } : {}) }, data: { posted } });
   if (!count) return { error: "Only unassigned jobs can go on the job board." };
+  if (posted) announceJob(jobId);
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
   revalidatePath("/board");
@@ -698,6 +700,23 @@ export async function disconnectGoogleDrive(): Promise<FormState> {
   return { ok: "Google Drive disconnected. Files already copied stay in Drive." };
 }
 
+/** Emails the admin who asks, to check that email notifications are set up. */
+export async function sendTestEmail(): Promise<FormState> {
+  const admin = await requireAdmin();
+  if (!emailConfigured()) return { error: "Emails are off. Add RESEND_API_KEY to the app's settings on Render." };
+  const error = await sendEmails([
+    {
+      to: admin.email,
+      name: admin.name,
+      subject: "Test email from Transcript Review",
+      body: "Email notifications are working. Transcribers and admins will get emails like this one for the things that need their attention.",
+      details: [["Sent from", emailSender()]],
+      href: "/admin",
+    },
+  ]);
+  return error ? { error } : { ok: `Sent to ${admin.email}. Check your inbox (and spam folder).` };
+}
+
 // ---------- Admin: payouts ----------
 
 export async function recordPayout(formData: FormData): Promise<FormState> {
@@ -945,6 +964,7 @@ export async function leaveJob(formData: FormData): Promise<FormState> {
     return job!;
   });
   if (failed(res)) return res;
+  announceJob(jobId, user.id);
   await notifyAdmins({ title: `${user.name} left ${res.title}`, body: `${reason || "No reason given."} It's back on Find work.`, href: `/admin/jobs/${jobId}`, jobId, email: true, details: jobFacts(res) });
   await settleNotices(jobId);
   revalidateRelease(jobId);
@@ -965,6 +985,7 @@ export async function unassignJob(formData: FormData): Promise<FormState> {
     return job;
   });
   if (failed(res)) return res;
+  announceJob(jobId, res.assigneeId);
   await notify([res.assigneeId!], {
     title: `${res.title} was taken off your list`,
     body: reason || "An admin unassigned this job. You don't need to work on it any more.",

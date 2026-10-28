@@ -78,6 +78,9 @@ Besides the bell in the app, the important notices are also emailed through [Res
   job, issues raised and replies, and a job that couldn't be copied to Google Drive.
 - **Referrers:** referral pay earned when someone they referred has a transcript approved.
 - **New accounts:** a welcome email with a sign-in link (the password is never emailed).
+- **New jobs:** transcribers hear about jobs that go up on Find work in a language they listed (or
+  any job, if they listed none). Jobs posted within a few minutes of each other, like a batch of
+  uploads, come as one email per person.
 
 To turn it on:
 
@@ -85,5 +88,6 @@ To turn it on:
 2. On Render, add `RESEND_API_KEY` and `EMAIL_FROM` (e.g. `Transcript Review <notifications@your-domain.com>`)
    to the web service's Environment, and let it redeploy.
 
-Without `RESEND_API_KEY` nothing is emailed. Until a domain is verified, leave `EMAIL_FROM` empty to send
+The admin dashboard's **Email notifications** card shows the sender and has a **Send me a test email**
+button that reports any error from Resend. Without `RESEND_API_KEY` nothing is emailed. Until a domain is verified, leave `EMAIL_FROM` empty to send
 from `onboarding@resend.dev`; Resend then only delivers to the email address of your own Resend account.
