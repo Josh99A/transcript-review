@@ -88,5 +88,6 @@ To turn it on:
    to the web service's Environment, and let it redeploy.
 
 The admin dashboard's **Email notifications** card shows the sender and has a **Send me a test email**
-button that reports any error from Resend. Without `RESEND_API_KEY` nothing is emailed. Until a domain is verified, leave `EMAIL_FROM` empty to send
+button that reports any error from Resend. Without `RESEND_API_KEY` nothing is emailed. Accounts with "test" in their name or
+email only get in-app notices, never emails. Until a domain is verified, leave `EMAIL_FROM` empty to send
 from `onboarding@resend.dev`; Resend then only delivers to the email address of your own Resend account.
