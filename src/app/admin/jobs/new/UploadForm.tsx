@@ -4,7 +4,7 @@ import RichTextEditor from "@/components/RichTextEditor";
 import { LanguageField, ProjectField } from "@/components/JobFields";
 import { CloudUpload, FileAudio, FileText, FileVideo, Link2, Pencil, TriangleAlert, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Spinner } from "@/components/client";
 import { formatDuration, formatUGX } from "@/lib/format";
@@ -111,6 +111,41 @@ function formatBytes(n: number) {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
+/** Where an upload has got to: the browser sending the form, then the server copying the recording into storage. */
+type Progress = { stage: "send" | "store"; loaded: number; total: number | null; saved?: boolean };
+
+function UploadProgress({ progress, fromDrive }: { progress: Progress; fromDrive: boolean }) {
+  const { stage, loaded, total, saved } = progress;
+  // Hold at 99% until the server says the file is safely stored, since the last piece is still on its way.
+  const pct = total ? (saved ? 100 : Math.min(99, Math.floor((loaded / total) * 100))) : null;
+  const label =
+    stage === "send"
+      ? pct === 99 || pct === 100 ? "Checking the files…" : fromDrive ? "Starting…" : "Uploading"
+      : saved || (total && loaded >= total) ? "Finishing up…" : fromDrive ? "Copying from Google Drive" : "Saving to storage";
+  // Drive media skips the browser step, so it's a single step.
+  const step = fromDrive ? null : stage === "send" ? "Step 1 of 2" : "Step 2 of 2";
+  const showPct = pct !== null && !(stage === "send" && (fromDrive || pct >= 99));
+  return (
+    <div className="mb-3" role="status" aria-live="polite">
+      <div className="mb-1 flex items-baseline justify-between gap-2 text-xs text-slate-500">
+        <span className="min-w-0 truncate">{step && <span className="text-slate-400">{step} · </span>}<span className="font-medium text-slate-700">{label}</span></span>
+        {showPct && <span className="num shrink-0 text-sm font-semibold text-slate-900">{pct}%</span>}
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={showPct ? pct! : undefined} aria-label={label}>
+        {showPct ? (
+          <div className="h-full rounded-full bg-brand-600 transition-[width] duration-300" style={{ width: `${pct}%` }} />
+        ) : (
+          <div className="h-full w-1/3 animate-pulse rounded-full bg-brand-400" />
+        )}
+      </div>
+      <p className="num mt-1 text-xs text-slate-500">
+        {!(stage === "send" && fromDrive) && (total ? `${formatBytes(Math.min(loaded, total))} of ${formatBytes(total)}` : loaded > 0 ? `${formatBytes(loaded)} so far` : "")}
+        {!(stage === "send" && fromDrive) && (total || loaded > 0) && " · "}Keep this page open.
+      </p>
+    </div>
+  );
+}
+
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
     <section className="card">
@@ -146,13 +181,21 @@ export default function UploadForm({ users, projects, languages }: { users: { id
   const [ratePerHour, setRatePerHour] = useState("");
   const [fixedPay, setFixedPay] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<number | null>(null);
+  const [progress, setProgress] = useState<Progress | null>(null);
 
   const effectiveDuration = manual ? Number(minutes || 0) * 60 + Number(seconds || 0) : (duration ?? 0);
   const hasTranscript = mode === "file" ? !!transcriptFile : mode === "drive" ? !!driveTranscript : !!pasted.trim();
   const picked = media ? { name: media.name, size: media.size as number | null, type: mediaTypeOf(media.name, media.type) } : driveMedia;
   const ready = !!picked && effectiveDuration > 0 && !!title.trim() && !!language && hasTranscript;
   const busy = progress !== null;
+
+  // Leaving mid-upload throws the upload away, so ask first.
+  useEffect(() => {
+    if (!busy) return;
+    const warn = (e: BeforeUnloadEvent) => e.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [busy]);
 
   async function pickMedia(file: File | undefined) {
     setError(null);
@@ -214,21 +257,46 @@ export default function UploadForm({ users, projects, languages }: { users: { id
     if (mode === "file" && transcriptFile) data.set("transcriptFile", transcriptFile);
     else if (mode === "drive" && driveTranscript) data.set("driveTranscriptId", driveTranscript.id);
     else data.set("transcriptText", pasted);
-    setProgress(0);
-    // XHR rather than fetch so we can show upload progress for large files.
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/jobs");
-    xhr.upload.onprogress = (ev) => ev.lengthComputable && setProgress(Math.round((ev.loaded / ev.total) * 100));
-    xhr.onload = () => {
+    setProgress({ stage: "send", loaded: 0, total: null });
+    const done = (body: { id?: string; error?: string }) => {
       setProgress(null);
-      let body: { id?: string; error?: string } = {};
-      try {
-        body = JSON.parse(xhr.responseText || "{}");
-      } catch {}
-      if (xhr.status >= 200 && xhr.status < 300 && body.id) {
+      if (body.id) {
         toast.success("Job uploaded", { description: assigneeId === "" ? "It's on the job board for transcribers to request." : assigneeId === "__hold" ? "Assign or post it when you're ready." : "It's now in their to-do list." });
         router.push(`/admin/jobs/${body.id}`);
       } else setError(body.error ?? "Upload failed. Please try again.");
+    };
+    // XHR rather than fetch so we can show upload progress for large files.
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/jobs");
+    xhr.upload.onprogress = (ev) => ev.lengthComputable && setProgress({ stage: "send", loaded: ev.loaded, total: ev.total });
+    // Once the form is sent, the server streams one JSON line per update while it copies the recording to storage.
+    let read = 0;
+    let result: { id?: string; error?: string } = {};
+    const readLines = () => {
+      if (xhr.status < 200 || xhr.status >= 300) return;
+      const text = xhr.responseText;
+      const end = text.lastIndexOf("\n") + 1;
+      for (const line of text.slice(read, end).split("\n")) {
+        if (!line.trim()) continue;
+        try {
+          const msg = JSON.parse(line);
+          if ("copied" in msg) setProgress({ stage: "store", loaded: msg.copied, total: msg.total, saved: msg.saved });
+          else result = msg;
+        } catch {}
+      }
+      read = end;
+    };
+    xhr.onprogress = readLines;
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        readLines();
+        return done(result);
+      }
+      let body: { error?: string } = {};
+      try {
+        body = JSON.parse(xhr.responseText || "{}");
+      } catch {}
+      done({ error: body.error });
     };
     xhr.onerror = () => {
       setProgress(null);
@@ -238,8 +306,8 @@ export default function UploadForm({ users, projects, languages }: { users: { id
   }
 
   const MediaIcon = picked?.type?.startsWith("video") ? FileVideo : FileAudio;
-  // Drive files are copied on the server, so the upload bar would only show the form's few bytes.
-  const fromDrive = !!driveMedia || (mode === "drive" && !!driveTranscript);
+  // A Drive recording is copied on the server, so there's no browser upload step to show.
+  const fromDrive = !!driveMedia;
   const assigneeName = users.find((u) => u.id === assigneeId)?.name;
 
   return (
@@ -428,15 +496,7 @@ export default function UploadForm({ users, projects, languages }: { users: { id
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" /> {error}
               </p>
             )}
-            {busy && fromDrive && progress === 100 && (
-              <p className="hint mb-3 mt-0 flex items-center gap-2"><Spinner /> Copying from Google Drive. Long recordings take a minute.</p>
-            )}
-            {busy && !(fromDrive && progress === 100) && (
-              <div className="mb-3">
-                <div className="num mb-1 flex justify-between text-xs text-slate-500"><span>Uploading</span><span>{progress}%</span></div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full bg-brand-600 transition-all" style={{ width: `${progress}%` }} /></div>
-              </div>
-            )}
+            {progress && <UploadProgress progress={progress} fromDrive={fromDrive} />}
             <button className="btn w-full" disabled={!ready || busy}>
               {busy ? <Spinner /> : <CloudUpload className="size-4" />}
               {busy ? "Uploading…" : assigneeName ? "Upload and assign" : assigneeId === "" ? "Upload and post" : "Upload job"}

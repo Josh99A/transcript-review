@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseDeadline } from "@/lib/format";
-import { uploadMedia } from "@/lib/media";
+import { deleteMedia, uploadMedia } from "@/lib/media";
 import { mediaTypeOf } from "@/lib/mediaTypes";
 import { parsePricing } from "@/lib/pay";
 import { docText, type TranscriptFormat } from "@/lib/docText";
@@ -60,47 +60,81 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Couldn't read the media length. Enter it manually." }, { status: 400 });
   if (!(transcriptFormat === "html" ? docText(transcript) : transcript).trim()) return NextResponse.json({ error: "Add a transcript." }, { status: 400 });
 
-  let stored: Awaited<ReturnType<typeof uploadMedia>>;
+  let source: ReadableStream<Uint8Array>;
+  let total: number | null;
   let mediaType = uploadedType;
   if (driveMediaId) {
     // Copied straight from Drive into storage, without passing through the admin's browser.
     const file = await openDriveFile(driveMediaId, "media").catch(() => ({ error: "Couldn't reach Google Drive. Try again." }));
     if ("error" in file) return NextResponse.json({ error: file.error }, { status: 400 });
     mediaType = file.type;
-    try {
-      stored = await uploadMedia({ stream: () => file.res.body! });
-    } catch (err) {
-      console.error("Drive media copy failed", err);
-      return NextResponse.json({ error: "Couldn't copy the recording from Google Drive. Try again, or use a smaller file." }, { status: 502 });
-    }
+    source = file.res.body!;
+    total = file.size;
   } else {
-    try {
-      stored = await uploadMedia(media as File);
-    } catch (err) {
-      console.error("Media upload failed", err);
-      return NextResponse.json({ error: "Couldn't store the media file. Try again, or use a smaller file." }, { status: 502 });
-    }
+    source = (media as File).stream();
+    total = (media as File).size;
   }
 
-  const job = await db.job.create({
-    data: {
-      title,
-      mediaPath: stored.name,
-      mediaBytes: stored.bytes,
-      mediaType: mediaType!,
-      durationSeconds,
-      ratePerHour,
-      fixedPay,
-      originalTranscript: transcript,
-      editedTranscript: transcript,
-      transcriptFormat,
-      description,
-      language,
-      project,
-      deadline,
-      posted: assignTo === "",
-      ...(assigneeId ? { assigneeId, status: "ASSIGNED", assignedAt: new Date() } : {}),
+  // Copying to storage can take a while, so the reply streams one JSON line per update: how much has been
+  // copied so far, then the new job's id or an error. The upload form turns these into a progress bar.
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (msg: object) => {
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify(msg) + "\n"));
+        } catch {
+          // The admin left the page; the job is still created.
+        }
+      };
+      let lastSent = 0;
+      const onProgress = (copied: number) => {
+        const now = Date.now();
+        if (now - lastSent < 250 && copied !== total) return;
+        lastSent = now;
+        send({ copied, total });
+      };
+      let stored: Awaited<ReturnType<typeof uploadMedia>>;
+      try {
+        stored = await uploadMedia({ stream: () => source }, onProgress);
+      } catch (err) {
+        console.error(driveMediaId ? "Drive media copy failed" : "Media upload failed", err);
+        send({ error: driveMediaId ? "Couldn't copy the recording from Google Drive. Try again, or use a smaller file." : "Couldn't store the media file. Try again, or use a smaller file." });
+        return controller.close();
+      }
+      send({ copied: stored.bytes, total: stored.bytes, saved: true });
+      try {
+        const job = await db.job.create({
+          data: {
+            title,
+            mediaPath: stored.name,
+            mediaBytes: stored.bytes,
+            mediaType: mediaType!,
+            durationSeconds,
+            ratePerHour,
+            fixedPay,
+            originalTranscript: transcript,
+            editedTranscript: transcript,
+            transcriptFormat,
+            description,
+            language,
+            project,
+            deadline,
+            posted: assignTo === "",
+            ...(assigneeId ? { assigneeId, status: "ASSIGNED", assignedAt: new Date() } : {}),
+          },
+        });
+        send({ id: job.id });
+      } catch (err) {
+        console.error("Job create failed", err);
+        await deleteMedia(stored.name);
+        send({ error: "Couldn't save the job. Please try again." });
+      }
+      controller.close();
     },
   });
-  return NextResponse.json({ id: job.id });
+  // Turn off compression and proxy buffering, which would hold the updates back until the end.
+  return new Response(body, {
+    headers: { "content-type": "application/x-ndjson", "cache-control": "no-cache, no-transform", "x-accel-buffering": "no" },
+  });
 }
