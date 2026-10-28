@@ -8,7 +8,7 @@ services:
     runtime: node
     plan: free
     region: frankfurt
-    branch: claude/project-thread-8jv8d6
+    branch: main
     buildCommand: npm ci && npm run build
     startCommand: npm start
     healthCheckPath: /login
