@@ -1,6 +1,6 @@
 "use client";
 
-import { CheckCircle2, ChevronDown, CloudUpload, RotateCw, TriangleAlert, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, CloudUpload, Pause, Play, RotateCw, TriangleAlert, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
@@ -12,22 +12,29 @@ export function formatBytes(n: number) {
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
 }
 
-/** Where an upload has got to: the browser sending the form, then the server copying the recording into storage. */
-type Progress = { stage: "send" | "store"; loaded: number; total: number | null; saved?: boolean };
+// Media files go up in pieces of this size, so an upload can be paused between pieces and carried on later.
+// It must match CHUNK in lib/media; Cloudinary needs pieces of at least 5 MB.
+const CHUNK = 6_000_000;
+
+type Status = "uploading" | "paused" | "saving" | "done" | "failed";
 
 type Upload = {
   key: number;
   title: string;
-  data: FormData;
-  /** A Drive recording is copied on the server, so there's no browser upload step to show. */
+  /** A Drive recording is copied on the server, so it can be cancelled but not paused. */
   fromDrive: boolean;
   assigneeId: string;
-  progress: Progress;
+  status: Status;
+  loaded: number;
+  total: number | null;
   jobId?: string;
   error?: string;
 };
 
-const UploadsContext = createContext<{ start: (upload: Pick<Upload, "title" | "data" | "fromDrive" | "assigneeId">) => void } | null>(null);
+/** What a running upload needs that the panel doesn't show: the form, the file, how far it got, and the request in flight. */
+type Run = { data: FormData; file: File | null; uploadId: string; offset: number; token?: string; xhr?: XMLHttpRequest; halted?: "pause" | "cancel" };
+
+const UploadsContext = createContext<{ start: (upload: { title: string; data: FormData; fromDrive: boolean; assigneeId: string }) => void } | null>(null);
 
 export function useUploads() {
   const uploads = useContext(UploadsContext);
@@ -35,86 +42,142 @@ export function useUploads() {
   return uploads;
 }
 
+class Halted extends Error {}
+
 /**
  * Runs job uploads in the background, so an admin can fill in the next job, or move around the admin pages,
- * while earlier ones are still uploading. Each upload shows its own progress in a panel at the bottom of the screen.
+ * while earlier ones are still uploading. Each upload shows its own progress in a panel at the bottom of the screen,
+ * and can be paused, resumed or cancelled there.
  */
 export function UploadsProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [uploads, setUploads] = useState<Upload[]>([]);
   const [open, setOpen] = useState(true);
   const nextKey = useRef(1);
-  const active = uploads.filter((u) => !u.jobId && !u.error).length;
+  const runs = useRef(new Map<number, Run>());
+  const active = uploads.filter((u) => u.status !== "done" && u.status !== "failed").length;
 
   const update = useCallback((key: number, change: Partial<Upload>) => {
     setUploads((list) => list.map((u) => (u.key === key ? { ...u, ...change } : u)));
   }, []);
 
-  const send = useCallback(
-    (upload: Upload) => {
-      const { key, data } = upload;
-      const finish = (body: { id?: string; error?: string }) => {
-        if (body.id) {
-          update(key, { jobId: body.id });
-          toast.success(`“${upload.title}” uploaded`, {
-            description: upload.assigneeId === "" ? "It's on the job board for transcribers to request." : upload.assigneeId === "__hold" ? "Assign or post it when you're ready." : "It's now in their to-do list.",
+  /** Sends one request for an upload, so pausing or cancelling can stop it midway. */
+  const request = useCallback(
+    (run: Run, url: string, body: Blob | FormData, headers: Record<string, string>, on: { sent?: (n: number) => void; text?: (t: string) => void } = {}) =>
+      new Promise<{ ok: boolean; text: string }>((resolve, reject) => {
+        // XHR rather than fetch so we can show upload progress for large files.
+        const xhr = new XMLHttpRequest();
+        run.xhr = xhr;
+        xhr.open("POST", url);
+        for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v);
+        if (on.sent) xhr.upload.onprogress = (ev) => on.sent!(ev.loaded);
+        if (on.text) xhr.onprogress = () => xhr.status >= 200 && xhr.status < 300 && on.text!(xhr.responseText);
+        xhr.onload = () => resolve({ ok: xhr.status >= 200 && xhr.status < 300, text: xhr.responseText });
+        xhr.onabort = () => reject(new Halted());
+        xhr.onerror = () => reject(run.halted ? new Halted() : new Error("Upload failed. Check your connection and try again."));
+        xhr.send(body);
+      }),
+    [],
+  );
+
+  const go = useCallback(
+    async (key: number, info: { title: string; assigneeId: string }) => {
+      const run = runs.current.get(key);
+      if (!run) return;
+      try {
+        // A file from this device goes up in pieces, picking up from the last piece that was stored.
+        const file = run.file;
+        while (file && !run.token) {
+          const start = run.offset;
+          const end = Math.min(start + CHUNK, file.size);
+          const res = await request(run, "/api/uploads", file.slice(start, end), { "x-upload-id": run.uploadId, "content-range": `bytes ${start}-${end - 1}/${file.size}` }, {
+            sent: (n) => update(key, { loaded: start + Math.min(n, end - start) }),
           });
-          router.refresh();
-        } else update(key, { error: body.error ?? "Upload failed. Please try again." });
-      };
-      // XHR rather than fetch so we can show upload progress for large files.
-      const xhr = new XMLHttpRequest();
-      xhr.open("POST", "/api/jobs");
-      xhr.upload.onprogress = (ev) => ev.lengthComputable && update(key, { progress: { stage: "send", loaded: ev.loaded, total: ev.total } });
-      // Once the form is sent, the server streams one JSON line per update while it copies the recording to storage.
-      let read = 0;
-      let result: { id?: string; error?: string } = {};
-      const readLines = () => {
-        if (xhr.status < 200 || xhr.status >= 300) return;
-        const text = xhr.responseText;
-        const end = text.lastIndexOf("\n") + 1;
-        for (const line of text.slice(read, end).split("\n")) {
-          if (!line.trim()) continue;
-          try {
-            const msg = JSON.parse(line);
-            if ("copied" in msg) update(key, { progress: { stage: "store", loaded: msg.copied, total: msg.total, saved: msg.saved } });
-            else result = msg;
-          } catch {}
+          const body = parse(res.text);
+          if (!res.ok) throw new Error(body.error ?? "Upload failed. Please try again.");
+          run.offset = end;
+          if (body.token) run.token = body.token;
+          else if (end >= file.size) throw new Error("Upload failed. Please try again.");
         }
-        read = end;
-      };
-      xhr.onprogress = readLines;
-      xhr.onload = () => {
-        if (xhr.status >= 200 && xhr.status < 300) {
-          readLines();
-          return finish(result);
+
+        // Then the job itself. A Drive recording is copied now, and the server streams one JSON line per update.
+        const data = new FormData();
+        run.data.forEach((v, k) => data.append(k, v));
+        if (file) {
+          data.set("mediaToken", run.token!);
+          data.set("mediaName", file.name);
+          data.set("mediaMime", file.type);
+          update(key, { status: "saving", loaded: file.size });
         }
-        let body: { error?: string } = {};
-        try {
-          body = JSON.parse(xhr.responseText || "{}");
-        } catch {}
-        finish({ error: body.error });
-      };
-      xhr.onerror = () => update(key, { error: "Upload failed. Check your connection and try again." });
-      xhr.send(data);
+        let result: { id?: string; error?: string } = {};
+        const lines = (text: string) => {
+          for (const line of text.split("\n")) {
+            const msg = parse(line);
+            if ("copied" in msg) update(key, { loaded: msg.copied, total: msg.total, status: msg.saved ? "saving" : "uploading" });
+            else if (msg.id || msg.error) result = msg;
+          }
+        };
+        const res = await request(run, "/api/jobs", data, {}, { text: lines });
+        if (!res.ok) throw new Error(parse(res.text).error ?? "Upload failed. Please try again.");
+        lines(res.text);
+        if (!result.id) throw new Error(result.error ?? "Upload failed. Please try again.");
+
+        runs.current.delete(key);
+        update(key, { status: "done", jobId: result.id });
+        toast.success(`“${info.title}” uploaded`, {
+          description: info.assigneeId === "" ? "It's on the job board for transcribers to request." : info.assigneeId === "__hold" ? "Assign or post it when you're ready." : "It's now in their to-do list.",
+        });
+        router.refresh();
+      } catch (err) {
+        if (err instanceof Halted || run.halted) return;
+        update(key, { status: "failed", error: err instanceof Error ? err.message : "Upload failed. Please try again." });
+      }
     },
-    [router, update],
+    [request, router, update],
   );
 
   const start = useCallback(
-    (upload: Pick<Upload, "title" | "data" | "fromDrive" | "assigneeId">) => {
-      const added: Upload = { ...upload, key: nextKey.current++, progress: { stage: "send", loaded: 0, total: null } };
-      setUploads((list) => [...list, added]);
+    ({ title, data, fromDrive, assigneeId }: { title: string; data: FormData; fromDrive: boolean; assigneeId: string }) => {
+      const media = data.get("media");
+      const file = media instanceof File ? media : null;
+      data.delete("media");
+      const key = nextKey.current++;
+      runs.current.set(key, { data, file, uploadId: crypto.randomUUID().replace(/-/g, ""), offset: 0 });
+      setUploads((list) => [...list, { key, title, fromDrive, assigneeId, status: "uploading", loaded: 0, total: file?.size ?? null }]);
       setOpen(true);
-      send(added);
+      go(key, { title, assigneeId });
     },
-    [send],
+    [go],
   );
 
-  function retry(upload: Upload) {
-    const again = { ...upload, error: undefined, progress: { stage: "send" as const, loaded: 0, total: null } };
-    update(upload.key, again);
-    send(again);
+  function pause(u: Upload) {
+    const run = runs.current.get(u.key);
+    if (!run) return;
+    run.halted = "pause";
+    run.xhr?.abort();
+    // The piece that was on its way is sent again on resume.
+    update(u.key, { status: "paused", loaded: run.offset });
+  }
+
+  function resume(u: Upload) {
+    const run = runs.current.get(u.key);
+    if (!run) return;
+    run.halted = undefined;
+    update(u.key, { status: "uploading", error: undefined, loaded: run.offset });
+    go(u.key, u);
+  }
+
+  function cancel(u: Upload) {
+    const run = runs.current.get(u.key);
+    if (run) {
+      run.halted = "cancel";
+      run.xhr?.abort();
+      // A file that was fully stored but never became a job is thrown away. Pieces of an unfinished one expire on their own.
+      if (run.token) void fetch(`/api/uploads?token=${encodeURIComponent(run.token)}`, { method: "DELETE" }).catch(() => {});
+      runs.current.delete(u.key);
+    }
+    setUploads((list) => list.filter((x) => x.key !== u.key));
+    toast(`Cancelled “${u.title}”`, { description: "Nothing was saved." });
   }
 
   const dismiss = (key: number) => setUploads((list) => list.filter((u) => u.key !== key));
@@ -127,8 +190,16 @@ export function UploadsProvider({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("beforeunload", warn);
   }, [active]);
 
-  const failed = uploads.filter((u) => u.error).length;
-  const heading = active ? `Uploading ${active} ${active === 1 ? "job" : "jobs"}` : failed ? `${failed} ${failed === 1 ? "upload" : "uploads"} failed` : "Uploads finished";
+  const failed = uploads.filter((u) => u.status === "failed").length;
+  const running = uploads.filter((u) => u.status === "uploading" || u.status === "saving").length;
+  const paused = uploads.filter((u) => u.status === "paused").length;
+  const heading = running
+    ? `Uploading ${running} ${running === 1 ? "job" : "jobs"}${paused ? `, ${paused} paused` : ""}`
+    : paused
+      ? `${paused} ${paused === 1 ? "upload" : "uploads"} paused`
+      : failed
+        ? `${failed} ${failed === 1 ? "upload" : "uploads"} failed`
+        : "Uploads finished";
 
   return (
     <UploadsContext.Provider value={{ start }}>
@@ -139,11 +210,11 @@ export function UploadsProvider({ children }: { children: React.ReactNode }) {
         <section className="fixed inset-x-4 bottom-4 z-40 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg sm:left-auto sm:w-96" aria-label="Uploads">
           <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-2.5">
             <button type="button" className="flex min-w-0 flex-1 items-center gap-2 text-left text-sm font-semibold text-slate-900" onClick={() => setOpen(!open)} aria-expanded={open}>
-              {active ? <CloudUpload className="size-4 shrink-0 text-brand-600" /> : failed ? <TriangleAlert className="size-4 shrink-0 text-red-600" /> : <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />}
+              {running ? <CloudUpload className="size-4 shrink-0 text-brand-600" /> : paused ? <Pause className="size-4 shrink-0 text-amber-600" /> : failed ? <TriangleAlert className="size-4 shrink-0 text-red-600" /> : <CheckCircle2 className="size-4 shrink-0 text-emerald-600" />}
               <span className="truncate">{heading}</span>
               <ChevronDown className={`ml-auto size-4 shrink-0 text-slate-400 transition ${open ? "" : "rotate-180"}`} />
             </button>
-            {!active && (
+            {!active && !failed && (
               <button type="button" className="btn-ghost size-7 px-0" onClick={() => setUploads([])} aria-label="Close uploads">
                 <X className="size-4" />
               </button>
@@ -152,29 +223,7 @@ export function UploadsProvider({ children }: { children: React.ReactNode }) {
           {open && (
             <ul className="max-h-[50vh] divide-y divide-slate-100 overflow-y-auto">
               {uploads.map((u) => (
-                <li key={u.key} className="px-4 py-3">
-                  <div className="mb-1.5 flex items-center gap-2">
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium text-slate-900">{u.title}</span>
-                    {u.jobId && <Link href={`/admin/jobs/${u.jobId}`} className="shrink-0 text-xs font-medium text-brand-600 hover:text-brand-700">Open</Link>}
-                    {u.error && (
-                      <button type="button" className="inline-flex shrink-0 items-center gap-1 text-xs font-medium text-brand-600 hover:text-brand-700" onClick={() => retry(u)}>
-                        <RotateCw className="size-3" /> Retry
-                      </button>
-                    )}
-                    {(u.jobId || u.error) && (
-                      <button type="button" className="btn-ghost -mr-1.5 size-6 px-0" onClick={() => dismiss(u.key)} aria-label={`Dismiss ${u.title}`}>
-                        <X className="size-3.5" />
-                      </button>
-                    )}
-                  </div>
-                  {u.jobId ? (
-                    <p className="flex items-center gap-1.5 text-xs text-emerald-700"><CheckCircle2 className="size-3.5" /> Uploaded</p>
-                  ) : u.error ? (
-                    <p role="alert" className="flex items-start gap-1.5 text-xs text-red-700"><TriangleAlert className="mt-px size-3.5 shrink-0" /> {u.error}</p>
-                  ) : (
-                    <UploadProgress progress={u.progress} fromDrive={u.fromDrive} />
-                  )}
-                </li>
+                <UploadRow key={u.key} upload={u} onPause={() => pause(u)} onResume={() => resume(u)} onCancel={() => cancel(u)} onDismiss={() => dismiss(u.key)} />
               ))}
             </ul>
           )}
@@ -185,32 +234,96 @@ export function UploadsProvider({ children }: { children: React.ReactNode }) {
   );
 }
 
-function UploadProgress({ progress, fromDrive }: { progress: Progress; fromDrive: boolean }) {
-  const { stage, loaded, total, saved } = progress;
-  // Hold at 99% until the server says the file is safely stored, since the last piece is still on its way.
-  const pct = total ? (saved ? 100 : Math.min(99, Math.floor((loaded / total) * 100))) : null;
+function parse(text: string): { error?: string; token?: string; id?: string; copied?: number; total?: number | null; saved?: boolean } {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return {};
+  }
+}
+
+function UploadRow({ upload: u, onPause, onResume, onCancel, onDismiss }: { upload: Upload; onPause: () => void; onResume: () => void; onCancel: () => void; onDismiss: () => void }) {
+  // Cancelling throws the upload away, so it takes a second tap.
+  const [confirming, setConfirming] = useState(false);
+  const link = "inline-flex shrink-0 items-center gap-1 rounded px-1.5 py-1 text-xs font-medium";
+  const canPause = !u.fromDrive && u.status === "uploading";
+  const canCancel = u.status !== "done" && u.status !== "saving";
+
+  return (
+    <li className="px-4 py-3">
+      <div className="mb-1.5 flex items-center gap-1">
+        <span className="mr-auto min-w-0 flex-1 truncate text-sm font-medium text-slate-900">{u.title}</span>
+        {confirming ? (
+          <>
+            <span className="shrink-0 text-xs text-slate-600">Cancel upload?</span>
+            <button type="button" className={`${link} text-red-700 hover:bg-red-50`} onClick={onCancel}>Yes, cancel</button>
+            <button type="button" className={`${link} text-slate-600 hover:bg-slate-100`} onClick={() => setConfirming(false)}>No</button>
+          </>
+        ) : (
+          <>
+            {u.status === "done" && <Link href={`/admin/jobs/${u.jobId}`} className={`${link} text-brand-600 hover:bg-brand-50`}>Open</Link>}
+            {canPause && (
+              <button type="button" className={`${link} text-slate-700 hover:bg-slate-100`} onClick={onPause}>
+                <Pause className="size-3" /> Pause
+              </button>
+            )}
+            {u.status === "paused" && (
+              <button type="button" className={`${link} text-brand-600 hover:bg-brand-50`} onClick={onResume}>
+                <Play className="size-3" /> Resume
+              </button>
+            )}
+            {u.status === "failed" && (
+              <button type="button" className={`${link} text-brand-600 hover:bg-brand-50`} onClick={onResume}>
+                <RotateCw className="size-3" /> Retry
+              </button>
+            )}
+            {canCancel && (
+              <button type="button" className={`${link} text-slate-500 hover:bg-slate-100 hover:text-red-700`} onClick={() => setConfirming(true)}>
+                Cancel
+              </button>
+            )}
+            {u.status === "done" && (
+              <button type="button" className="btn-ghost -mr-1.5 size-6 px-0" onClick={onDismiss} aria-label={`Dismiss ${u.title}`}>
+                <X className="size-3.5" />
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      {u.status === "done" ? (
+        <p className="flex items-center gap-1.5 text-xs text-emerald-700"><CheckCircle2 className="size-3.5" /> Uploaded</p>
+      ) : (
+        <>
+          {u.status === "failed" && (
+            <p role="alert" className="mb-1.5 flex items-start gap-1.5 text-xs text-red-700"><TriangleAlert className="mt-px size-3.5 shrink-0" /> {u.error}</p>
+          )}
+          <UploadProgress upload={u} />
+        </>
+      )}
+    </li>
+  );
+}
+
+function UploadProgress({ upload: { status, loaded, total, fromDrive } }: { upload: Upload }) {
+  // Hold at 99% until the job is saved.
+  const pct = total ? (status === "saving" ? 99 : Math.min(99, Math.floor((loaded / total) * 100))) : null;
   const label =
-    stage === "send"
-      ? pct === 99 || pct === 100 ? "Checking the files…" : fromDrive ? "Starting…" : "Uploading"
-      : saved || (total && loaded >= total) ? "Finishing up…" : fromDrive ? "Copying from Google Drive" : "Saving to storage";
-  // Drive media skips the browser step, so it's a single step.
-  const step = fromDrive ? null : stage === "send" ? "Step 1 of 2" : "Step 2 of 2";
-  const showPct = pct !== null && !(stage === "send" && (fromDrive || pct >= 99));
-  const showBytes = !(stage === "send" && fromDrive) && (total || loaded > 0);
+    status === "paused" ? "Paused" : status === "failed" ? "Stopped" : status === "saving" ? "Finishing up…" : fromDrive ? (loaded ? "Copying from Google Drive" : "Starting…") : "Uploading";
+  const color = status === "paused" ? "bg-amber-500" : status === "failed" ? "bg-slate-400" : "bg-brand-600";
   return (
     <div role="status" aria-live="polite">
-      <div className="mb-1 flex items-baseline justify-between gap-2 text-xs text-slate-500">
-        <span className="min-w-0 truncate">{step && <span className="text-slate-400">{step} · </span>}<span className="font-medium text-slate-700">{label}</span></span>
-        {showPct && <span className="num shrink-0 text-sm font-semibold text-slate-900">{pct}%</span>}
+      <div className="mb-1 flex items-baseline justify-between gap-2 text-xs">
+        <span className="min-w-0 truncate font-medium text-slate-700">{label}</span>
+        {pct !== null && <span className="num shrink-0 text-sm font-semibold text-slate-900">{pct}%</span>}
       </div>
-      <div className="h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={showPct ? pct! : undefined} aria-label={label}>
-        {showPct ? (
-          <div className="h-full rounded-full bg-brand-600 transition-[width] duration-300" style={{ width: `${pct}%` }} />
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct ?? undefined} aria-label={label}>
+        {pct !== null ? (
+          <div className={`h-full rounded-full ${color} transition-[width] duration-300`} style={{ width: `${pct}%` }} />
         ) : (
           <div className="h-full w-1/3 animate-pulse rounded-full bg-brand-400" />
         )}
       </div>
-      {showBytes && (
+      {(total || loaded > 0) && (
         <p className="num mt-1 text-xs text-slate-500">{total ? `${formatBytes(Math.min(loaded, total))} of ${formatBytes(total)}` : `${formatBytes(loaded)} so far`}</p>
       )}
     </div>

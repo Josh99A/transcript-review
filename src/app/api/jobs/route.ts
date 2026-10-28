@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { parseDeadline } from "@/lib/format";
-import { deleteMedia, uploadMedia } from "@/lib/media";
+import { deleteMedia, readMediaToken, uploadMedia } from "@/lib/media";
 import { mediaTypeOf } from "@/lib/mediaTypes";
 import { parsePricing } from "@/lib/pay";
 import { docText, type TranscriptFormat } from "@/lib/docText";
@@ -16,7 +16,6 @@ export async function POST(req: Request) {
 
   const form = await req.formData();
   const title = String(form.get("title") ?? "").trim();
-  const media = form.get("media");
   const durationSeconds = Math.round(Number(form.get("durationSeconds")));
   // "" posts the job on the board, "__hold" keeps it unassigned and off the board.
   const assignTo = String(form.get("assigneeId") ?? "");
@@ -50,33 +49,55 @@ export async function POST(req: Request) {
   }
 
   if (!title) return NextResponse.json({ error: "Give the job a title." }, { status: 400 });
+  // A media file the browser sent in pieces arrives as a signed token for the stored file; Drive media is copied here.
   const driveMediaId = String(form.get("driveMediaId") ?? "");
-  if (!driveMediaId && (!(media instanceof File) || media.size === 0))
-    return NextResponse.json({ error: "Choose an audio or video file." }, { status: 400 });
-  const uploadedType = media instanceof File ? mediaTypeOf(media.name, media.type) : null;
+  const uploaded = readMediaToken(String(form.get("mediaToken") ?? ""));
+  if (!driveMediaId && !uploaded) return NextResponse.json({ error: "Choose an audio or video file." }, { status: 400 });
+  const uploadedType = uploaded ? mediaTypeOf(String(form.get("mediaName") ?? ""), String(form.get("mediaMime") ?? "")) : null;
   if (!driveMediaId && !uploadedType)
     return NextResponse.json({ error: "The media must be an audio or video file." }, { status: 400 });
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0)
     return NextResponse.json({ error: "Couldn't read the media length. Enter it manually." }, { status: 400 });
   if (!(transcriptFormat === "html" ? docText(transcript) : transcript).trim()) return NextResponse.json({ error: "Add a transcript." }, { status: 400 });
 
-  let source: ReadableStream<Uint8Array>;
-  let total: number | null;
-  let mediaType = uploadedType;
-  if (driveMediaId) {
-    // Copied straight from Drive into storage, without passing through the admin's browser.
-    const file = await openDriveFile(driveMediaId, "media").catch(() => ({ error: "Couldn't reach Google Drive. Try again." }));
-    if ("error" in file) return NextResponse.json({ error: file.error }, { status: 400 });
-    mediaType = file.type;
-    source = file.res.body!;
-    total = file.size;
-  } else {
-    source = (media as File).stream();
-    total = (media as File).size;
+  const createJob = (stored: { name: string; bytes: number }, mediaType: string) =>
+    db.job.create({
+      data: {
+        title,
+        mediaPath: stored.name,
+        mediaBytes: stored.bytes,
+        mediaType,
+        durationSeconds,
+        ratePerHour,
+        fixedPay,
+        originalTranscript: transcript,
+        editedTranscript: transcript,
+        transcriptFormat,
+        description,
+        language,
+        project,
+        deadline,
+        posted: assignTo === "",
+        ...(assigneeId ? { assigneeId, status: "ASSIGNED", assignedAt: new Date() } : {}),
+      },
+    });
+
+  if (uploaded) {
+    // The file stays stored if this fails, so the form can try again without sending it a second time.
+    const job = await createJob(uploaded, uploadedType!);
+    return NextResponse.json({ id: job.id });
   }
 
-  // Copying to storage can take a while, so the reply streams one JSON line per update: how much has been
+  // Copied straight from Drive into storage, without passing through the admin's browser.
+  const file = await openDriveFile(driveMediaId, "media").catch(() => ({ error: "Couldn't reach Google Drive. Try again." }));
+  if ("error" in file) return NextResponse.json({ error: file.error }, { status: 400 });
+  const source = file.res.body!;
+  const total = file.size;
+
+  // Copying from Drive can take a while, so the reply streams one JSON line per update: how much has been
   // copied so far, then the new job's id or an error. The upload form turns these into a progress bar.
+  // If the admin cancels, the browser drops the reply and the copy stops without creating the job.
+  const cancelled = new AbortController();
   const encoder = new TextEncoder();
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
@@ -84,7 +105,7 @@ export async function POST(req: Request) {
         try {
           controller.enqueue(encoder.encode(JSON.stringify(msg) + "\n"));
         } catch {
-          // The admin left the page; the job is still created.
+          // The admin left the page; the job is still created unless they cancelled.
         }
       };
       let lastSent = 0;
@@ -96,34 +117,21 @@ export async function POST(req: Request) {
       };
       let stored: Awaited<ReturnType<typeof uploadMedia>>;
       try {
-        stored = await uploadMedia({ stream: () => source }, onProgress);
+        stored = await uploadMedia({ stream: () => source }, onProgress, cancelled.signal);
       } catch (err) {
-        console.error(driveMediaId ? "Drive media copy failed" : "Media upload failed", err);
-        send({ error: driveMediaId ? "Couldn't copy the recording from Google Drive. Try again, or use a smaller file." : "Couldn't store the media file. Try again, or use a smaller file." });
+        if (!cancelled.signal.aborted) {
+          console.error("Drive media copy failed", err);
+          send({ error: "Couldn't copy the recording from Google Drive. Try again, or use a smaller file." });
+        }
         return controller.close();
+      }
+      if (cancelled.signal.aborted) {
+        await deleteMedia(stored.name);
+        return;
       }
       send({ copied: stored.bytes, total: stored.bytes, saved: true });
       try {
-        const job = await db.job.create({
-          data: {
-            title,
-            mediaPath: stored.name,
-            mediaBytes: stored.bytes,
-            mediaType: mediaType!,
-            durationSeconds,
-            ratePerHour,
-            fixedPay,
-            originalTranscript: transcript,
-            editedTranscript: transcript,
-            transcriptFormat,
-            description,
-            language,
-            project,
-            deadline,
-            posted: assignTo === "",
-            ...(assigneeId ? { assigneeId, status: "ASSIGNED", assignedAt: new Date() } : {}),
-          },
-        });
+        const job = await createJob(stored, file.type);
         send({ id: job.id });
       } catch (err) {
         console.error("Job create failed", err);
@@ -131,6 +139,9 @@ export async function POST(req: Request) {
         send({ error: "Couldn't save the job. Please try again." });
       }
       controller.close();
+    },
+    cancel() {
+      cancelled.abort();
     },
   });
   // Turn off compression and proxy buffering, which would hold the updates back until the end.
