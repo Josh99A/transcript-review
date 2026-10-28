@@ -59,7 +59,7 @@ model Job {
   project               String?
   language              String?
   deadline              DateTime?
-  // Unassigned jobs on the board can be requested by transcribers.
+  // Unassigned jobs on the board; the first transcriber to take one gets it.
   posted                Boolean        @default(false)
   requests              JobRequest[]
   // Cloudinary asset as "<public id>.<format>", and its size in bytes.
@@ -154,7 +154,7 @@ enum RequestStatus {
   DECLINED
 }
 
-// A transcriber asking to take a job from the board. The admin approves one, which assigns the job.
+// Who took a job from the board (APPROVED). PENDING and DECLINED rows are left from when an admin picked who got each job.
 model JobRequest {
   id        String        @id @default(cuid())
   jobId     String

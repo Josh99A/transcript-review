@@ -39,13 +39,13 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const filter: Filter = FILTERS.includes(status as Filter) ? (status as Filter) : "ALL";
   const query = q.trim();
 
-  const [jobs, users, balances, problems, expected, counts, payDate, stored, pendingRequests, drive, notInDrive] = await Promise.all([
+  const [jobs, users, balances, problems, expected, counts, payDate, stored, drive, notInDrive] = await Promise.all([
     db.job.findMany({
       where: {
         ...(filter === "ALL" ? {} : { status: filter }),
         ...(query ? { OR: [{ title: { contains: query, mode: "insensitive" } }, { project: { contains: query, mode: "insensitive" } }, { assignee: { name: { contains: query, mode: "insensitive" } } }] } : {}),
       },
-      include: { assignee: { select: { name: true } }, earnings: true, _count: { select: { requests: { where: { status: "PENDING" } } } } },
+      include: { assignee: { select: { name: true } }, earnings: true },
     }),
     db.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, orderBy: { name: "asc" } }),
     balancesByUser(),
@@ -54,7 +54,6 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     db.job.groupBy({ by: ["status"], _count: true }),
     getNextPayDate(),
     db.job.findMany({ where: { mediaRemovedAt: null }, select: { mediaBytes: true, status: true } }),
-    db.jobRequest.count({ where: { status: "PENDING", job: { status: "UNASSIGNED" } } }),
     driveExportStatus(),
     waitingForDrive(),
   ]);
@@ -93,7 +92,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
       <PayProblems problems={problems} />
       <StatList
         stats={[
-          { icon: Inbox, label: "Waiting to assign", value: count("UNASSIGNED"), tone: "slate", hint: pendingRequests ? <Link href="/admin/requests" className="font-medium text-brand-600 hover:text-brand-700">{pendingRequests} request{pendingRequests === 1 ? "" : "s"} to review</Link> : undefined },
+          { icon: Inbox, label: "Waiting to assign", value: count("UNASSIGNED"), tone: "slate" },
           { icon: Hourglass, label: "In progress", value: count("ASSIGNED"), tone: "amber", hint: <Link href="/admin/users" className="hover:text-slate-700">{formatUGX(totalExpected)} expected pay</Link> },
           { icon: CircleCheck, label: "Submitted", value: count("SUBMITTED"), tone: "emerald" },
           { icon: Wallet, label: "Owed to team", value: formatUGX(totalOwed), tone: "brand", hint: waitingHint(peopleOwed) },
@@ -200,11 +199,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                           </div>
                         </td>
                         <td>
-                          {!j.assignee && j._count.requests > 0 ? (
-                            <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium whitespace-nowrap text-amber-800 ring-1 ring-amber-600/20 ring-inset">
-                              {j._count.requests} request{j._count.requests === 1 ? "" : "s"} to review
-                            </span>
-                          ) : !j.assignee && j.posted ? (
+                          {!j.assignee && j.posted ? (
                             <span className="text-slate-500">On the job board</span>
                           ) : j.assignee ? (
                             <div className="flex items-center gap-2">
@@ -260,9 +255,8 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   );
 }
 
-function assignedLabel(j: { assignee: { name: string } | null; posted: boolean; _count: { requests: number } }) {
+function assignedLabel(j: { assignee: { name: string } | null; posted: boolean }) {
   if (j.assignee) return j.assignee.name;
-  if (j._count.requests > 0) return `${j._count.requests} request${j._count.requests === 1 ? "" : "s"} to review`;
   return j.posted ? "On the job board" : "Nobody yet";
 }
 

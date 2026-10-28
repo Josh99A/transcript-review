@@ -68,13 +68,12 @@ The folder can be renamed or moved anywhere in that Drive. The app only has acce
 
 Besides the bell in the app, the important notices are also emailed through [Resend](https://resend.com):
 
-- **Transcribers:** a job assigned or a request approved (with the job's language, length, pay and
-  deadline), a request declined or the job going to someone else, changes needed with the admin's
+- **Transcribers:** a job assigned (with the job's language, length, pay and deadline), changes needed with the admin's
   notes (and edits to them), approval with the pay, payments received with the amount and where it
   was sent, a job taken off them, transferred or cancelled, new instructions or guidelines, a replaced
   transcript, and admin replies to their issues.
-- **Admins:** job requests (who asked, their email, languages and jobs in progress, the job's details
-  and how many others asked), submissions and resubmissions ready to review, a transcriber leaving a
+- **Admins:** a transcriber taking a job from Find work (who took it, their email, languages and jobs
+  in progress, and the job's details), submissions and resubmissions ready to review, a transcriber leaving a
   job, issues raised and replies, and a job that couldn't be copied to Google Drive.
 - **Referrers:** referral pay earned when someone they referred has a transcript approved.
 - **New accounts:** a welcome email with a sign-in link (the password is never emailed).
