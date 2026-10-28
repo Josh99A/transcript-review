@@ -9,8 +9,11 @@ import { v2 as cloudinary, type UploadApiResponse } from "cloudinary";
 const ASSET = { resource_type: "video", type: "authenticated" } as const;
 const FOLDER = "transcript-review";
 
-/** Uploads a media file and returns the name to store on the job ("<public id>.<format>") and its size. */
-export async function uploadMedia(file: File) {
+/**
+ * Uploads a media file (or anything with a stream, such as a Google Drive download) and returns the name to
+ * store on the job ("<public id>.<format>") and its size.
+ */
+export async function uploadMedia(file: { stream(): ReadableStream<Uint8Array> }) {
   const result = await new Promise<UploadApiResponse>((resolve, reject) => {
     const upload = cloudinary.uploader.upload_chunked_stream(
       { ...ASSET, folder: FOLDER, chunk_size: 20_000_000 },

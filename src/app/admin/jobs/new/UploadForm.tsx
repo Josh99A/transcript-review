@@ -2,7 +2,7 @@
 
 import RichTextEditor from "@/components/RichTextEditor";
 import { LanguageField, ProjectField } from "@/components/JobFields";
-import { CloudUpload, FileAudio, FileText, FileVideo, Pencil, TriangleAlert, X } from "lucide-react";
+import { CloudUpload, FileAudio, FileText, FileVideo, Link2, Pencil, TriangleAlert, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
@@ -11,41 +11,98 @@ import { formatDuration, formatUGX } from "@/lib/format";
 import { adtsDuration, MEDIA_ACCEPT, mediaTypeOf, mp4Duration } from "@/lib/mediaTypes";
 import { expectedPayFor } from "@/lib/pay";
 
-/** Reads the length of an audio/video file in the browser. */
-async function readDuration(file: File, type: string): Promise<number> {
+/** Reads the length of an audio/video file in the browser: a picked file, or a Google Drive one through the app. */
+async function readDuration(source: File | string, type: string): Promise<number> {
+  const bytes = async () => new Uint8Array(typeof source === "string" ? await (await fetch(source)).arrayBuffer() : await source.arrayBuffer());
   // Raw AAC files often report no length (or a rough guess), so count their frames instead.
   if (type === "audio/aac") {
-    const d = adtsDuration(new Uint8Array(await file.arrayBuffer()));
+    const d = adtsDuration(await bytes());
     if (d) return d;
   }
+  const url = typeof source === "string" ? source : URL.createObjectURL(source);
   try {
-    return await playerDuration(file, type);
+    return await playerDuration(url, type);
   } catch (e) {
     // Browsers without the codec can still give us the length from an MP4/M4A header.
     if (/mp4|quicktime/.test(type)) {
-      const d = mp4Duration(new Uint8Array(await file.arrayBuffer()));
+      const d = mp4Duration(await bytes());
       if (d) return d;
     }
     throw e;
+  } finally {
+    if (typeof source !== "string") URL.revokeObjectURL(url);
   }
 }
 
-function playerDuration(file: File, type: string): Promise<number> {
+function playerDuration(url: string, type: string): Promise<number> {
   return new Promise((resolve, reject) => {
-    const url = URL.createObjectURL(file);
     const el = document.createElement(type.startsWith("video") ? "video" : "audio");
     el.preload = "metadata";
+    // Stop loading once we have the length, so a long Drive recording isn't downloaded for nothing.
+    const done = () => {
+      el.onerror = el.onloadedmetadata = null;
+      el.removeAttribute("src");
+      el.load();
+    };
     el.onloadedmetadata = () => {
-      URL.revokeObjectURL(url);
-      if (Number.isFinite(el.duration)) resolve(el.duration);
+      const d = el.duration;
+      done();
+      if (Number.isFinite(d)) resolve(d);
       else reject(new Error("unknown length"));
     };
     el.onerror = () => {
-      URL.revokeObjectURL(url);
+      done();
       reject(new Error("unreadable"));
     };
     el.src = url;
   });
+}
+
+type DriveInfo = { id: string; name: string; type: string; size: number | null };
+
+/** Paste a Google Drive share link and look the file up. */
+function DriveLink({ kind, onPick }: { kind: "media" | "transcript"; onPick: (file: DriveInfo) => void }) {
+  const [link, setLink] = useState("");
+  const [looking, setLooking] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function look() {
+    if (!link.trim() || looking) return;
+    setError(null);
+    setLooking(true);
+    try {
+      const res = await fetch(`/api/drive?kind=${kind}&link=${encodeURIComponent(link.trim())}`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) return setError(body.error ?? "Couldn't open that link. Try again.");
+      setLink("");
+      onPick(body);
+    } catch {
+      setError("Couldn't reach Google Drive. Check your connection and try again.");
+    } finally {
+      setLooking(false);
+    }
+  }
+
+  const id = `drive-${kind}`;
+  return (
+    <div>
+      <label className="label" htmlFor={id}>{kind === "media" ? "Or use a recording from Google Drive" : "Google Drive link"}</label>
+      <div className="flex gap-2">
+        <input className="input min-w-0 flex-1" id={id} type="url" inputMode="url" value={link} onChange={(e) => setLink(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); look(); } }}
+          placeholder="https://drive.google.com/file/d/…" />
+        <button type="button" className="btn-secondary shrink-0" onClick={look} disabled={!link.trim() || looking}>
+          {looking ? <Spinner /> : <Link2 className="size-4" />} Get file
+        </button>
+      </div>
+      {error && (
+        <p role="alert" className="mt-2 flex items-start gap-2 text-sm text-red-700"><TriangleAlert className="mt-0.5 size-4 shrink-0" /> {error}</p>
+      )}
+      <p className="hint">
+        {kind === "media" ? "Audio or video" : "A Google Doc, Word .docx or .txt"} shared as &ldquo;Anyone with the link&rdquo;. In Drive, use Share, then Copy link.
+      </p>
+    </div>
+  );
 }
 
 function formatBytes(n: number) {
@@ -70,6 +127,7 @@ export default function UploadForm({ users, projects, languages }: { users: { id
   const router = useRouter();
   const mediaInput = useRef<HTMLInputElement>(null);
   const [media, setMedia] = useState<File | null>(null);
+  const [driveMedia, setDriveMedia] = useState<DriveInfo | null>(null);
   const [dragging, setDragging] = useState(false);
   const [duration, setDuration] = useState<number | null>(null);
   const [readingLength, setReadingLength] = useState(false);
@@ -77,8 +135,9 @@ export default function UploadForm({ users, projects, languages }: { users: { id
   const [minutes, setMinutes] = useState("");
   const [seconds, setSeconds] = useState("");
   const [title, setTitle] = useState("");
-  const [mode, setMode] = useState<"file" | "paste">("file");
+  const [mode, setMode] = useState<"file" | "drive" | "paste">("file");
   const [transcriptFile, setTranscriptFile] = useState<File | null>(null);
+  const [driveTranscript, setDriveTranscript] = useState<DriveInfo | null>(null);
   const [pasted, setPasted] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
   const [language, setLanguage] = useState("");
@@ -90,8 +149,9 @@ export default function UploadForm({ users, projects, languages }: { users: { id
   const [progress, setProgress] = useState<number | null>(null);
 
   const effectiveDuration = manual ? Number(minutes || 0) * 60 + Number(seconds || 0) : (duration ?? 0);
-  const hasTranscript = mode === "file" ? !!transcriptFile : !!pasted.trim();
-  const ready = !!media && effectiveDuration > 0 && !!title.trim() && !!language && hasTranscript;
+  const hasTranscript = mode === "file" ? !!transcriptFile : mode === "drive" ? !!driveTranscript : !!pasted.trim();
+  const picked = media ? { name: media.name, size: media.size as number | null, type: mediaTypeOf(media.name, media.type) } : driveMedia;
+  const ready = !!picked && effectiveDuration > 0 && !!title.trim() && !!language && hasTranscript;
   const busy = progress !== null;
 
   async function pickMedia(file: File | undefined) {
@@ -103,12 +163,24 @@ export default function UploadForm({ users, projects, languages }: { users: { id
       return;
     }
     setMedia(file);
+    setDriveMedia(null);
+    await measure(file.name, file, type);
+  }
+
+  async function pickDriveMedia(file: DriveInfo) {
+    setError(null);
+    setMedia(null);
+    setDriveMedia(file);
+    await measure(file.name, `/api/drive/${file.id}`, file.type);
+  }
+
+  async function measure(name: string, source: File | string, type: string) {
     setDuration(null);
     setManual(false);
-    if (!title) setTitle(file.name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "));
+    if (!title) setTitle(name.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " "));
     setReadingLength(true);
     try {
-      setDuration(Math.round(await readDuration(file, type)));
+      setDuration(Math.round(await readDuration(source, type)));
     } catch {
       setManual(true);
     } finally {
@@ -116,13 +188,21 @@ export default function UploadForm({ users, projects, languages }: { users: { id
     }
   }
 
+  function clearMedia() {
+    setMedia(null);
+    setDriveMedia(null);
+    setDuration(null);
+    setManual(false);
+  }
+
   function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!media || !ready) return;
+    if (!ready) return;
     setError(null);
     const data = new FormData();
     data.set("title", title.trim());
-    data.set("media", media);
+    if (media) data.set("media", media);
+    else if (driveMedia) data.set("driveMediaId", driveMedia.id);
     data.set("durationSeconds", String(Math.round(effectiveDuration)));
     data.set("assigneeId", assigneeId);
     data.set("description", String(new FormData(e.currentTarget as HTMLFormElement).get("description") ?? ""));
@@ -132,6 +212,7 @@ export default function UploadForm({ users, projects, languages }: { users: { id
     data.set("ratePerHour", ratePerHour);
     data.set("fixedPay", fixedPay);
     if (mode === "file" && transcriptFile) data.set("transcriptFile", transcriptFile);
+    else if (mode === "drive" && driveTranscript) data.set("driveTranscriptId", driveTranscript.id);
     else data.set("transcriptText", pasted);
     setProgress(0);
     // XHR rather than fetch so we can show upload progress for large files.
@@ -156,14 +237,17 @@ export default function UploadForm({ users, projects, languages }: { users: { id
     xhr.send(data);
   }
 
-  const MediaIcon = media && mediaTypeOf(media.name, media.type)?.startsWith("video") ? FileVideo : FileAudio;
+  const MediaIcon = picked?.type?.startsWith("video") ? FileVideo : FileAudio;
+  // Drive files are copied on the server, so the upload bar would only show the form's few bytes.
+  const fromDrive = !!driveMedia || (mode === "drive" && !!driveTranscript);
   const assigneeName = users.find((u) => u.id === assigneeId)?.name;
 
   return (
     <form onSubmit={onSubmit} className="grid gap-6 lg:grid-cols-[1fr_300px]">
       <div className="space-y-6">
         <Step n={1} title="Media file">
-          {!media ? (
+          {!picked ? (
+            <>
             <div
               onDragOver={(e) => {
                 e.preventDefault();
@@ -191,27 +275,31 @@ export default function UploadForm({ users, projects, languages }: { users: { id
               </p>
               <p className="mt-1 text-xs text-slate-500">MP3, AAC, WAV, M4A, MP4, MOV and more. We read the length automatically.</p>
             </div>
+            <div className="mt-4"><DriveLink kind="media" onPick={pickDriveMedia} /></div>
+            </>
           ) : (
             <div className="flex items-center gap-4 rounded-xl border border-slate-200 p-4">
               <span className="flex size-11 shrink-0 items-center justify-center rounded-lg bg-brand-50 text-brand-600">
                 <MediaIcon className="size-5" />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium text-slate-900">{media.name}</div>
+                <div className="truncate text-sm font-medium text-slate-900">{picked.name}</div>
                 <div className="num text-xs text-slate-500">
-                  {formatBytes(media.size)}
+                  {driveMedia && "Google Drive"}
+                  {driveMedia && picked.size !== null && " · "}
+                  {picked.size !== null && formatBytes(picked.size)}
                   {readingLength && " · reading length…"}
                   {duration !== null && !manual && ` · ${formatDuration(duration)}`}
                 </div>
               </div>
-              <button type="button" className="btn-ghost size-8 px-0" onClick={() => { setMedia(null); setDuration(null); setManual(false); }} aria-label="Remove file" disabled={busy}>
+              <button type="button" className="btn-ghost size-8 px-0" onClick={clearMedia} aria-label="Remove file" disabled={busy}>
                 <X className="size-4" />
               </button>
             </div>
           )}
           <input ref={mediaInput} type="file" accept={MEDIA_ACCEPT} className="hidden" onChange={(e) => pickMedia(e.target.files?.[0])} />
 
-          {media && (manual ? (
+          {picked && (manual ? (
             <div className="mt-4">
               {duration === null && (
                 <p className="mb-3 flex items-center gap-2 text-sm text-amber-700">
@@ -274,10 +362,10 @@ export default function UploadForm({ users, projects, languages }: { users: { id
 
         <Step n={2} title="Transcript">
           <div className="mb-4 inline-flex rounded-lg bg-slate-100 p-1" role="tablist">
-            {(["file", "paste"] as const).map((m) => (
+            {(["file", "drive", "paste"] as const).map((m) => (
               <button key={m} type="button" role="tab" aria-selected={mode === m} onClick={() => setMode(m)}
                 className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${mode === m ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-800"}`}>
-                {m === "file" ? "Upload file" : "Paste text"}
+                {m === "file" ? "Upload file" : m === "drive" ? "Google Drive" : "Paste text"}
               </button>
             ))}
           </div>
@@ -294,6 +382,17 @@ export default function UploadForm({ users, projects, languages }: { users: { id
                 <span>Choose a Word <strong>.docx</strong>, <strong>.txt</strong>, <strong>.srt</strong> or <strong>.vtt</strong> file</span>
                 <input type="file" accept=".txt,.docx,.srt,.vtt,text/plain,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={(e) => setTranscriptFile(e.target.files?.[0] ?? null)} />
               </label>
+            )
+          ) : mode === "drive" ? (
+            driveTranscript ? (
+              <div className="flex items-center gap-3 rounded-xl border border-slate-200 p-3">
+                <FileText className="size-5 text-slate-400" />
+                <span className="min-w-0 flex-1 truncate text-sm">{driveTranscript.name}</span>
+                <span className="shrink-0 text-xs text-slate-500">Google Drive</span>
+                <button type="button" className="btn-ghost size-8 px-0" onClick={() => setDriveTranscript(null)} aria-label="Remove transcript file"><X className="size-4" /></button>
+              </div>
+            ) : (
+              <DriveLink kind="transcript" onPick={setDriveTranscript} />
             )
           ) : (
             <textarea className="input h-48 font-mono" value={pasted} onChange={(e) => setPasted(e.target.value)} placeholder="Paste the transcript here…" aria-label="Transcript text" />
@@ -329,7 +428,10 @@ export default function UploadForm({ users, projects, languages }: { users: { id
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" /> {error}
               </p>
             )}
-            {busy && (
+            {busy && fromDrive && progress === 100 && (
+              <p className="hint mb-3 mt-0 flex items-center gap-2"><Spinner /> Copying from Google Drive. Long recordings take a minute.</p>
+            )}
+            {busy && !(fromDrive && progress === 100) && (
               <div className="mb-3">
                 <div className="num mb-1 flex justify-between text-xs text-slate-500"><span>Uploading</span><span>{progress}%</span></div>
                 <div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full bg-brand-600 transition-all" style={{ width: `${progress}%` }} /></div>

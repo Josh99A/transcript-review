@@ -7,6 +7,7 @@ import { uploadMedia } from "@/lib/media";
 import { mediaTypeOf } from "@/lib/mediaTypes";
 import { parsePricing } from "@/lib/pay";
 import { docText, type TranscriptFormat } from "@/lib/docText";
+import { driveTranscript, openDriveFile } from "@/lib/drive";
 import { readTranscriptFile } from "@/lib/transcriptUpload";
 
 export async function POST(req: Request) {
@@ -32,7 +33,14 @@ export async function POST(req: Request) {
 
   let transcript = String(form.get("transcriptText") ?? "");
   let transcriptFormat: TranscriptFormat = "text";
-  const transcriptFile = form.get("transcriptFile");
+  // A Google Drive transcript is downloaded and then read just like an uploaded file.
+  const driveTranscriptId = String(form.get("driveTranscriptId") ?? "");
+  let transcriptFile = form.get("transcriptFile");
+  if (driveTranscriptId) {
+    const file = await driveTranscript(driveTranscriptId).catch(() => ({ error: "Couldn't reach Google Drive. Try again." }));
+    if ("error" in file) return NextResponse.json({ error: file.error }, { status: 400 });
+    transcriptFile = file;
+  }
   if (transcriptFile instanceof File && transcriptFile.size > 0) {
     // Word files keep their formatting and tables.
     const read = await readTranscriptFile(transcriptFile);
@@ -42,21 +50,36 @@ export async function POST(req: Request) {
   }
 
   if (!title) return NextResponse.json({ error: "Give the job a title." }, { status: 400 });
-  if (!(media instanceof File) || media.size === 0)
+  const driveMediaId = String(form.get("driveMediaId") ?? "");
+  if (!driveMediaId && (!(media instanceof File) || media.size === 0))
     return NextResponse.json({ error: "Choose an audio or video file." }, { status: 400 });
-  const mediaType = media instanceof File ? mediaTypeOf(media.name, media.type) : null;
-  if (!mediaType)
+  const uploadedType = media instanceof File ? mediaTypeOf(media.name, media.type) : null;
+  if (!driveMediaId && !uploadedType)
     return NextResponse.json({ error: "The media must be an audio or video file." }, { status: 400 });
   if (!Number.isFinite(durationSeconds) || durationSeconds <= 0)
     return NextResponse.json({ error: "Couldn't read the media length. Enter it manually." }, { status: 400 });
   if (!(transcriptFormat === "html" ? docText(transcript) : transcript).trim()) return NextResponse.json({ error: "Add a transcript." }, { status: 400 });
 
   let stored: Awaited<ReturnType<typeof uploadMedia>>;
-  try {
-    stored = await uploadMedia(media);
-  } catch (err) {
-    console.error("Media upload failed", err);
-    return NextResponse.json({ error: "Couldn't store the media file. Try again, or use a smaller file." }, { status: 502 });
+  let mediaType = uploadedType;
+  if (driveMediaId) {
+    // Copied straight from Drive into storage, without passing through the admin's browser.
+    const file = await openDriveFile(driveMediaId, "media").catch(() => ({ error: "Couldn't reach Google Drive. Try again." }));
+    if ("error" in file) return NextResponse.json({ error: file.error }, { status: 400 });
+    mediaType = file.type;
+    try {
+      stored = await uploadMedia({ stream: () => file.res.body! });
+    } catch (err) {
+      console.error("Drive media copy failed", err);
+      return NextResponse.json({ error: "Couldn't copy the recording from Google Drive. Try again, or use a smaller file." }, { status: 502 });
+    }
+  } else {
+    try {
+      stored = await uploadMedia(media as File);
+    } catch (err) {
+      console.error("Media upload failed", err);
+      return NextResponse.json({ error: "Couldn't store the media file. Try again, or use a smaller file." }, { status: 502 });
+    }
   }
 
   const job = await db.job.create({
@@ -64,7 +87,7 @@ export async function POST(req: Request) {
       title,
       mediaPath: stored.name,
       mediaBytes: stored.bytes,
-      mediaType,
+      mediaType: mediaType!,
       durationSeconds,
       ratePerHour,
       fixedPay,
