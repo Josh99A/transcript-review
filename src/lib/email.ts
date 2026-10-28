@@ -37,11 +37,17 @@ ${link ? `<a href="${escape(link)}" style="display:inline-block;background:#1818
   return { html, text };
 }
 
-/** Sends the emails now. Never throws: a lost email mustn't fail the action that caused it. */
-export async function sendEmails(emails: Email[]) {
+/** The address emails come from. */
+export function emailSender() {
+  return process.env.EMAIL_FROM?.trim() || DEFAULT_FROM;
+}
+
+/** Sends the emails now. Never throws: a lost email mustn't fail the action that caused it. Returns what went wrong, if anything. */
+export async function sendEmails(emails: Email[]): Promise<string | null> {
   const key = process.env.RESEND_API_KEY?.trim();
-  if (!key || !emails.length) return;
-  const from = process.env.EMAIL_FROM?.trim() || DEFAULT_FROM;
+  if (!key) return "RESEND_API_KEY isn't set.";
+  const from = emailSender();
+  let error: string | null = null;
   // The batch endpoint takes up to 100 emails a call; each recipient gets their own email.
   for (let i = 0; i < emails.length; i += 100) {
     const batch = emails.slice(i, i + 100).map((e) => ({ from, to: [e.to], subject: e.subject, ...render(e) }));
@@ -53,11 +59,21 @@ export async function sendEmails(emails: Email[]) {
         cache: "no-store",
         signal: AbortSignal.timeout(15_000),
       });
-      if (!res.ok) console.error(`Email send failed (${res.status}):`, (await res.text().catch(() => "")).slice(0, 500));
+      if (!res.ok) {
+        const text = (await res.text().catch(() => "")).slice(0, 500);
+        console.error(`Email send failed (${res.status}):`, text);
+        let message = text;
+        try {
+          message = (JSON.parse(text) as { message?: string }).message ?? text;
+        } catch {}
+        error = `Resend refused it (${res.status}): ${message}`;
+      }
     } catch (e) {
       console.error("Email send failed", e);
+      error = "Couldn't reach Resend.";
     }
   }
+  return error;
 }
 
 /** Sends the emails once the response is on its way, so actions stay quick. Outside a request it just sends them. */
