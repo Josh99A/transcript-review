@@ -3,13 +3,13 @@
 import RichTextEditor from "@/components/RichTextEditor";
 import { LanguageField, ProjectField } from "@/components/JobFields";
 import { CloudUpload, FileAudio, FileText, FileVideo, Link2, Pencil, TriangleAlert, X } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { toast } from "sonner";
 import { Spinner } from "@/components/client";
 import { formatDuration, formatUGX } from "@/lib/format";
 import { adtsDuration, MEDIA_ACCEPT, mediaTypeOf, mp4Duration } from "@/lib/mediaTypes";
 import { expectedPayFor } from "@/lib/pay";
+import { formatBytes, useUploads } from "../../Uploads";
 
 /** Reads the length of an audio/video file in the browser: a picked file, or a Google Drive one through the app. */
 async function readDuration(source: File | string, type: string): Promise<number> {
@@ -105,12 +105,6 @@ function DriveLink({ kind, onPick }: { kind: "media" | "transcript"; onPick: (fi
   );
 }
 
-function formatBytes(n: number) {
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} KB`;
-  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`;
-  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`;
-}
-
 function Step({ n, title, children }: { n: number; title: string; children: React.ReactNode }) {
   return (
     <section className="card">
@@ -123,8 +117,16 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
   );
 }
 
-export default function UploadForm({ users, projects, languages }: { users: { id: string; name: string }[]; projects: string[]; languages: string[] }) {
-  const router = useRouter();
+type Props = { users: { id: string; name: string }[]; projects: string[]; languages: string[] };
+
+export default function UploadForm(props: Props) {
+  // Each job sent off starts a fresh, empty form, while the earlier one keeps uploading in the background.
+  const [formKey, setFormKey] = useState(0);
+  return <JobForm key={formKey} {...props} onQueued={() => setFormKey((k) => k + 1)} />;
+}
+
+function JobForm({ users, projects, languages, onQueued }: Props & { onQueued: () => void }) {
+  const { start } = useUploads();
   const mediaInput = useRef<HTMLInputElement>(null);
   const [media, setMedia] = useState<File | null>(null);
   const [driveMedia, setDriveMedia] = useState<DriveInfo | null>(null);
@@ -146,14 +148,11 @@ export default function UploadForm({ users, projects, languages }: { users: { id
   const [ratePerHour, setRatePerHour] = useState("");
   const [fixedPay, setFixedPay] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [progress, setProgress] = useState<number | null>(null);
 
   const effectiveDuration = manual ? Number(minutes || 0) * 60 + Number(seconds || 0) : (duration ?? 0);
   const hasTranscript = mode === "file" ? !!transcriptFile : mode === "drive" ? !!driveTranscript : !!pasted.trim();
   const picked = media ? { name: media.name, size: media.size as number | null, type: mediaTypeOf(media.name, media.type) } : driveMedia;
   const ready = !!picked && effectiveDuration > 0 && !!title.trim() && !!language && hasTranscript;
-  const busy = progress !== null;
-
   async function pickMedia(file: File | undefined) {
     setError(null);
     if (!file) return;
@@ -214,32 +213,13 @@ export default function UploadForm({ users, projects, languages }: { users: { id
     if (mode === "file" && transcriptFile) data.set("transcriptFile", transcriptFile);
     else if (mode === "drive" && driveTranscript) data.set("driveTranscriptId", driveTranscript.id);
     else data.set("transcriptText", pasted);
-    setProgress(0);
-    // XHR rather than fetch so we can show upload progress for large files.
-    const xhr = new XMLHttpRequest();
-    xhr.open("POST", "/api/jobs");
-    xhr.upload.onprogress = (ev) => ev.lengthComputable && setProgress(Math.round((ev.loaded / ev.total) * 100));
-    xhr.onload = () => {
-      setProgress(null);
-      let body: { id?: string; error?: string } = {};
-      try {
-        body = JSON.parse(xhr.responseText || "{}");
-      } catch {}
-      if (xhr.status >= 200 && xhr.status < 300 && body.id) {
-        toast.success("Job uploaded", { description: assigneeId === "" ? "It's on the job board for transcribers to request." : assigneeId === "__hold" ? "Assign or post it when you're ready." : "It's now in their to-do list." });
-        router.push(`/admin/jobs/${body.id}`);
-      } else setError(body.error ?? "Upload failed. Please try again.");
-    };
-    xhr.onerror = () => {
-      setProgress(null);
-      setError("Upload failed. Check your connection and try again.");
-    };
-    xhr.send(data);
+    start({ title: title.trim(), data, fromDrive: !!driveMedia, assigneeId });
+    toast(`Uploading “${title.trim()}”`, { description: "Its progress shows at the bottom of the screen. You can add the next job now." });
+    onQueued();
+    window.scrollTo({ top: 0 });
   }
 
   const MediaIcon = picked?.type?.startsWith("video") ? FileVideo : FileAudio;
-  // Drive files are copied on the server, so the upload bar would only show the form's few bytes.
-  const fromDrive = !!driveMedia || (mode === "drive" && !!driveTranscript);
   const assigneeName = users.find((u) => u.id === assigneeId)?.name;
 
   return (
@@ -292,7 +272,7 @@ export default function UploadForm({ users, projects, languages }: { users: { id
                   {duration !== null && !manual && ` · ${formatDuration(duration)}`}
                 </div>
               </div>
-              <button type="button" className="btn-ghost size-8 px-0" onClick={clearMedia} aria-label="Remove file" disabled={busy}>
+              <button type="button" className="btn-ghost size-8 px-0" onClick={clearMedia} aria-label="Remove file">
                 <X className="size-4" />
               </button>
             </div>
@@ -428,20 +408,11 @@ export default function UploadForm({ users, projects, languages }: { users: { id
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" /> {error}
               </p>
             )}
-            {busy && fromDrive && progress === 100 && (
-              <p className="hint mb-3 mt-0 flex items-center gap-2"><Spinner /> Copying from Google Drive. Long recordings take a minute.</p>
-            )}
-            {busy && !(fromDrive && progress === 100) && (
-              <div className="mb-3">
-                <div className="num mb-1 flex justify-between text-xs text-slate-500"><span>Uploading</span><span>{progress}%</span></div>
-                <div className="h-1.5 overflow-hidden rounded-full bg-slate-100"><div className="h-full bg-brand-600 transition-all" style={{ width: `${progress}%` }} /></div>
-              </div>
-            )}
-            <button className="btn w-full" disabled={!ready || busy}>
-              {busy ? <Spinner /> : <CloudUpload className="size-4" />}
-              {busy ? "Uploading…" : assigneeName ? "Upload and assign" : assigneeId === "" ? "Upload and post" : "Upload job"}
+            <button className="btn w-full" disabled={!ready}>
+              <CloudUpload className="size-4" />
+              {assigneeName ? "Upload and assign" : assigneeId === "" ? "Upload and post" : "Upload job"}
             </button>
-            {!ready && !busy && <p className="hint text-center">Add a media file, title, language and transcript to continue.</p>}
+            {!ready && <p className="hint text-center">Add a media file, title, language and transcript to continue.</p>}
           </div>
         </div>
       </aside>
