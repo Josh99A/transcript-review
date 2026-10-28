@@ -39,7 +39,7 @@ The repo includes `render.yaml`. On render.com choose **New > Blueprint**, pick 
 `CLOUDINARY_URL` (Cloudinary dashboard > API Keys > API environment variable) plus `ADMIN_EMAIL`,
 `ADMIN_PASSWORD` (8+ chars) and optionally `ADMIN_NAME` for the first admin. It creates a free web
 service and a free Postgres database. Migrations run when the app starts, and the first admin is
-created automatically.
+created automatically. Render is the only host the app is set up for, and it deploys from `main`.
 
 Render deletes a free Postgres database 30 days after it is created unless it is upgraded, and a
 free web service sleeps after 15 minutes without visitors, so the next visit takes about a minute.
