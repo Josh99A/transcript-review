@@ -96,8 +96,8 @@ Besides the bell in the app, the important notices are also emailed through [Res
   job, issues raised and replies, and a job that couldn't be copied to Google Drive.
 - **Referrers:** referral pay earned when someone they referred has a transcript approved.
 - **New accounts:** a welcome email with a sign-in link (the password is never emailed).
-- **New jobs:** transcribers hear about jobs that go up on Find work in a language they listed (or
-  any job, if they listed none). Jobs posted within a few minutes of each other, like a batch of
+- **New jobs:** every transcriber hears about jobs that go up on Find work, whatever languages they
+  listed. Jobs posted within a few minutes of each other, like a batch of
   uploads, come as one email per person.
 
 To turn it on:
