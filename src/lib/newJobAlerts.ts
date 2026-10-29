@@ -4,7 +4,7 @@ import { type Email, sendEmails } from "./email";
 import { formatDuration, formatUGX } from "./format";
 import { creditAmount } from "./pay";
 
-// Transcribers are emailed when jobs in their languages go up on Find work. Jobs posted close together (a batch
+// Every transcriber is emailed when jobs go up on Find work, whatever languages they listed. Jobs posted close together (a batch
 // of uploads, say) are gathered for a few minutes and go out as one email per person, not one per job.
 
 const WAIT_MS = 3 * 60_000;
@@ -21,9 +21,6 @@ export function announceJob(jobId: string, except?: string | null) {
   pending.timer ??= setTimeout(() => void flush(), WAIT_MS);
 }
 
-const speaks = (languages: string[], language: string | null) =>
-  !language || languages.length === 0 || languages.some((l) => l.trim().toLowerCase() === language.trim().toLowerCase());
-
 async function flush() {
   const queued = new Map(pending.jobs);
   pending.jobs.clear();
@@ -32,12 +29,12 @@ async function flush() {
     // Only jobs still waiting on the board by now; anything taken or pulled in the meantime is left out.
     const [jobs, people] = await Promise.all([
       db.job.findMany({ where: { id: { in: [...queued.keys()] }, posted: true, status: "UNASSIGNED" }, orderBy: { createdAt: "asc" } }),
-      db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true, email: true, languages: true } }),
+      db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true, email: true } }),
     ]);
     if (!jobs.length) return;
     const emails: Email[] = [];
     for (const p of people) {
-      const theirs = jobs.filter((j) => queued.get(j.id) !== p.id && speaks(p.languages, j.language));
+      const theirs = jobs.filter((j) => queued.get(j.id) !== p.id);
       if (!theirs.length) continue;
       const one = theirs.length === 1 ? theirs[0] : null;
       const listed = theirs.slice(0, MAX_LISTED);
