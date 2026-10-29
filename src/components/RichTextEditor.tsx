@@ -58,6 +58,7 @@ export default function RichTextEditor({ name, id, defaultValue = "", placeholde
 
   useEffect(() => {
     if (box.current) box.current.innerHTML = defaultValue;
+    if (field.current) field.current.value = defaultValue;
   }, [defaultValue]);
 
   const sync = () => {
@@ -137,7 +138,9 @@ export default function RichTextEditor({ name, id, defaultValue = "", placeholde
           className="rich max-h-96 overflow-y-auto px-3 py-2 text-base text-slate-800 outline-none sm:text-sm"
         />
       </div>
-      <input ref={field} type="hidden" name={name} defaultValue={defaultValue} />
+      {/* Both fields are managed together by the effect/sync. A React defaultValue on a hidden
+          input would overwrite edits when toolbar or selection state causes a rerender. */}
+      <input ref={field} type="hidden" name={name} />
     </div>
   );
 }

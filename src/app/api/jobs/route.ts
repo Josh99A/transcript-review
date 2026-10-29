@@ -10,6 +10,7 @@ import { docText, type TranscriptFormat } from "@/lib/docText";
 import { driveTranscript, openDriveFile } from "@/lib/drive";
 import { readTranscriptFile } from "@/lib/transcriptUpload";
 import { announceJob } from "@/lib/newJobAlerts";
+import { DEFAULT_JOB_INSTRUCTIONS } from "@/lib/jobInstructions";
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -25,7 +26,7 @@ export async function POST(req: Request) {
   // "" posts the job on the board, "__hold" keeps it unassigned and off the board.
   const assignTo = String(form.get("assigneeId") ?? "");
   const assigneeId = assignTo && assignTo !== "__hold" ? assignTo : null;
-  const description = cleanRich(String(form.get("description") ?? "").slice(0, 50000));
+  const description = cleanRich(String(form.get("description") ?? DEFAULT_JOB_INSTRUCTIONS).slice(0, 50000));
   if (richText(description).length > 5000) return NextResponse.json({ error: "Keep the details under 5,000 characters." }, { status: 400 });
   const language = String(form.get("language") ?? "").trim().slice(0, 60) || null;
   if (!language) return NextResponse.json({ error: "Choose the job's language." }, { status: 400 });
