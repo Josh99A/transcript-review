@@ -368,8 +368,9 @@ function JobForm({ users, projects, languages, onQueued }: Props & { onQueued: (
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
-              <label className="label" htmlFor="project">Project <span className="font-normal text-slate-400">(optional)</span></label>
+              <label className="label" htmlFor="project">Group / project <span className="font-normal text-slate-400">(optional)</span></label>
               <ProjectField id="project" projects={projects} value={project} onChange={setProject} />
+              <p className="hint mt-1">Choose an existing group or type a new one. Approved jobs export to a matching Google Drive folder.</p>
               <p className="hint">Tells jobs apart, e.g. the client or study. Pick an earlier one or type a new one.</p>
             </div>
             <div>

@@ -2,9 +2,13 @@ import { CircleCheck, FileAudio, FileVideo, Hourglass, Inbox, Search, Upload, Wa
 import PayProblems from "@/components/PayProblems";
 import { payProblems } from "@/lib/payCheck";
 import SortSelect from "@/components/SortSelect";
+import GroupFilter from "@/components/GroupFilter";
+import GroupJobs from "@/components/GroupJobs";
+import { projectFilter, projectNames } from "@/lib/projects";
 import { pickSort, sortJobs, sortOptions, type SortKey } from "@/lib/sort";
 import JobTags from "@/components/JobTags";
 import type { Metadata } from "next";
+import type { Prisma } from "@prisma/client";
 import Link from "next/link";
 import PayDayCard from "@/components/PayDayCard";
 import StatusBadge, { jobBadge } from "@/components/StatusBadge";
@@ -34,18 +38,22 @@ const FILTER_LABELS: Record<Filter, string> = {
 
 const DASH_SORTS: SortKey[] = ["updated", "posted_new", "posted_old", "assigned_new", "assigned_old", "submitted_new", "submitted_old", "deadline", "longest", "shortest", "pay_high", "pay_low", "title"];
 
-export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; sort?: string; drive_error?: string }> }) {
+export default async function AdminDashboard({ searchParams }: { searchParams: Promise<{ status?: string; q?: string; sort?: string; group?: string; drive_error?: string }> }) {
   await requireAdmin();
-  const { status, q = "", sort: sortParam, drive_error: driveError } = await searchParams;
+  const { status, q = "", sort: sortParam, group = "", drive_error: driveError } = await searchParams;
   const sort = await pickSort("dashboard", sortParam, DASH_SORTS, "updated");
   const filter: Filter = FILTERS.includes(status as Filter) ? (status as Filter) : "ALL";
   const query = q.trim();
+  const listWhere: Prisma.JobWhereInput = {
+    ...projectFilter(group),
+    ...(query ? { OR: [{ title: { contains: query, mode: "insensitive" } }, { project: { contains: query, mode: "insensitive" } }, { assignee: { name: { contains: query, mode: "insensitive" } } }] } : {}),
+  };
 
-  const [jobs, users, balances, problems, expected, counts, payDate, stored, drive, notInDrive] = await Promise.all([
+  const [jobs, users, balances, problems, expected, counts, payDate, stored, drive, notInDrive, groups, filteredCounts] = await Promise.all([
     db.job.findMany({
       where: {
+        ...listWhere,
         ...(filter === "ALL" ? {} : { status: filter }),
-        ...(query ? { OR: [{ title: { contains: query, mode: "insensitive" } }, { project: { contains: query, mode: "insensitive" } }, { assignee: { name: { contains: query, mode: "insensitive" } } }] } : {}),
       },
       include: { assignee: { select: { name: true } }, earnings: true },
     }),
@@ -58,6 +66,8 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     db.job.findMany({ where: { mediaRemovedAt: null }, select: { mediaBytes: true, status: true } }),
     driveExportStatus(),
     waitingForDrive(),
+    projectNames(),
+    group || query ? db.job.groupBy({ by: ["status"], _count: true, where: listWhere }) : Promise.resolve(null),
   ]);
   sortJobs(jobs, sort);
   const sizes = stored.map((j) => ({ status: j.status, bytes: j.mediaBytes }));
@@ -65,6 +75,10 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
   const removable = sizes.filter((j) => j.status === "SUBMITTED");
   const count = (s: Filter) =>
     s === "ALL" ? counts.reduce((n, c) => n + c._count, 0) : (counts.find((c) => c.status === s)?._count ?? 0);
+  const listCount = (s: Filter) => {
+    const matching = filteredCounts ?? counts;
+    return s === "ALL" ? matching.reduce((n, c) => n + c._count, 0) : (matching.find((c) => c.status === s)?._count ?? 0);
+  };
   const owing = users
     .map((u) => ({ user: u, balance: balances.get(u.id) ?? { earned: 0, paid: 0, owed: 0 } }))
     .sort((a, b) => b.balance.owed - a.balance.owed);
@@ -75,6 +89,8 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
     const p = new URLSearchParams();
     if (f !== "ALL") p.set("status", f);
     if (query) p.set("q", query);
+    if (group) p.set("group", group);
+    p.set("sort", sort);
     const s = p.toString();
     return s ? `/admin?${s}` : "/admin";
   };
@@ -107,11 +123,15 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
             <h2 className="card-title">Jobs</h2>
             <form className="relative ml-auto w-full sm:w-64" role="search">
               {filter !== "ALL" && <input type="hidden" name="status" value={filter} />}
+              {group && <input type="hidden" name="group" value={group} />}
+              <input type="hidden" name="sort" value={sort} />
               <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
-              <input className="input pl-9" name="q" defaultValue={query} placeholder="Search title, project or person" aria-label="Search jobs" />
+              <input className="input pl-9" name="q" defaultValue={query} placeholder="Search title, group or person" aria-label="Search jobs" />
             </form>
             <SortSelect page="dashboard" value={sort} options={sortOptions(DASH_SORTS)} className="w-full sm:w-auto" />
           </div>
+          <div className="border-b border-slate-100 px-4 py-3 sm:px-5"><GroupFilter groups={groups} value={group} /></div>
+          <GroupJobs jobs={jobs.map(({ id, title }) => ({ id, title }))} groups={groups} />
           <div className="flex flex-wrap gap-2 border-b border-slate-100 px-4 py-3 sm:px-5" role="tablist">
             {FILTERS.map((f) => {
               const active = f === filter;
@@ -127,7 +147,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
                 >
                   {FILTER_LABELS[f]}
                   <span className={`num text-xs ${active ? "text-brand-700" : "text-slate-400"}`}>
-                    {count(f)}
+                    {listCount(f)}
                   </span>
                 </Link>
               );
@@ -135,7 +155,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
           </div>
 
           {jobs.length === 0 ? (
-            query || filter !== "ALL" ? (
+            query || group || filter !== "ALL" ? (
               <EmptyState icon={Search} title="No matching jobs" description="Try a different search or filter." action={<Link href="/admin" className="btn-secondary">Clear filters</Link>} />
             ) : (
               <EmptyState

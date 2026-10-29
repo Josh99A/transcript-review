@@ -1,5 +1,8 @@
 import { CircleCheck, Download } from "lucide-react";
 import SortSelect from "@/components/SortSelect";
+import GroupFilter from "@/components/GroupFilter";
+import GroupJobs from "@/components/GroupJobs";
+import { projectFilter, projectNames } from "@/lib/projects";
 import { pickSort, sortJobs, sortOptions, type SortKey } from "@/lib/sort";
 import JobTags from "@/components/JobTags";
 import type { Metadata } from "next";
@@ -20,18 +23,19 @@ const PAY_TONE: Record<PayState, string> = {
 
 const DONE_SORTS: SortKey[] = ["approved_new", "approved_old", "submitted_new", "submitted_old", "assigned_new", "assigned_old", "longest", "shortest", "pay_high", "pay_low", "title"];
 
-export default async function CompletedPage({ searchParams }: { searchParams: Promise<{ unpaid?: string; who?: string; sort?: string }> }) {
+export default async function CompletedPage({ searchParams }: { searchParams: Promise<{ unpaid?: string; who?: string; sort?: string; group?: string }> }) {
   await requireAdmin();
-  const { unpaid, who, sort: sortParam } = await searchParams;
+  const { unpaid, who, sort: sortParam, group = "" } = await searchParams;
   const sort = await pickSort("completed", sortParam, DONE_SORTS, "approved_new");
-  const [jobs, people, payState] = await Promise.all([
+  const [jobs, people, payState, groups] = await Promise.all([
     db.job.findMany({
-      where: { status: "SUBMITTED", approvedAt: { not: null } },
+      where: { status: "SUBMITTED", approvedAt: { not: null }, ...projectFilter(group) },
       include: { assignee: { select: { id: true, name: true } }, earnings: true },
       orderBy: { approvedAt: "desc" },
     }),
     db.user.findMany({ where: { role: "USER" }, select: { id: true, name: true }, orderBy: { name: "asc" } }),
     payStates(),
+    projectNames(),
   ]);
   const rows = sortJobs([...jobs], sort)
     .map((j) => {
@@ -42,7 +46,7 @@ export default async function CompletedPage({ searchParams }: { searchParams: Pr
   const unpaidTotal = rows.filter((r) => r.state !== "Paid").length;
 
   const href = (next: { unpaid?: string; who?: string }) => {
-    const q = new URLSearchParams(Object.entries({ unpaid, who, ...next }).filter(([, v]) => v) as [string, string][]);
+    const q = new URLSearchParams(Object.entries({ unpaid, who, group, sort, ...next }).filter(([, v]) => v) as [string, string][]);
     return `/admin/completed${q.size ? `?${q}` : ""}`;
   };
   const chip = (active: boolean) =>
@@ -56,6 +60,8 @@ export default async function CompletedPage({ searchParams }: { searchParams: Pr
         <Link href={href({ unpaid: "1" })} className={chip(!!unpaid)}>Not fully paid</Link>
         <form action="/admin/completed" className="flex w-full items-center gap-2 sm:ml-auto sm:w-auto">
           {unpaid && <input type="hidden" name="unpaid" value="1" />}
+          {group && <input type="hidden" name="group" value={group} />}
+          <input type="hidden" name="sort" value={sort} />
           <label className="sr-only" htmlFor="who">Transcriber</label>
           <select id="who" name="who" defaultValue={who ?? ""} className="input h-9 min-w-0 flex-1 text-sm sm:w-48 sm:flex-none">
             <option value="">Everyone</option>
@@ -64,11 +70,13 @@ export default async function CompletedPage({ searchParams }: { searchParams: Pr
           <button className="btn-secondary btn-sm">Filter</button>
         </form>
         <SortSelect page="completed" value={sort} options={sortOptions(DONE_SORTS)} className="w-full sm:w-auto" />
+        <GroupFilter groups={groups} value={group} />
       </div>
+      {rows.length > 0 && <section className="card mb-4"><GroupJobs jobs={rows.map(({ job: { id, title } }) => ({ id, title }))} groups={groups} /></section>}
 
       {rows.length === 0 ? (
         <section className="card">
-          <EmptyState icon={CircleCheck} title={jobs.length ? "Nothing matches these filters" : "No completed jobs yet"} description={jobs.length ? "Try another filter." : "Jobs you approve from Reviews show up here."} />
+          <EmptyState icon={CircleCheck} title={jobs.length || group ? "Nothing matches these filters" : "No completed jobs yet"} description={jobs.length || group ? "Try another filter." : "Jobs you approve from Reviews show up here."} />
         </section>
       ) : (
         <>

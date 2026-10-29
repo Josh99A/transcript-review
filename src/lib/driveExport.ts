@@ -5,8 +5,9 @@ import { htmlToDocx, textToDocx } from "./docx";
 import { mediaUrl } from "./media";
 import { notifyAdmins } from "./notify";
 import { cleanDoc } from "./richDoc";
+import { driveFolders } from "./driveFolders";
 
-// Approved jobs are copied into a folder in an admin's own Google Drive: one folder per job with its recording
+// Approved jobs are copied into group folders in an admin's own Google Drive: one folder per job with its recording
 // and the final transcript as Word. An admin connects their Google account once (OAuth, "drive.file" scope, so
 // the app only ever sees the files it made). Needs GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET from Google Cloud.
 
@@ -145,12 +146,21 @@ async function createFolder(name: string, parent?: string) {
 }
 
 /** The top folder exports go into, made again if someone deleted it. Admins can rename or move it in Drive. */
+let pendingExportFolder: Promise<string> | null = null;
 async function exportFolder() {
-  const id = await setting(KEYS.folder);
-  if (await exists(id)) return id!;
-  const made = await createFolder(DRIVE_FOLDER_NAME);
-  await save(KEYS.folder, made);
-  return made;
+  if (pendingExportFolder) return pendingExportFolder;
+  pendingExportFolder = (async () => {
+    const id = await setting(KEYS.folder);
+    if (await exists(id)) return id!;
+    const made = await createFolder(DRIVE_FOLDER_NAME);
+    await save(KEYS.folder, made);
+    return made;
+  })();
+  try {
+    return await pendingExportFolder;
+  } finally {
+    pendingExportFolder = null;
+  }
 }
 
 /** Uploads a file, or replaces the contents of `existing`, with a resumable upload so long recordings stream through. */
@@ -178,13 +188,19 @@ function safeName(title: string) {
 }
 
 const running = new Set<string>();
+const rerun = new Set<string>();
+const folders = driveFolders(drive);
 
 /**
  * Copies one approved job to Drive: its folder, the recording (once) and the final transcript (replaced on every
  * approval, so a job approved again after changes has the latest one). Records the outcome on the job.
  */
 export async function exportJob(jobId: string) {
-  if (running.has(jobId)) return;
+  if (running.has(jobId)) {
+    // Details/group may have changed while an earlier export was streaming its recording.
+    rerun.add(jobId);
+    return;
+  }
   running.add(jobId);
   try {
     const job = await db.job.findUnique({ where: { id: jobId } });
@@ -192,10 +208,14 @@ export async function exportJob(jobId: string) {
     const name = safeName(job.title);
     let media = job.driveMediaId;
     let transcript = job.driveTranscriptId;
+    const parent = await folders.groupFolder(await exportFolder(), job.project);
     let folder: string;
-    if (job.driveFolderId && (await exists(job.driveFolderId))) folder = job.driveFolderId;
+    if (job.driveFolderId && (await exists(job.driveFolderId))) {
+      folder = job.driveFolderId;
+      await folders.moveJobFolder(folder, name, parent);
+    }
     else {
-      folder = await createFolder(job.project ? `${name} (${safeName(job.project)})` : name, await exportFolder());
+      folder = await createFolder(name, parent);
       media = transcript = null;
     }
     await db.job.update({ where: { id: jobId }, data: { driveFolderId: folder, driveMediaId: media, driveTranscriptId: transcript } });
@@ -224,6 +244,7 @@ export async function exportJob(jobId: string) {
     }
   } finally {
     running.delete(jobId);
+    if (rerun.delete(jobId)) await exportJob(jobId);
   }
 }
 

@@ -26,6 +26,25 @@ npm run dev                   # http://localhost:3000
 
 Sign in as the admin, add transcribers under **Users & pay**, then upload a job.
 
+## Organising files into groups
+
+Set **Group / project** when uploading or editing a job. Type a new group name or choose one already
+used; existing projects are groups too. On the dashboard or Completed page, filter by **Group** and
+expand **Organise jobs into groups** to move several jobs together. Leaving the destination empty
+ungroups the selected jobs.
+
+Approved jobs export as `Transcript exports / Group / Job`, with the recording and final Word
+transcript together in the job folder. Ungrouped jobs stay directly under `Transcript exports`.
+Changing an approved job's group moves its existing Drive folder and reuses its recording. Use
+**Organise existing exports by group** on the dashboard's Google Drive card to arrange earlier exports
+into this structure too. Drive must be connected; failed moves can be retried from the job or dashboard.
+
+The Drive folder organisation checks run locally without Google credentials:
+
+```bash
+npx tsx --test src/lib/driveFolders.test.ts
+```
+
 ## Stack
 
 Next.js 16 (App Router, TypeScript, Tailwind), Prisma with Postgres, signed-cookie sessions with

@@ -1,5 +1,5 @@
 import { CloudUpload, ExternalLink } from "lucide-react";
-import { disconnectGoogleDrive, exportWaitingToDrive } from "@/app/actions";
+import { disconnectGoogleDrive, exportWaitingToDrive, organiseDriveExports } from "@/app/actions";
 import { DRIVE_FOLDER_NAME } from "@/lib/driveExport";
 import { ActionForm, ConfirmAction } from "./client";
 
@@ -31,6 +31,7 @@ export default function DriveCard({ status, waiting, failed, error }: { status: 
             <p className="text-sm text-slate-600">
               Approved jobs are copied to {status.account ? <span className="font-medium text-slate-900">{status.account}</span> : "your Google Drive"}.
             </p>
+            <p className="text-sm text-slate-500">Exports are organised by group, with each job&apos;s recording and transcript together. Ungrouped jobs stay directly in &ldquo;{DRIVE_FOLDER_NAME}&rdquo;.</p>
             {status.folderUrl && (
               <a href={status.folderUrl} target="_blank" rel="noreferrer" className="btn-secondary w-full">
                 <ExternalLink className="size-4" /> Open the Drive folder
@@ -46,6 +47,13 @@ export default function DriveCard({ status, waiting, failed, error }: { status: 
                 </ActionForm>
               </div>
             )}
+            <ActionForm action={organiseDriveExports} confirm={{
+              title: "Organise existing Drive exports?",
+              description: "Move approved jobs into their group folders and refresh their transcripts. Recordings already in Drive are reused. Jobs without a group stay in the main export folder.",
+              label: "Organise exports",
+            }}>
+              <button className="btn-secondary w-full">Organise existing exports by group</button>
+            </ActionForm>
             <ConfirmAction
               action={disconnectGoogleDrive}
               fields={{}}
