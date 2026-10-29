@@ -1,6 +1,7 @@
 "use client";
 
 import RichTextEditor from "@/components/RichTextEditor";
+import { DEFAULT_JOB_INSTRUCTIONS } from "@/lib/jobInstructions";
 import { LanguageField, ProjectField } from "@/components/JobFields";
 import { CloudUpload, FileAudio, FileText, FileVideo, Link2, Pencil, TriangleAlert, X } from "lucide-react";
 import Link from "next/link";
@@ -133,7 +134,7 @@ function Step({ n, title, children }: { n: number; title: string; children: Reac
 type Props = { users: { id: string; name: string }[]; projects: string[]; languages: string[] };
 
 export default function UploadForm(props: Props) {
-  // Each job sent off starts a fresh, empty form, while the earlier one keeps uploading in the background.
+  // Each queued job starts a fresh form with the default instructions while the earlier one uploads.
   const [formKey, setFormKey] = useState(0);
   return <JobForm key={formKey} {...props} onQueued={() => setFormKey((k) => k + 1)} />;
 }
@@ -363,8 +364,9 @@ function JobForm({ users, projects, languages, onQueued }: Props & { onQueued: (
             <input className="input" id="title" value={title} onChange={(e) => setTitle(e.target.value)} required placeholder="e.g. Interview with district officer" />
           </div>
           <div className="mt-4">
-            <label className="label" htmlFor="description">Details for transcribers <span className="font-normal text-slate-400">(optional)</span></label>
-            <RichTextEditor name="description" id="description" placeholder="e.g. Two speakers, some Luganda. Label speakers and keep timestamps." />
+            <label className="label" htmlFor="description">Instructions for transcribers</label>
+            <RichTextEditor name="description" id="description" defaultValue={DEFAULT_JOB_INSTRUCTIONS} />
+            <p className="hint mt-1">These instructions are included with every new job. You can edit them for this job before posting.</p>
           </div>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <div>
