@@ -375,6 +375,33 @@ const detailsSchema = z.object({
   deadline: z.string().trim().regex(/^(\d{4}-\d{2}-\d{2})?$/, "Enter a valid deadline").default(""),
 });
 
+/** Move selected jobs together; existing projects are the groups used throughout the app. */
+export async function groupJobs(formData: FormData): Promise<FormState> {
+  await requireAdmin();
+  const parsed = z.object({
+    ids: z.array(z.string().min(1)).min(1, "Choose at least one job.").max(500, "Move up to 500 jobs at a time."),
+    project: z.string().trim().max(80, "Keep group names under 80 characters."),
+  }).safeParse({ ids: [...new Set(formData.getAll("jobId").map(String))], project: String(formData.get("project") ?? "") });
+  if (!parsed.success) return { error: parsed.error.issues[0].message };
+  const project = parsed.data.project.replace(/\s+/g, " ") || null;
+  const changed = await db.$transaction(async (tx) => {
+    const jobs = await tx.job.findMany({ where: { id: { in: parsed.data.ids } }, select: { id: true, project: true, status: true, approvedAt: true } });
+    const moving = jobs.filter((job) => job.project !== project);
+    if (moving.length) await tx.job.updateMany({
+      where: { id: { in: moving.map((job) => job.id) } },
+      data: { project, driveExportedAt: null, driveExportError: null },
+    });
+    return moving;
+  });
+  if (!changed.length) return { ok: "The selected jobs are already in that group." };
+  const copying = await exportLater(changed.filter((job) => job.status === "SUBMITTED" && job.approvedAt).map((job) => job.id));
+  revalidatePath("/admin", "layout");
+  revalidatePath("/board");
+  revalidatePath("/jobs");
+  for (const job of changed) revalidatePath(`/jobs/${job.id}`);
+  return { ok: `${changed.length} job${changed.length === 1 ? "" : "s"} ${project ? `moved to “${project}”` : "ungrouped"}.${copying ? " Updating their Google Drive folders." : ""}` };
+}
+
 export async function updateJobDetails(formData: FormData): Promise<FormState> {
   await requireAdmin();
   const jobId = String(formData.get("jobId"));
@@ -386,13 +413,16 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
   const pricing = parsePricing(formData);
   if ("error" in pricing) return { error: pricing.error };
   const { ratePerHour, fixedPay } = pricing;
-  const before = await db.job.findUnique({ where: { id: jobId }, select: { description: true } });
+  const before = await db.job.findUnique({ where: { id: jobId }, select: { description: true, project: true, title: true } });
   if (!before) return { error: "This job no longer exists." };
   const instructionsChanged = before.description !== description;
+  const nextProject = project.replace(/\s+/g, " ") || null;
+  const folderChanged = before.project !== nextProject || before.title !== title;
   const job = await db.job.update({
     where: { id: jobId },
     data: {
-      title, description, language: language || null, project: project.replace(/\s+/g, " ") || null, deadline: parseDeadline(deadline), ratePerHour, fixedPay,
+      title, description, language: language || null, project: nextProject, deadline: parseDeadline(deadline), ratePerHour, fixedPay,
+      ...(folderChanged ? { driveExportedAt: null, driveExportError: null } : {}),
       ...(instructionsChanged ? { instructionsUpdatedAt: new Date() } : {}),
     },
     include: { assignee: { select: { name: true } } },
@@ -413,10 +443,12 @@ export async function updateJobDetails(formData: FormData): Promise<FormState> {
   for (const e of await db.earning.findMany({ where: { jobId } })) {
     await db.earning.update({ where: { id: e.id }, data: { customRate: hasOwnPay(job), amount: creditAmount(job.durationSeconds, job, e.lockedRate) } });
   }
+  if (folderChanged && job.status === "SUBMITTED" && job.approvedAt) await exportLater([jobId]);
   revalidatePath(`/admin/jobs/${jobId}`);
   revalidatePath("/admin");
   revalidatePath("/board");
   revalidatePath("/admin/users");
+  revalidatePath("/admin/completed");
   revalidatePath(`/jobs/${jobId}`);
   return { ok: told ? `Details saved. ${told} was told the instructions changed.` : "Details saved." };
 }
@@ -649,6 +681,17 @@ export async function exportWaitingToDrive(): Promise<FormState> {
   if (!(await exportLater(jobs.map((j) => j.id)))) return { error: "Connect Google Drive first." };
   revalidatePath("/admin");
   return { ok: `Copying ${jobs.length} job${jobs.length === 1 ? "" : "s"} to Google Drive. This can take a few minutes for long recordings.` };
+}
+
+/** Upgrade existing exports to the group hierarchy, reusing their recording and folder IDs. */
+export async function organiseDriveExports(): Promise<FormState> {
+  await requireAdmin();
+  const jobs = await db.job.findMany({ where: { status: "SUBMITTED", approvedAt: { not: null } }, select: { id: true } });
+  if (!jobs.length) return { error: "There are no approved jobs to organise yet." };
+  if (!(await exportLater(jobs.map((job) => job.id)))) return { error: "Connect Google Drive first." };
+  await db.job.updateMany({ where: { id: { in: jobs.map((job) => job.id) } }, data: { driveExportedAt: null, driveExportError: null } });
+  revalidatePath("/admin", "layout");
+  return { ok: "Organising approved jobs into their Google Drive groups. Existing recordings will be reused." };
 }
 
 export async function disconnectGoogleDrive(): Promise<FormState> {

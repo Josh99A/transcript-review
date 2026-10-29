@@ -125,7 +125,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
             <div className="card-body space-y-3 text-sm">
               {job.description ? <ClampedText html={job.description} lines={6} className="text-slate-700" /> : <p className="text-slate-400">No details for transcribers yet.</p>}
               <div className="flex flex-wrap gap-x-6 gap-y-1 text-slate-600">
-                <span>Project: <span className="text-slate-900">{job.project ?? "Not set"}</span></span>
+                <span>Group: <span className="text-slate-900">{job.project ?? "Ungrouped"}</span></span>
                 <span>Language: <span className="text-slate-900">{job.language ?? "Not set"}</span></span>
                 <span>Deadline: <span className={due?.overdue ? "text-red-700" : "text-slate-900"}>{due?.text ?? "None"}</span></span>
               </div>
@@ -136,7 +136,7 @@ export default async function AdminJobPage({ params }: { params: Promise<{ id: s
                   <div><label className="label" htmlFor="d-title">Title</label><input className="input" id="d-title" name="title" defaultValue={job.title} required /></div>
                   <div><label className="label" htmlFor="d-desc">Details for transcribers</label><RichTextEditor name="description" id="d-desc" defaultValue={richHtml(job.description)} /><p className="hint mt-1">You can add to these at any time. {job.assignee && !job.approvedAt ? `${job.assignee.name} sees the change right away and is told about it.` : "Whoever takes the job sees them."}</p></div>
                   <div className="grid gap-3 sm:grid-cols-2">
-                    <div><label className="label" htmlFor="d-project">Project</label><ProjectField id="d-project" projects={projects} defaultValue={job.project ?? ""} /></div>
+                    <div><label className="label" htmlFor="d-project">Group / project</label><ProjectField id="d-project" projects={projects} defaultValue={job.project ?? ""} /><p className="hint mt-1">Changing this also moves an approved job&apos;s Google Drive folder.</p></div>
                     <div><label className="label" htmlFor="d-lang">Language</label><LanguageField id="d-lang" languages={languageList} defaultValue={job.language ?? ""} /></div>
                     <div><label className="label" htmlFor="d-due">Deadline</label><input className="input" id="d-due" name="deadline" type="date" defaultValue={deadlineInput(job.deadline)} /></div>
                     <div><label className="label" htmlFor="d-rate">Special rate (UGX per hour)</label><input className="input" id="d-rate" name="ratePerHour" inputMode="numeric" defaultValue={job.ratePerHour ?? ""} placeholder="Empty = usual rate" /></div>
