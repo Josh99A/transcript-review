@@ -43,9 +43,16 @@ export function emailSender() {
 }
 
 /** Sends the emails now. Never throws: a lost email mustn't fail the action that caused it. Returns what went wrong, if anything. */
-export async function sendEmails(emails: Email[]): Promise<string | null> {
+/** Test accounts (with "test" in their name or email) only get in-app notices, never emails. */
+export function isTestAccount(e: { to: string; name?: string | null }) {
+  return /test/i.test(e.to) || /test/i.test(e.name ?? "");
+}
+
+export async function sendEmails(all: Email[]): Promise<string | null> {
   const key = process.env.RESEND_API_KEY?.trim();
   if (!key) return "RESEND_API_KEY isn't set.";
+  const emails = all.filter((e) => !isTestAccount(e));
+  if (!emails.length) return null;
   const from = emailSender();
   let error: string | null = null;
   // The batch endpoint takes up to 100 emails a call; each recipient gets their own email.

@@ -15,7 +15,7 @@ import { db } from "@/lib/db";
 import { balancesByUser } from "@/lib/earnings";
 import { formatDuration, formatPayDate, formatUGX, parseDeadline } from "@/lib/format";
 import { notify, notifyAdmins, settleNotices } from "@/lib/notify";
-import { type Detail, emailConfigured, emailSender, sendEmails, sendEmailsLater } from "@/lib/email";
+import { type Detail, emailConfigured, emailSender, isTestAccount, sendEmails, sendEmailsLater } from "@/lib/email";
 import { announceJob } from "@/lib/newJobAlerts";
 import { creditAmount, earningsFor, hasOwnPay, parsePricing, RATE_PER_HOUR_UGX, referralPayFor } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
@@ -662,6 +662,7 @@ export async function disconnectGoogleDrive(): Promise<FormState> {
 export async function sendTestEmail(): Promise<FormState> {
   const admin = await requireAdmin();
   if (!emailConfigured()) return { error: "Emails are off. Add RESEND_API_KEY to the app's settings on Render." };
+  if (isTestAccount({ to: admin.email, name: admin.name })) return { error: "Your account has \"test\" in its name or email, and test accounts don't get emails." };
   const error = await sendEmails([
     {
       to: admin.email,
