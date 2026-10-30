@@ -17,6 +17,7 @@ import { formatDuration, formatPayDate, formatUGX, parseDeadline } from "@/lib/f
 import { notify, notifyAdmins, settleNotices } from "@/lib/notify";
 import { type Detail, emailConfigured, emailSender, isTestAccount, sendEmails, sendEmailsLater } from "@/lib/email";
 import { announceJob } from "@/lib/newJobAlerts";
+import { notifyAdminAssignment } from "@/lib/assignmentNotices";
 import { creditAmount, earningsFor, hasOwnPay, parsePricing, RATE_PER_HOUR_UGX, referralPayFor } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { cleanLanguages } from "@/lib/jobFields";
@@ -275,7 +276,7 @@ const failed = (r: unknown): r is { error: string } => typeof r === "object" && 
 // ---------- Admin: jobs ----------
 
 export async function assignJob(formData: FormData): Promise<FormState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const jobId = String(formData.get("jobId"));
   const assigneeId = String(formData.get("assigneeId") ?? "");
   const res = await guarded(async (tx) => {
@@ -291,7 +292,7 @@ export async function assignJob(formData: FormData): Promise<FormState> {
       await lockPayments(tx);
       await tx.earning.deleteMany({ where: { jobId, userId: job.assigneeId } });
     }
-    await tx.job.update({
+    const assigned = await tx.job.update({
       where: { id: jobId },
       data: assigneeId
         ? {
@@ -307,13 +308,13 @@ export async function assignJob(formData: FormData): Promise<FormState> {
         : { assigneeId: null, status: "UNASSIGNED", assignedAt: null },
     });
     const declined = assigneeId ? await settleRequests(tx, jobId, assigneeId) : [];
-    return { job, declined };
+    return { job, assigned, declined };
   });
   if (failed(res)) return res;
-  const { job, declined } = res;
+  const { job, assigned, declined } = res;
   if (assigneeId) {
-    const assigned = await db.job.findUnique({ where: { id: jobId } });
-    await notify([assigneeId], { title: `New job assigned: ${job.title}`, href: `/jobs/${jobId}`, jobId, kind: "assigned", email: true, details: assigned ? jobFacts(assigned) : undefined });
+    await notify([assigneeId], { title: `New job assigned: ${job.title}`, href: `/jobs/${jobId}`, jobId, kind: "assigned", email: true, details: jobFacts(assigned) });
+    await notifyAdminAssignment(assigned, admin, job.assigneeId);
   }
   if (job.assigneeId) await notify([job.assigneeId], { title: `${job.title} was taken off your list`, body: "An admin moved this job. You don't need to work on it any more.", href: "/jobs", jobId, email: true });
   await settleNotices(jobId);
@@ -330,7 +331,7 @@ export async function assignJob(formData: FormData): Promise<FormState> {
  * transcriber loses the job, its pay and its notices; payments already made to them stay recorded as they were.
  */
 export async function transferJob(formData: FormData): Promise<FormState> {
-  await requireAdmin();
+  const admin = await requireAdmin();
   const jobId = String(formData.get("jobId"));
   const toId = String(formData.get("toId") ?? "");
   const res = await guarded(async (tx) => {
@@ -345,16 +346,17 @@ export async function transferJob(formData: FormData): Promise<FormState> {
     await tx.earning.deleteMany({ where: { jobId, userId: to!.id } });
     // The pay moves as is (same amount and rate), and the new person's referrer gets the referral share.
     await tx.earning.updateMany({ where: { jobId, userId: from }, data: { userId: to!.id, referrerId: to!.referredById } });
-    await tx.job.update({ where: { id: jobId }, data: { assigneeId: to!.id } });
+    const transferred = await tx.job.update({ where: { id: jobId }, data: { assigneeId: to!.id } });
     await tx.jobRequest.deleteMany({ where: { jobId, userId: from } });
     await tx.notification.deleteMany({ where: { jobId, userId: from } });
-    return { job, from, to: to! };
+    return { job: transferred, from, to: to! };
   });
   if (failed(res)) return res;
   const { job, from, to } = res;
   const done = job.approvedAt ? "It's approved, and its pay is now in your earnings." : "It's waiting for review. Its pay is added to your earnings once it's approved.";
   await notify([to.id], { title: `${job.title} was transferred to you`, body: done, href: `/jobs/${jobId}`, jobId, email: true, details: jobFacts(job) });
   await notify([from], { title: `${job.title} was moved to someone else`, body: "An admin transferred this job and its pay to another transcriber.", href: "/jobs", email: true });
+  await notifyAdminAssignment(job, admin, from, true);
   revalidatePath("/", "layout");
   return { ok: `Transferred to ${to.name}.` };
 }

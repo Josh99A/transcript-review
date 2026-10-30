@@ -91,7 +91,9 @@ Besides the bell in the app, the important notices are also emailed through [Res
   notes (and edits to them), approval with the pay, payments received with the amount and where it
   was sent, a job taken off them, transferred or cancelled, new instructions or guidelines, a replaced
   transcript, and admin replies to their issues.
-- **Admins:** a transcriber taking a job from Find work (who took it, their email, languages and jobs
+- **Admins:** jobs assigned or reassigned by an admin (who received it and which admin assigned it),
+  including assignments during upload and transfers of completed jobs; a transcriber taking a job from
+  Find work (who took it, their email, languages and jobs
   in progress, and the job's details), submissions and resubmissions ready to review, a transcriber leaving a
   job, issues raised and replies, and a job that couldn't be copied to Google Drive.
 - **Referrers:** referral pay earned when someone they referred has a transcript approved.
@@ -99,6 +101,12 @@ Besides the bell in the app, the important notices are also emailed through [Res
 - **New jobs:** every transcriber hears about jobs that go up on Find work, whatever languages they
   listed. Jobs posted within a few minutes of each other, like a batch of
   uploads, come as one email per person.
+
+Assignment notification checks run without contacting an email provider:
+
+```bash
+node --conditions=react-server --import tsx --test src/lib/assignmentNotices.test.ts
+```
 
 To turn it on:
 
