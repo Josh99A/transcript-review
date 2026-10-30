@@ -11,6 +11,7 @@ import { driveTranscript, openDriveFile } from "@/lib/drive";
 import { readTranscriptFile } from "@/lib/transcriptUpload";
 import { announceJob } from "@/lib/newJobAlerts";
 import { DEFAULT_JOB_INSTRUCTIONS } from "@/lib/jobInstructions";
+import { notifyAdminAssignment } from "@/lib/assignmentNotices";
 
 export async function POST(req: Request) {
   const user = await getCurrentUser();
@@ -26,6 +27,10 @@ export async function POST(req: Request) {
   // "" posts the job on the board, "__hold" keeps it unassigned and off the board.
   const assignTo = String(form.get("assigneeId") ?? "");
   const assigneeId = assignTo && assignTo !== "__hold" ? assignTo : null;
+  if (assigneeId) {
+    const assignee = await db.user.findUnique({ where: { id: assigneeId }, select: { role: true } });
+    if (assignee?.role !== "USER") return NextResponse.json({ error: "Jobs can only go to transcribers." }, { status: 400 });
+  }
   const description = cleanRich(String(form.get("description") ?? DEFAULT_JOB_INSTRUCTIONS).slice(0, 50000));
   if (richText(description).length > 5000) return NextResponse.json({ error: "Keep the details under 5,000 characters." }, { status: 400 });
   const language = String(form.get("language") ?? "").trim().slice(0, 60) || null;
@@ -74,8 +79,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `This recording is already uploaded as “${duplicate.title}”.` }, { status: 409 });
   }
 
-  const createJob = (stored: { name: string; bytes: number }, mediaType: string) =>
-    db.job.create({
+  const createJob = async (stored: { name: string; bytes: number }, mediaType: string) => {
+    const job = await db.job.create({
       data: {
         title,
         mediaPath: stored.name,
@@ -97,6 +102,9 @@ export async function POST(req: Request) {
         ...(assigneeId ? { assigneeId, status: "ASSIGNED", assignedAt: new Date() } : {}),
       },
     });
+    await notifyAdminAssignment(job, user);
+    return job;
+  };
 
   if (uploaded) {
     // The file stays stored if this fails, so the form can try again without sending it a second time.
