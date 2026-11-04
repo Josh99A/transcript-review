@@ -137,3 +137,20 @@ To test the migration and accounting on a test Postgres database, run
 `TEST_DATABASE_URL=postgresql://... npm run test:payments`. The test creates and drops its own isolated
 schema and covers account conversion, historical/custom rates, pending work, retained payments,
 removed earnings, and overpayments offsetting future work.
+
+### Downloadable account history
+
+Transcribers can download CSV or JSON from **My earnings → Download your history**. Exports include
+all retained job credits and payments, current balances, and the person's preserved reconciliation
+totals before and after referral removal. JSON also includes their account and payment details.
+Exports exclude passwords, media credentials, transcript contents, and other people's records.
+
+Admins can use **Team & payments → View history** to follow a person's dated job-credit/payment
+ledger, inspect reconciliation totals, and download the same exports for that account. Job credits
+link to the underlying job; payments retain their IDs, dates, amounts, and notes. This is retained
+record history, not a log of past edits: deleted records and unrecorded actors cannot be reconstructed.
+
+The personal endpoint derives identity from the session. The separate admin endpoint requires an
+admin session. Both return private, non-cached attachments. CSV text is escaped for spreadsheet
+formulas. To include HTTP authorization/download and server-rendering checks in the Postgres test,
+run `npm run build` first, then `TEST_DATABASE_URL=postgresql://... TEST_HISTORY_HTTP=1 npm run test:payments`.

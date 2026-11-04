@@ -48,11 +48,12 @@ async function totals(client: Prisma.TransactionClient, where: Prisma.EarningWhe
 }
 
 /** Earned, paid and owed totals for every user, keyed by user id. */
-export async function balancesByUser(client: Prisma.TransactionClient = db): Promise<Map<string, Balance>> {
+export async function balancesByUser(client: Prisma.TransactionClient = db, userId?: string): Promise<Map<string, Balance>> {
+  const scope = userId ? { userId } : {};
   const [approved, waiting, paid] = await Promise.all([
-    totals(client, APPROVED),
-    totals(client, AWAITING),
-    client.payout.groupBy({ by: ["userId"], _sum: { amount: true } }),
+    totals(client, { ...APPROVED, ...scope }),
+    totals(client, { ...AWAITING, ...scope }),
+    client.payout.groupBy({ by: ["userId"], where: scope, _sum: { amount: true } }),
   ]);
   const map = new Map<string, Balance>();
   const get = (id: string) => map.get(id) ?? map.set(id, empty()).get(id)!;
@@ -85,7 +86,7 @@ export async function balancesByUser(client: Prisma.TransactionClient = db): Pro
 }
 
 export async function balanceFor(userId: string): Promise<Balance> {
-  return (await balancesByUser()).get(userId) ?? empty();
+  return (await balancesByUser(db, userId)).get(userId) ?? empty();
 }
 
 export type Expected = {

@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { readFileSync, readdirSync } from "node:fs";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawn } from "node:child_process";
 import { PrismaClient } from "@prisma/client";
 import { balancesByUser, expectedByUser } from "../src/lib/earnings";
 import { payProblems } from "../src/lib/payCheck";
+import { historyDownloadResponse, personalHistoryCsv, personalHistoryFor } from "../src/lib/personalHistory";
+import { SignJWT } from "jose";
+import { createServer } from "node:net";
+import { randomUUID } from "node:crypto";
 
 // Explicit opt-in: creates and drops only its own isolated schema on a test database.
 test("removing referrals preserves payments and reconciles transcription balances", { skip: !process.env.TEST_DATABASE_URL }, async () => {
@@ -79,6 +83,32 @@ test("removing referrals preserves payments and reconciles transcription balance
       assert.equal(row.amountOwed, balances.get(row.userId)?.owed ?? 0);
       assert.equal(row.overpaid, balances.get(row.userId)?.overpaid ?? 0);
     }
+    const history = await personalHistoryFor("mixed", client);
+    assert.equal(history.account.id, "mixed");
+    assert.equal(history.summary.overpaid, 10000);
+    assert.equal(history.reconciliation!.removedReferralEarnings, 16001);
+    assert.equal(history.reconciliation!.balanceBeforeAdjustment, 6001);
+    assert.equal(history.earnings.length, 1);
+    assert.equal(history.payments.length, 1);
+    assert.equal(history.payments[0].id, "p-mixed");
+    const serialized = JSON.stringify(history);
+    for (const forbidden of ["passwordHash", "referrerId", "previousReferrerId", "worker@example.test", "ref@example.test", "p-worker", "usual-e"]) assert.equal(serialized.includes(forbidden), false, forbidden);
+    const emptyHistory = await personalHistoryFor("unpaid", client);
+    assert.equal(emptyHistory.earnings.length, 0);
+    assert.equal(emptyHistory.payments.length, 0);
+    assert.equal(emptyHistory.summary.owed, 0);
+    const unsafeText = structuredClone(history);
+    unsafeText.earnings[0].job.title = '  =HYPERLINK("bad")';
+    unsafeText.payments[0].note = '@SUM(1,2)\nquoted "note"';
+    const csv = personalHistoryCsv(unsafeText);
+    assert.ok(csv.startsWith("\uFEFF"));
+    assert.ok(csv.includes('\'  =HYPERLINK(""bad"")'));
+    assert.ok(csv.includes('\'@SUM(1,2)'));
+    const response = historyDownloadResponse(history, "json");
+    assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+    assert.match(response.headers.get("Content-Disposition")!, /^attachment;/);
+    assert.deepEqual((await response.json()).summary, history.summary);
+    if (process.env.TEST_HISTORY_HTTP === "1") await checkHistoryHttp(url.toString());
     const expected = await expectedByUser(client);
     assert.equal(expected.get("worker")!.total, 30000);
     assert.equal(expected.has("mixed"), false);
@@ -97,6 +127,8 @@ test("removing referrals preserves payments and reconciles transcription balance
       await client.earning.create({ data: { jobId: id, userId: "worker", amount: 8, seconds: 1, lockedRate: 30000 } });
     }
     assert.equal((await balancesByUser(client)).get("worker")!.earned, 42018);
+    await client.setting.delete({ where: { key: "audit:2026-11-04-remove-referrals" } });
+    assert.equal((await personalHistoryFor("mixed", client)).reconciliation, null);
     const columns = await client.$queryRaw<{ column_name: string }[]>`SELECT column_name FROM information_schema.columns WHERE table_schema = ${schema} AND column_name IN ('referrerId', 'referredById')`;
     assert.deepEqual(columns, []);
     const roles = await client.$queryRaw<{ enumlabel: string }[]>`SELECT e.enumlabel FROM pg_enum e JOIN pg_type t ON t.oid = e.enumtypid JOIN pg_namespace n ON n.oid = t.typnamespace WHERE n.nspname = ${schema} AND t.typname = 'Role' ORDER BY e.enumsortorder`;
@@ -106,3 +138,58 @@ test("removing referrals preserves payments and reconciles transcription balance
     await client.$disconnect();
   }
 });
+
+
+async function checkHistoryHttp(databaseUrl: string) {
+  const listener = createServer();
+  await new Promise<void>((resolve) => listener.listen(0, "127.0.0.1", resolve));
+  const port = (listener.address() as { port: number }).port;
+  await new Promise<void>((resolve, reject) => listener.close((error) => error ? reject(error) : resolve()));
+  const secret = randomUUID();
+  const server = spawn(process.execPath, ["node_modules/next/dist/bin/next", "start", "--hostname", "127.0.0.1", "--port", String(port)], {
+    env: { ...process.env, DATABASE_URL: databaseUrl, SESSION_SECRET: secret }, stdio: ["ignore", "pipe", "pipe"],
+  });
+  let logs = "";
+  server.stdout.on("data", (chunk) => { logs += String(chunk); });
+  server.stderr.on("data", (chunk) => { logs += String(chunk); });
+  const origin = `http://127.0.0.1:${port}`;
+  const cookie = async (id: string) => `session=${await new SignJWT({ sub: id }).setProtectedHeader({ alg: "HS256" }).setExpirationTime("5m").sign(new TextEncoder().encode(secret))}`;
+  try {
+    let ready = false;
+    for (let attempt = 0; attempt < 100; attempt++) {
+      try { if ((await fetch(`${origin}/api/account/history`)).status === 401) { ready = true; break; } } catch { /* Server still starting. */ }
+      if (server.exitCode != null) break;
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert.ok(ready, `Next.js did not start: ${logs}`);
+    const userCookie = await cookie("mixed");
+    const adminCookie = await cookie("admin");
+    const get = (path: string, session?: string) => fetch(`${origin}${path}`, { headers: session ? { cookie: session } : {}, redirect: "manual" });
+    assert.equal((await get("/api/admin/users/worker/history")).status, 401);
+    assert.equal((await get("/api/admin/users/worker/history", userCookie)).status, 403);
+    const own = await get("/api/account/history?userId=worker", userCookie);
+    assert.equal(own.status, 200);
+    assert.equal((await own.json()).account.id, "mixed");
+    const other = await get("/api/admin/users/worker/history", adminCookie);
+    assert.equal(other.status, 200);
+    assert.equal((await other.json()).account.id, "worker");
+    assert.equal((await get("/api/admin/users/missing/history", adminCookie)).status, 404);
+    assert.equal((await get("/api/account/history?format=pdf", userCookie)).status, 400);
+    const csv = await get("/api/account/history?format=csv", userCookie);
+    assert.equal(csv.status, 200);
+    assert.match(csv.headers.get("Content-Type")!, /text\/csv/);
+    assert.equal(csv.headers.get("Cache-Control"), "private, no-store");
+    const earnings = await get("/earnings", userCookie);
+    assert.equal(earnings.status, 200);
+    assert.match(await earnings.text(), /Download your history/);
+    const adminPage = await get("/admin/users/mixed/history", adminCookie);
+    assert.equal(adminPage.status, 200);
+    const html = await adminPage.text();
+    assert.match(html, /Reconciliation history/);
+    assert.match(html, /Earnings and payment ledger/);
+    assert.doesNotMatch(logs, /Error:/);
+  } finally {
+    server.kill("SIGTERM");
+    await new Promise<void>((resolve) => { if (server.exitCode != null) resolve(); else server.once("exit", () => resolve()); });
+  }
+}
