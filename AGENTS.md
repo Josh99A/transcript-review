@@ -9,7 +9,7 @@ Transcript Review: admins upload audio/video with a draft transcript, transcribe
 media player, admins review (approve or send back), and the app tracks pay in UGX. Live at
 https://transcribe.xinixtechnologies.com.
 
-Roles (`Role` enum in `prisma/schema.prisma`): `ADMIN`, `USER` (transcriber), `REFERRER`.
+Roles (`Role` enum in `prisma/schema.prisma`): `ADMIN`, `USER` (transcriber).
 
 ## Stack
 
@@ -30,7 +30,8 @@ npm run create-admin -- "Name" you@example.com "password"
 npm run dev               # http://localhost:3000
 ```
 
-There is no test suite. Before pushing, run `npm run lint` and `npm run build` (the build type-checks).
+Payment migration regression tests: `TEST_DATABASE_URL=postgresql://... npm run test:payments`
+(use a test Postgres database; the test isolates its schema). Before pushing, run `npm run lint` and `npm run build` (the build type-checks).
 Schema changes need a new folder in `prisma/migrations/` (`npx prisma migrate dev --name <name>`).
 
 ## Layout
@@ -38,7 +39,7 @@ Schema changes need a new folder in `prisma/migrations/` (`npx prisma migrate de
 - `src/app/admin/` admin pages: dashboard, job upload (`jobs/new`), job review (`jobs/[id]`), requests,
   reviews, completed, issues, users and pay, guidelines. `admin/Uploads.tsx` is the upload queue.
 - `src/app/(user)/` transcriber pages: Find work (`board`), My jobs and the editor (`jobs/[id]`),
-  earnings, referrals, guidelines.
+  earnings, guidelines.
 - `src/app/api/` route handlers: job creation, chunked uploads, media streaming, Drive lookup/import,
   Drive export OAuth, payment reports.
 - `src/app/privacy/` public privacy page (linked from the Google OAuth consent screen).
@@ -48,8 +49,7 @@ Schema changes need a new folder in `prisma/migrations/` (`npx prisma migrate de
 
 ## Features to know about
 
-- **Pay:** usual rate `RATE_PER_HOUR_UGX = 30_000` in `src/lib/pay.ts` (README still says 20,000; the code
-  is right). Jobs can have their own hourly rate or a fixed price. Referrers earn `REFERRAL_RATE_PER_HOUR_UGX`.
+- **Pay:** usual rate `RATE_PER_HOUR_UGX = 30_000` in `src/lib/pay.ts`. Jobs can have their own hourly rate or a fixed price.
 - **Uploads with progress, pause, resume, cancel:** media goes up in 6 MB chunks (`CHUNK` in
   `admin/Uploads.tsx` must match `CHUNK` in `lib/media.ts`; Cloudinary needs at least 5 MB pieces).
 - **Duplicate files blocked:** each job stores a `mediaFingerprint` (a hash of the file, or `drive:<id>`
@@ -96,4 +96,3 @@ Never commit real values.
   Upgrade it (or back up and move the data) before then, or all data is lost.
 - The free web service sleeps after 15 minutes without visitors; the next visit takes about a minute.
   A paid instance avoids this.
-- README's pay rate (20,000) is out of date.

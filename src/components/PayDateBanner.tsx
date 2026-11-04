@@ -1,7 +1,7 @@
 import { CalendarClock } from "lucide-react";
 import { daysUntil, formatPayDate, formatUGX } from "@/lib/format";
 
-/** Tells a transcriber or referrer when they'll next be paid and how much is due. */
+/** Tells a transcriber when they'll next be paid and how much is due. */
 export default function PayDateBanner({ payDate, owed, detail }: { payDate: string | null; owed: number; detail?: React.ReactNode }) {
   if (!payDate) {
     return (

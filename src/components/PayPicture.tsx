@@ -17,7 +17,7 @@ export default function PayPicture({ expected, balance, earningsLink = true }: {
       note: expected.jobs
         ? `${expected.jobs} job${expected.jobs === 1 ? "" : "s"} you haven't submitted yet (${formatHours(expected.seconds)} of media). Not earned yet.`
         : "Nothing in progress. Pay from jobs you take on shows here until you submit them.",
-      extra: expected.referralPay > 0 ? `Includes ${formatUGX(expected.referralPay)} from jobs people you referred are working on.` : null,
+      extra: null,
     },
     {
       icon: ClipboardCheck,
@@ -35,7 +35,7 @@ export default function PayPicture({ expected, balance, earningsLink = true }: {
       label: "Earned from approved work",
       value: formatUGX(balance.earned),
       note: `Work an admin has approved (${formatHours(balance.seconds)}). Only this can be paid.`,
-      extra: balance.referralPay > 0 ? `Includes ${formatUGX(balance.referralPay)} from people you referred.` : null,
+      extra: null,
     },
     {
       icon: Wallet,
@@ -43,7 +43,7 @@ export default function PayPicture({ expected, balance, earningsLink = true }: {
       label: "Waiting to be paid",
       value: formatUGX(balance.owed),
       note: `Earned from approved work minus the ${formatUGX(balance.paid)} you've already been paid.`,
-      extra: null,
+      extra: balance.overpaid > 0 ? `${formatUGX(balance.overpaid)} already paid above approved earnings will offset future work.` : null,
       link: earningsLink,
     },
   ];

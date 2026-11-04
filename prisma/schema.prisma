@@ -10,7 +10,6 @@ datasource db {
 enum Role {
   ADMIN
   USER
-  REFERRER
 }
 
 enum JobStatus {
@@ -41,11 +40,6 @@ model User {
   // Languages a transcriber says they can work in, so admins can match them to jobs.
   languages  String[] @default([])
 
-  // Who brought this transcriber in. The referrer earns per hour of transcript this person submits.
-  referredById     String?
-  referredBy       User?     @relation("Referrals", fields: [referredById], references: [id])
-  referrals        User[]    @relation("Referrals")
-  referralEarnings Earning[] @relation("ReferralEarnings")
 }
 
 model Job {
@@ -127,9 +121,6 @@ model Earning {
   userId     String
   user       User     @relation("Earnings", fields: [userId], references: [id])
   amount     Int
-  // Referrer at the time of submission; they earn the referral rate on these seconds.
-  referrerId String?
-  referrer   User?    @relation("ReferralEarnings", fields: [referrerId], references: [id])
   // Media length credited. Totals are paid on cumulative time, not the sum of rounded per-job amounts.
   seconds    Int      @default(0)
   // Paid at the job's own hourly rate: amount is paid as is, and these seconds don't count toward hourly pay.

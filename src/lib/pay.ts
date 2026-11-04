@@ -1,6 +1,4 @@
 export const RATE_PER_HOUR_UGX = 30_000;
-/** What a referrer earns per hour of transcript submitted by the people they referred. */
-export const REFERRAL_RATE_PER_HOUR_UGX = 10_000;
 
 /** Pay for an amount of media time at the usual rate, or at a job's own rate, rounded to the nearest shilling. */
 export function earningsFor(durationSeconds: number, ratePerHour: number = RATE_PER_HOUR_UGX): number {
@@ -26,13 +24,6 @@ export function creditAmount(seconds: number, job: Pricing, lockedRate: number |
   return ownPay(seconds, job) ?? earningsFor(seconds, lockedRate ?? RATE_PER_HOUR_UGX);
 }
 
-/**
- * Referral pay: the referral rate on time paid at the usual rate, plus half of what jobs with their
- * own price paid. Both are 50% of what the referred transcriber earned.
- */
-export function referralPayFor(usualSeconds: number, customRatePay = 0): number {
-  return Math.round((usualSeconds * REFERRAL_RATE_PER_HOUR_UGX) / 3600) + Math.round(customRatePay / 2);
-}
 
 /**
  * Rough pay a job is expected to bring, for display on the job itself. Usual-rate pay is worked out on

@@ -4,13 +4,11 @@ import { db } from "@/lib/db";
 import SideNav from "./SideNav";
 
 type Props = {
-  user: { id: string; name: string; email: string; role: "ADMIN" | "USER" | "REFERRER" };
+  user: { id: string; name: string; email: string; role: "ADMIN" | "USER" };
   children: React.ReactNode;
 };
 
 export default async function Shell({ user, children }: Props) {
-  // Transcribers who referred someone also get the referrals page.
-  const refers = user.role === "USER" && (await db.user.count({ where: { referredById: user.id } })) > 0;
   // Admin menu counts: submissions to review and open issues.
   const badges: Record<string, number> =
     user.role === "ADMIN"
@@ -21,10 +19,10 @@ export default async function Shell({ user, children }: Props) {
       : {};
   // Nobody can be paid without a number, so people without one are reminded on every page until they add it.
   const noPayPhone = user.role !== "ADMIN" && !(await db.user.findUnique({ where: { id: user.id }, select: { payPhone: true } }))?.payPhone;
-  const payHref = user.role === "REFERRER" ? "/referrals#pay" : "/earnings#pay";
+  const payHref = "/earnings#pay";
   return (
     <div className="min-h-screen lg:pl-64">
-      <SideNav user={user} refers={refers} badges={badges} />
+      <SideNav user={user} badges={badges} />
       <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8 lg:py-8">
         {noPayPhone && (
           <div role="alert" className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">

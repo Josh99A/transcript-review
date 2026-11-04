@@ -57,7 +57,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
       },
       include: { assignee: { select: { name: true } }, earnings: true },
     }),
-    db.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, orderBy: { name: "asc" } }),
+    db.user.findMany({ where: { role: "USER" }, orderBy: { name: "asc" } }),
     balancesByUser(),
     payProblems(),
     expectedByUser(),
@@ -262,7 +262,7 @@ export default async function AdminDashboard({ searchParams }: { searchParams: P
               {owing.map(({ user, balance }) => (
                 <li key={user.id} className="flex items-center gap-3 px-5 py-3">
                   <div className="min-w-0 flex-1">
-                    <UserCell name={user.name} sub={`${user.role === "REFERRER" ? "Referrer · " : ""}${user.payPhone ?? "No pay number yet"}`} />
+                    <UserCell name={user.name} sub={`${user.payPhone ?? "No pay number yet"}`} />
                   </div>
                   <div className={`num text-sm font-semibold whitespace-nowrap ${balance.owed > 0 ? "text-slate-900" : "text-slate-400"}`}>
                     {formatUGX(balance.owed)}

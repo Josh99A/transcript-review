@@ -8,12 +8,12 @@ export type ReportLine = { label: string; detail: string; amount: number };
 export type ReportPerson = {
   name: string;
   email: string;
-  role: "USER" | "REFERRER";
+  role: "USER";
   payNetwork: string | null;
   payPhone: string | null;
   payName: string | null;
   owed: number;
-  /** What makes up the amount owed: unpaid approved jobs, referral pay, and any rounding on total hours. */
+  /** What makes up the amount owed: unpaid approved jobs and any rounding on total hours. */
   lines: ReportLine[];
 };
 
@@ -34,12 +34,12 @@ export function reportDate(d: Date, withTime = false): string {
 /**
  * Everyone owed money right now, with their payment details and what they're owed for, so an admin
  * can pay without being online. Payments aren't tied to jobs, so they're counted against approved
- * jobs oldest first (as on the earnings pages), then against referral pay.
+ * jobs oldest first (as on the earnings pages).
  */
 export async function paymentReport(): Promise<PaymentReport> {
   const [balances, users, earnings, payDate] = await Promise.all([
     balancesByUser(),
-    db.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, orderBy: { name: "asc" } }),
+    db.user.findMany({ where: { role: "USER" }, orderBy: { name: "asc" } }),
     db.earning.findMany({
       where: APPROVED,
       orderBy: { createdAt: "asc" },
@@ -66,12 +66,10 @@ export async function paymentReport(): Promise<PaymentReport> {
       const parts = [job.project, job.approvedAt && `approved ${reportDate(job.approvedAt)}`, job.fixedPay != null ? "fixed price" : formatHours(e.seconds), due < e.amount && "part paid"];
       lines.push({ label: job.title, detail: parts.filter(Boolean).join(" · "), amount: due });
     }
-    const referralDue = b.referralPay - Math.min(cover, b.referralPay);
-    if (referralDue > 0) lines.push({ label: "Referral pay", detail: "From work by people they referred", amount: referralDue });
     // Hourly pay is worked out on total time, so it can differ from the sum of the jobs by a few shillings.
     const rounding = b.owed - lines.reduce((s, l) => s + l.amount, 0);
     if (rounding !== 0) lines.push({ label: "Rounding on total hours", detail: "", amount: rounding });
-    people.push({ name: u.name, email: u.email, role: u.role as "USER" | "REFERRER", payNetwork: u.payNetwork, payPhone: u.payPhone, payName: u.payName, owed: b.owed, lines });
+    people.push({ name: u.name, email: u.email, role: u.role as "USER", payNetwork: u.payNetwork, payPhone: u.payPhone, payName: u.payName, owed: b.owed, lines });
   }
   people.sort((a, b) => b.owed - a.owed || a.name.localeCompare(b.name));
   return { generatedAt: new Date(), payDate, people, total: people.reduce((s, p) => s + p.owed, 0), awaiting };
@@ -103,7 +101,7 @@ export function reportCsv(r: PaymentReport): string {
   const header = ["Name", "Role", "Network", "Phone", "Name on account", "Amount owed (UGX)", "Paid (tick)", "Owed for", "Email"];
   const rows = r.people.map((p) => [
     p.name,
-    p.role === "REFERRER" ? "Referrer" : "Transcriber",
+    "Transcriber",
     p.payNetwork ?? "",
     p.payPhone ? csvPhone(p.payPhone) : "NO PAYMENT NUMBER",
     p.payName ?? "",
@@ -196,7 +194,7 @@ export async function reportPdf(r: PaymentReport): Promise<ArrayBuffer> {
       startY: y,
       margin: { left: margin, right: margin, top: 50 },
       head: [
-        [{ content: `${p.name}${p.role === "REFERRER" ? " (referrer)" : ""}`, colSpan: 2, styles: { fontSize: 10.5 } }, { content: `UGX ${ugx(p.owed)}`, styles: { halign: "right", fontSize: 10.5 } }],
+        [{ content: `${p.name}`, colSpan: 2, styles: { fontSize: 10.5 } }, { content: `UGX ${ugx(p.owed)}`, styles: { halign: "right", fontSize: 10.5 } }],
         [{ content: p.payPhone ? [p.payPhone, p.payNetwork, p.payName].filter(Boolean).join("  ·  ") : "No payment number yet", colSpan: 3, styles: { fontStyle: "normal", textColor: p.payPhone ? slate : [180, 83, 9], fontSize: 8.5, cellPadding: { top: 0, bottom: 6, left: 5, right: 5 } } }],
       ],
       body: p.lines.map((l) => [l.label, l.detail, ugx(l.amount)]),

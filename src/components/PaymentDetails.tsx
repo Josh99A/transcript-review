@@ -8,7 +8,7 @@ import { ActionForm } from "./client";
 
 type Details = { payNetwork: string | null; payPhone: string | null; payName: string | null };
 
-/** Card where transcribers and referrers say which number their payments should go to. */
+/** Card where transcribers say which number their payments should go to. */
 export default function PaymentDetails({ details }: { details: Details }) {
   const [editing, setEditing] = useState(!details.payPhone);
   return (

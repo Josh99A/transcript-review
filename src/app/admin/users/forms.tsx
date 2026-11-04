@@ -2,13 +2,11 @@
 
 import { Banknote, KeyRound, UserPlus } from "lucide-react";
 import { useState } from "react";
-import { createUser, recordPayout, resetPassword, setReferrer } from "@/app/actions";
+import { createUser, recordPayout, resetPassword } from "@/app/actions";
 import { ActionForm, Modal } from "@/components/client";
 import { formatUGX } from "@/lib/format";
 
-type Option = { id: string; name: string };
-
-export function NewUserButton({ referrers }: { referrers: Option[] }) {
+export function NewUserButton() {
   const [open, setOpen] = useState(false);
   const [role, setRole] = useState("USER");
   return (
@@ -25,8 +23,8 @@ export function NewUserButton({ referrers }: { referrers: Option[] }) {
           </div>
           <fieldset>
             <legend className="label">Role</legend>
-            <div className="grid gap-2 sm:grid-cols-3">
-              {[["USER", "Transcriber", "Corrects transcripts"], ["REFERRER", "Referrer", "Earns for bringing in transcribers"], ["ADMIN", "Admin", "Uploads, assigns and pays"]].map(([v, t, d]) => (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {[["USER", "Transcriber", "Corrects transcripts"], ["ADMIN", "Admin", "Uploads, assigns and pays"]].map(([v, t, d]) => (
                 <label key={v} className="flex cursor-pointer flex-col rounded-lg border border-slate-200 p-3 has-[:checked]:border-brand-500 has-[:checked]:bg-brand-50">
                   <span className="flex items-center gap-2 text-sm font-medium">
                     <input type="radio" name="role" value={v} checked={role === v} onChange={() => setRole(v)} className="accent-brand-600" /> {t}
@@ -36,16 +34,6 @@ export function NewUserButton({ referrers }: { referrers: Option[] }) {
               ))}
             </div>
           </fieldset>
-          {role === "USER" && (
-            <div>
-              <label className="label" htmlFor="nu-ref">Referred by <span className="font-normal text-slate-400">(optional)</span></label>
-              <select className="input" id="nu-ref" name="referredById" defaultValue="">
-                <option value="">Nobody</option>
-                {referrers.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-              </select>
-              {referrers.length === 0 && <p className="hint">Add a referrer first to link them here.</p>}
-            </div>
-          )}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn-secondary" onClick={() => setOpen(false)}>Cancel</button>
             <button className="btn">Add person</button>
@@ -115,24 +103,5 @@ export function ResetPasswordButton({ userId, name }: { userId: string; name: st
         </ActionForm>
       </Modal>
     </>
-  );
-}
-
-/** Inline picker for who referred a transcriber. */
-export function ReferrerSelect({ userId, current, referrers }: { userId: string; current: string | null; referrers: Option[] }) {
-  return (
-    <ActionForm action={setReferrer} confirm={{ title: "Change who referred this transcriber?", description: "Referral pay for their submitted work moves to the person you picked.", label: "Change referrer" }}>
-      <input type="hidden" name="userId" value={userId} />
-      <select
-        name="referredById"
-        defaultValue={current ?? ""}
-        onChange={(e) => e.currentTarget.form?.requestSubmit()}
-        className="input h-9 w-40 text-base sm:h-8 sm:w-36 sm:text-xs"
-        aria-label="Referred by"
-      >
-        <option value="">Nobody</option>
-        {referrers.map((r) => <option key={r.id} value={r.id}>{r.name}</option>)}
-      </select>
-    </ActionForm>
   );
 }

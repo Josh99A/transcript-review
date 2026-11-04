@@ -18,7 +18,7 @@ import { notify, notifyAdmins, settleNotices } from "@/lib/notify";
 import { type Detail, emailConfigured, emailSender, isTestAccount, sendEmails, sendEmailsLater } from "@/lib/email";
 import { announceJob } from "@/lib/newJobAlerts";
 import { notifyAdminAssignment } from "@/lib/assignmentNotices";
-import { creditAmount, earningsFor, hasOwnPay, parsePricing, RATE_PER_HOUR_UGX, referralPayFor } from "@/lib/pay";
+import { creditAmount, earningsFor, hasOwnPay, parsePricing, RATE_PER_HOUR_UGX } from "@/lib/pay";
 import { normalizePhone, PAY_NETWORKS } from "@/lib/payment";
 import { cleanLanguages } from "@/lib/jobFields";
 import { getLanguages, getNextPayDate, languageOptions, setLanguages, setNextPayDate } from "@/lib/settings";
@@ -51,8 +51,7 @@ const newUserSchema = z.object({
   name: z.string().trim().min(1, "Name is required"),
   email: z.string().trim().toLowerCase().email("Enter a valid email"),
   password: z.string().min(8, "Password must be at least 8 characters"),
-  role: z.enum(["ADMIN", "USER", "REFERRER"]),
-  referredById: z.string().optional(),
+  role: z.enum(["ADMIN", "USER"]),
 });
 
 export async function createUser(formData: FormData): Promise<FormState> {
@@ -60,11 +59,8 @@ export async function createUser(formData: FormData): Promise<FormState> {
   const parsed = newUserSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0].message };
   const { name, email, password, role } = parsed.data;
-  const referredById = role === "USER" && parsed.data.referredById ? parsed.data.referredById : null;
   if (await db.user.findUnique({ where: { email } })) return { error: "That email is already in use." };
-  const refError = referredById ? await referrerError(null, referredById) : null;
-  if (refError) return { error: refError };
-  await db.user.create({ data: { name, email, role, referredById, passwordHash: await bcrypt.hash(password, 10) } });
+  await db.user.create({ data: { name, email, role, passwordHash: await bcrypt.hash(password, 10) } });
   // The password isn't emailed; the admin passes it on themselves.
   sendEmailsLater([
     {
@@ -88,44 +84,6 @@ export async function resetPassword(formData: FormData): Promise<FormState> {
   if (password.length < 8) return { error: "Password must be at least 8 characters." };
   await db.user.update({ where: { id: userId }, data: { passwordHash: await bcrypt.hash(password, 10) } });
   return { ok: "Password updated." };
-}
-
-/**
- * Sets who referred a transcriber. Work they've already submitted with no referrer is credited to
- * the new one; work already credited to a referrer stays with them.
- */
-/** Referrers are referrer accounts or other transcribers; nobody refers themselves, directly or round a loop. */
-async function referrerError(userId: string | null, referredById: string): Promise<string | null> {
-  if (referredById === userId) return "Someone can't refer themselves.";
-  const ref = await db.user.findUnique({ where: { id: referredById }, select: { role: true } });
-  if (!ref || (ref.role !== "REFERRER" && ref.role !== "USER")) return "Pick a referrer from the list.";
-  if (userId) {
-    // Walk up from the new referrer; reaching this transcriber would make a loop.
-    let up: string | null = referredById;
-    for (let i = 0; up && i < 50; i++) {
-      const next: { referredById: string | null } | null = await db.user.findUnique({ where: { id: up }, select: { referredById: true } });
-      up = next?.referredById ?? null;
-      if (up === userId) return "That would make them refer each other.";
-    }
-  }
-  return null;
-}
-
-export async function setReferrer(formData: FormData): Promise<FormState> {
-  await requireAdmin();
-  const userId = String(formData.get("userId"));
-  const referredById = String(formData.get("referredById") ?? "") || null;
-  const t = await db.user.findUnique({ where: { id: userId } });
-  if (!t || t.role !== "USER") return { error: "Only transcribers can have a referrer." };
-  const refError = referredById ? await referrerError(userId, referredById) : null;
-  if (refError) return { error: refError };
-  await db.$transaction([
-    db.user.update({ where: { id: userId }, data: { referredById } }),
-    ...(referredById ? [db.earning.updateMany({ where: { userId, referrerId: null }, data: { referrerId: referredById } })] : []),
-  ]);
-  revalidatePath("/admin/users");
-  revalidatePath("/admin");
-  return { ok: referredById ? "Referrer saved." : "Referrer removed." };
 }
 
 /** Saves where someone wants to be paid. People set their own; admins can set anyone's. */
@@ -198,7 +156,7 @@ export async function payEveryone(): Promise<FormState> {
     await lockPayments(tx);
     const [balances, people, problems] = await Promise.all([
       balancesByUser(tx),
-      tx.user.findMany({ where: { role: { in: ["USER", "REFERRER"] } }, select: { id: true } }),
+      tx.user.findMany({ where: { role: "USER" }, select: { id: true } }),
       payProblems(tx),
     ]);
     // People with pay that doesn't match their jobs are left out until it's fixed.
@@ -339,13 +297,13 @@ export async function transferJob(formData: FormData): Promise<FormState> {
     const job = (await lockJob(tx, jobId)) ?? refuse("This job no longer exists.");
     if (job.status !== "SUBMITTED" || !job.assigneeId) refuse("Only submitted or completed jobs can be transferred.");
     if (toId === job.assigneeId) refuse("It's already theirs.");
-    const to = await tx.user.findUnique({ where: { id: toId }, select: { id: true, name: true, role: true, referredById: true } });
+    const to = await tx.user.findUnique({ where: { id: toId }, select: { id: true, name: true, role: true } });
     if (to?.role !== "USER") refuse("Pick a transcriber to transfer it to.");
     const from = job.assigneeId!;
     // Any old credit of theirs on this job is replaced by the transferred one.
     await tx.earning.deleteMany({ where: { jobId, userId: to!.id } });
-    // The pay moves as is (same amount and rate), and the new person's referrer gets the referral share.
-    await tx.earning.updateMany({ where: { jobId, userId: from }, data: { userId: to!.id, referrerId: to!.referredById } });
+    // The pay moves as is (same amount and rate).
+    await tx.earning.updateMany({ where: { jobId, userId: from }, data: { userId: to!.id } });
     const transferred = await tx.job.update({ where: { id: jobId }, data: { assigneeId: to!.id } });
     await tx.jobRequest.deleteMany({ where: { jobId, userId: from } });
     await tx.notification.deleteMany({ where: { jobId, userId: from } });
@@ -530,18 +488,6 @@ export async function approveJob(formData: FormData): Promise<FormState> {
   // Approved pay keeps today's usual rate even if the rate changes later.
   await db.earning.updateMany({ where: { jobId, customRate: false }, data: { lockedRate: RATE_PER_HOUR_UGX, amount: earningsFor(job.durationSeconds) } });
   await notify([job.assigneeId], { title: `Approved: ${job.title}`, body: "Your transcript was accepted, and its pay is now in your earnings.", href: `/jobs/${jobId}`, jobId, kind: "approved", email: true, details: jobFacts(job) });
-  // The referrer's share of an approved job counts towards what they're owed from now on.
-  const credit = job.assigneeId ? await db.earning.findUnique({ where: { jobId_userId: { jobId, userId: job.assigneeId } }, include: { user: { select: { name: true } } } }) : null;
-  if (credit?.referrerId) {
-    const share = credit.customRate ? referralPayFor(0, credit.amount) : referralPayFor(credit.seconds);
-    await notify([credit.referrerId], {
-      title: `You earned ${formatUGX(share)} in referral pay`,
-      body: `${credit.user.name}, who you referred, had a transcript approved.`,
-      href: "/earnings",
-      email: true,
-      details: [["Transcriber", credit.user.name], ["Length", formatDuration(credit.seconds)], ["Your share", formatUGX(share)]],
-    });
-  }
   await settleNotices(jobId);
   const toDrive = await exportLater([jobId]);
   revalidatePath("/admin/reviews");
@@ -843,7 +789,6 @@ export async function submitJob(jobId: string, raw: string, fileName?: string): 
         amount: creditAmount(job!.durationSeconds, job!, null),
         seconds: job!.durationSeconds,
         customRate: hasOwnPay(job!),
-        referrerId: user.referredById,
       },
       update: {},
     });

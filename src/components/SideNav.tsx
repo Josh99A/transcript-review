@@ -1,6 +1,6 @@
 "use client";
 
-import { AudioLines, BookOpenCheck, CircleCheckBig, ClipboardCheck, ClipboardList, HandCoins, LifeBuoy, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
+import { AudioLines, BookOpenCheck, CircleCheckBig, ClipboardCheck, ClipboardList, LifeBuoy, LayoutDashboard, LogOut, Menu, Search, Upload, Users, Wallet, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -23,9 +23,8 @@ const USER_LINKS = [
   { href: "/earnings", label: "My earnings", icon: Wallet },
   { href: "/guidelines", label: "Guidelines", icon: BookOpenCheck },
 ];
-const REFERRER_LINKS = [{ href: "/referrals", label: "My referrals", icon: HandCoins }];
-const LINKS = { ADMIN: ADMIN_LINKS, USER: USER_LINKS, REFERRER: REFERRER_LINKS };
-const ROLE_LABELS = { ADMIN: "Admin", USER: "Transcriber", REFERRER: "Referrer" };
+const LINKS = { ADMIN: ADMIN_LINKS, USER: USER_LINKS };
+const ROLE_LABELS = { ADMIN: "Admin", USER: "Transcriber" };
 
 function Brand() {
   return (
@@ -38,11 +37,11 @@ function Brand() {
   );
 }
 
-export default function SideNav({ user, refers = false, badges = {} }: { user: { name: string; email: string; role: "ADMIN" | "USER" | "REFERRER" }; refers?: boolean; badges?: Record<string, number> }) {
+export default function SideNav({ user, badges = {} }: { user: { name: string; email: string; role: "ADMIN" | "USER" }; badges?: Record<string, number> }) {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const links: { href: string; label: string; icon: typeof Wallet; exact?: boolean }[] =
-    user.role === "USER" && refers ? [...USER_LINKS, ...REFERRER_LINKS] : LINKS[user.role];
+    LINKS[user.role];
 
   const isActive = (l: (typeof links)[number]) =>
     l.exact ? pathname === l.href : pathname === l.href || pathname.startsWith(l.href + "/");

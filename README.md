@@ -1,8 +1,8 @@
 # Transcript Review
 
 Admins upload audio or video with a transcript and assign it to a transcriber. The transcriber
-corrects the transcript next to a media player and submits it. Pay is **UGX 20,000 per hour of
-media**, prorated by length, and is credited the moment a transcript is submitted.
+corrects the transcript next to a media player and submits it. Pay is **UGX 30,000 per hour of
+media**, prorated by length. Submitted work becomes earned and payable once an admin approves it.
 
 - **Admin:** dashboard of every job (who it's assigned to, status, when it was submitted, pay),
   what each user has earned, been paid and is owed; upload jobs; add users; record payments;
@@ -96,7 +96,6 @@ Besides the bell in the app, the important notices are also emailed through [Res
   Find work (who took it, their email, languages and jobs
   in progress, and the job's details), submissions and resubmissions ready to review, a transcriber leaving a
   job, issues raised and replies, and a job that couldn't be copied to Google Drive.
-- **Referrers:** referral pay earned when someone they referred has a transcript approved.
 - **New accounts:** a welcome email with a sign-in link (the password is never emailed).
 - **New jobs:** every transcriber hears about jobs that go up on Find work, whatever languages they
   listed. Jobs posted within a few minutes of each other, like a batch of
@@ -118,3 +117,23 @@ The admin dashboard's **Email notifications** card shows the sender and has a **
 button that reports any error from Resend. Without `RESEND_API_KEY` nothing is emailed. Accounts with "test" in their name or
 email only get in-app notices, never emails. Until a domain is verified, leave `EMAIL_FROM` empty to send
 from `onboarding@resend.dev`; Resend then only delivers to the email address of your own Resend account.
+
+### Payment reconciliation
+
+All non-admin accounts are transcribers. Earnings come only from their own approved work.
+Migration `20261104150000_remove_referrals` converts former referrer accounts, removes referral
+attribution, and saves an audit snapshot under `Setting` key `audit:2026-11-04-remove-referrals`.
+It preserves accounts, payment details, transcription credits (including locked rates), and all
+recorded payments. Previously paid amounts above approved transcription earnings are shown as
+overpayments and offset future earnings. One person's overpayment never reduces another's balance.
+No money is transferred or refunded by the migration.
+
+Deploy the application and migration together; the previous application expects the removed database
+fields. After deployment, run `npm run reconcile-payments` against the deployed database for a
+read-only report of removed earnings, recorded payments, current amounts owed, overpayments, and
+any job-credit inconsistencies. The migration runs automatically on application startup.
+
+To test the migration and accounting on a test Postgres database, run
+`TEST_DATABASE_URL=postgresql://... npm run test:payments`. The test creates and drops its own isolated
+schema and covers account conversion, historical/custom rates, pending work, retained payments,
+removed earnings, and overpayments offsetting future work.
