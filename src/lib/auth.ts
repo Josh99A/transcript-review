@@ -40,7 +40,7 @@ export async function getCurrentUser() {
     if (!payload.sub) return null;
     return await db.user.findUnique({
       where: { id: payload.sub },
-      select: { id: true, name: true, email: true, role: true, referredById: true, payNetwork: true, payPhone: true, payName: true, languages: true },
+      select: { id: true, name: true, email: true, role: true, payNetwork: true, payPhone: true, payName: true, languages: true },
     });
   } catch {
     return null;
@@ -53,11 +53,11 @@ export async function requireUser() {
   return user;
 }
 
-export type Role = "ADMIN" | "USER" | "REFERRER";
+export type Role = "ADMIN" | "USER";
 
 /** Where each role lands after signing in. */
 export function homeFor(role: Role) {
-  return role === "ADMIN" ? "/admin" : role === "REFERRER" ? "/referrals" : "/jobs";
+  return role === "ADMIN" ? "/admin" : "/jobs";
 }
 
 export async function requireAdmin() {

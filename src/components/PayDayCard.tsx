@@ -21,11 +21,11 @@ export default function PayDayCard({ payDate, totalOwed, peopleOwed }: { payDate
             <div className="text-lg font-semibold text-slate-900">{formatPayDate(payDate)}</div>
             <div className={`text-xs ${days !== null && days < 0 ? "text-amber-700" : "text-slate-500"}`}>
               {days === null ? "" : days > 1 ? `In ${days} days` : days === 1 ? "Tomorrow" : days === 0 ? "Today" : "Passed. Pay everyone, then set the next date."}
-              {" · "}shown to every transcriber and referrer
+              {" · "}shown to every transcriber
             </div>
           </div>
         ) : (
-          <p className="text-sm text-slate-500">No pay date set. Transcribers and referrers will see it once you set one.</p>
+          <p className="text-sm text-slate-500">No pay date set. Transcribers will see it once you set one.</p>
         )}
 
         <ActionForm action={updatePayDate} className="flex items-end gap-2">

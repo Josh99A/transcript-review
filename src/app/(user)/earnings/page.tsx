@@ -1,4 +1,4 @@
-import { Banknote, CircleCheck, ClipboardCheck, Clock, HandCoins, Hourglass, Wallet } from "lucide-react";
+import { Banknote, CircleCheck, ClipboardCheck, Clock, Hourglass, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, StatCard } from "@/components/ui";
@@ -22,7 +22,7 @@ export default async function EarningsPage() {
     db.payout.findMany({ where: { userId: user.id }, orderBy: { createdAt: "desc" } }),
   ]);
   const [balance, payDate, expected] = await Promise.all([balanceFor(user.id), getNextPayDate(), expectedFor(user.id)]);
-  const { earned, owed, seconds, referralPay, referralSeconds, awaitingJobs } = balance;
+  const { earned, owed, seconds, awaitingJobs } = balance;
   const approvedCount = earnings.filter((e) => e.job.status === "SUBMITTED" && e.job.approvedAt).length;
   const paid = payouts.reduce((s, p) => s + p.amount, 0);
   const earlierRate = earnings.some((e) => e.lockedRate != null && e.lockedRate !== RATE_PER_HOUR_UGX);
@@ -35,6 +35,11 @@ export default async function EarningsPage() {
         <PayDateBanner payDate={payDate} owed={owed} detail={`Paid on your total of ${formatHours(seconds)} of transcribed media, minus what you've already been paid.`} />
       </div>
 
+      {balance.overpaid > 0 && (
+        <p role="status" className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          Your recorded payments exceed your approved earnings by <strong>{formatUGX(balance.overpaid)}</strong>. This amount will offset future earnings. Your payment history is preserved.
+        </p>
+      )}
       <div className="grid gap-4 lg:grid-cols-3">
         <div className="relative overflow-hidden rounded-xl bg-gradient-to-br from-brand-600 to-brand-900 p-6 text-white shadow-lg lg:col-span-1">
           <div className="absolute -top-10 -right-10 size-40 rounded-full bg-white/10 blur-2xl" aria-hidden />
@@ -60,7 +65,7 @@ export default async function EarningsPage() {
               label="Expected from your current jobs"
               value={formatUGX(expected.total)}
               tone="amber"
-              hint={expected.jobs ? <>From {expected.jobs} job{expected.jobs === 1 ? "" : "s"} you haven&apos;t submitted yet{expected.referralPay > 0 ? `, including ${formatUGX(expected.referralPay)} from people you referred` : ""}. <strong className="font-medium text-slate-700">Not earned yet</strong>.</> : "Nothing in progress right now."}
+              hint={expected.jobs ? <>From {expected.jobs} job{expected.jobs === 1 ? "" : "s"} you haven&apos;t submitted yet. <strong className="font-medium text-slate-700">Not earned yet</strong>.</> : "Nothing in progress right now."}
             />
           </div>
           <div className="col-span-2">
@@ -74,11 +79,6 @@ export default async function EarningsPage() {
           </div>
           <StatCard icon={CircleCheck} label="Earned from approved work" value={formatUGX(earned)} tone="emerald" hint={`${approvedCount} approved transcript${approvedCount === 1 ? "" : "s"}`} />
           <StatCard icon={Clock} label="Media approved" value={formatHours(seconds)} tone="slate" hint={`${formatDuration(seconds)} in total`} />
-          {(referralPay > 0 || referralSeconds > 0) && (
-            <div className="col-span-2">
-              <StatCard icon={HandCoins} label="From people you referred" value={formatUGX(referralPay)} tone="brand" hint={<><span className="num">{formatHours(referralSeconds)}</span> submitted by them · <Link href="/referrals" className="font-medium text-brand-600 hover:text-brand-700">See referrals</Link></>} />
-            </div>
-          )}
         </div>
       </div>
 
