@@ -33,7 +33,9 @@ export default function PrivacyPage() {
 
       <h2 className="mt-8 text-base font-semibold text-slate-900">Contact and deletion</h2>
       <p className="mt-2">
-        To see or delete your data, contact the admin who invited you, or email awulejoshua823@gmail.com.
+        Download your retained earnings, payments, and reconciliation history as CSV or JSON from My earnings.
+        JSON also includes your account and payment details. Admins can view and download account histories
+        for payment accountability. For other data or deletion, contact the admin who invited you, or email awulejoshua823@gmail.com.
       </p>
 
       <p className="mt-10">

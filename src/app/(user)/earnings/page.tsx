@@ -1,4 +1,4 @@
-import { Banknote, CircleCheck, ClipboardCheck, Clock, Hourglass, Wallet } from "lucide-react";
+import { Banknote, CircleCheck, ClipboardCheck, Clock, Download, Hourglass, Wallet } from "lucide-react";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { EmptyState, PageHeader, StatCard } from "@/components/ui";
@@ -31,6 +31,16 @@ export default async function EarningsPage() {
   return (
     <>
       <PageHeader title="My earnings" description={`You earn ${formatUGX(RATE_PER_HOUR_UGX)} per hour of media, worked out on the total time of your approved transcripts. Work counts once an admin approves it. Jobs with a special rate or a fixed price are paid that instead.${earlierRate ? " Jobs approved before the rate changed keep the rate they were approved at." : ""}`} />
+      <section className="card mb-6 flex flex-wrap items-center justify-between gap-4 p-4" aria-label="Download your history">
+        <div>
+          <h2 className="font-semibold text-slate-900">Download your history</h2>
+          <p className="mt-1 text-sm text-slate-600">Keep a copy of your earnings, payments, and any preserved reconciliation totals. CSV opens in a spreadsheet; JSON also includes your account details. Includes records currently retained for your account.</p>
+        </div>
+        <div className="flex shrink-0 gap-2">
+          <a href="/api/account/history?format=csv" className="btn-secondary"><Download className="size-4" aria-hidden /> Download CSV</a>
+          <a href="/api/account/history?format=json" className="btn-secondary"><Download className="size-4" aria-hidden /> Download JSON</a>
+        </div>
+      </section>
       <div className="mb-6">
         <PayDateBanner payDate={payDate} owed={owed} detail={`Paid on your total of ${formatHours(seconds)} of transcribed media, minus what you've already been paid.`} />
       </div>

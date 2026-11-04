@@ -2,6 +2,7 @@ import { Banknote, ClipboardCheck, Hourglass, Users, Wallet } from "lucide-react
 import PayProblems from "@/components/PayProblems";
 import { payProblems } from "@/lib/payCheck";
 import type { Metadata } from "next";
+import Link from "next/link";
 import { EmptyState, PageHeader, StatList, UserCell } from "@/components/ui";
 import { requireAdmin } from "@/lib/auth";
 import { db } from "@/lib/db";
@@ -88,6 +89,7 @@ export default async function UsersPage() {
                   <div className="flex flex-wrap gap-2">
                     <PayoutButton userId={u.id} name={u.name} owed={b.owed} payTo={u.payPhone ? `${u.payPhone} (${u.payNetwork})` : null} />
                     <ResetPasswordButton userId={u.id} name={u.name} />
+                    <Link href={`/admin/users/${u.id}/history`} className="btn-secondary btn-sm">View history</Link>
                   </div>
                 </li>
               );
@@ -117,6 +119,7 @@ export default async function UsersPage() {
                         <div className="flex items-center justify-end gap-1">
                           <PayoutButton userId={u.id} name={u.name} owed={b.owed} payTo={u.payPhone ? `${u.payPhone} (${u.payNetwork})` : null} />
                           <ResetPasswordButton userId={u.id} name={u.name} />
+                          <Link href={`/admin/users/${u.id}/history`} className="btn-secondary btn-sm">View history</Link>
                         </div>
                       </td>
                     </tr>
@@ -175,6 +178,7 @@ export default async function UsersPage() {
               <li key={u.id} className="flex items-center gap-2 px-5 py-3">
                 <div className="min-w-0 flex-1"><UserCell name={u.name} sub={u.email} /></div>
                 <ResetPasswordButton userId={u.id} name={u.name} />
+                <Link href={`/admin/users/${u.id}/history`} className="btn-secondary btn-sm">View history</Link>
               </li>
             ))}
           </ul>
